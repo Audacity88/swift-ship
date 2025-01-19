@@ -1,0 +1,51 @@
+{
+  "type": "Topology",
+  "arcs": [],
+  "objects": {
+    "countries": {
+      "type": "GeometryCollection",
+      "geometries": [
+        {
+          "type": "Polygon",
+          "properties": {
+            "name": "United States",
+            "id": "USA"
+          },
+          "coordinates": []
+        },
+        {
+          "type": "Polygon",
+          "properties": {
+            "name": "Canada",
+            "id": "CAN"
+          },
+          "coordinates": []
+        },
+        {
+          "type": "Polygon",
+          "properties": {
+            "name": "United Kingdom",
+            "id": "GBR"
+          },
+          "coordinates": []
+        },
+        {
+          "type": "Polygon",
+          "properties": {
+            "name": "Germany",
+            "id": "DEU"
+          },
+          "coordinates": []
+        },
+        {
+          "type": "Polygon",
+          "properties": {
+            "name": "France",
+            "id": "FRA"
+          },
+          "coordinates": []
+        }
+      ]
+    }
+  }
+} 
