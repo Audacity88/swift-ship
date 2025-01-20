@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Home, Inbox, Quote, BarChart, Truck, Package, Settings } from 'lucide-react'
+import { Home, Inbox, Quote, BarChart, Truck, Package, Settings, Ticket, ListChecks, Search, Users } from 'lucide-react'
 import { ROUTES } from '@/lib/constants'
 
 const navItems = [
@@ -13,6 +13,13 @@ const navItems = [
   { icon: Truck, label: 'Shipments', href: '/shipments' },
   { icon: Package, label: 'Pickup', href: '/pickup' },
   { icon: Settings, label: 'Settings', href: ROUTES.settings },
+]
+
+const ticketItems = [
+  { icon: Ticket, label: 'Overview', href: '/tickets/overview' },
+  { icon: ListChecks, label: 'Active Tickets', href: '/tickets/active' },
+  { icon: Search, label: 'Search Tickets', href: '/tickets/search' },
+  { icon: Users, label: 'Team Queue', href: '/tickets/queue' },
 ]
 
 export function Sidebar() {
@@ -45,6 +52,31 @@ export function Sidebar() {
             )
           })}
         </ul>
+
+        <div className="mt-8 px-4">
+          <h2 className="px-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Tickets</h2>
+          <ul className="mt-3 space-y-1">
+            {ticketItems.map((item) => {
+              const isActive = pathname === item.href
+              const Icon = item.icon
+              return (
+                <li key={item.href}>
+                  <Link
+                    href={item.href}
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors \
+                      ${isActive 
+                        ? 'bg-gray-100 text-gray-900' 
+                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                      }`}
+                  >
+                    <Icon className="w-5 h-5" />
+                    {item.label}
+                  </Link>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
       </nav>
     </aside>
   )
