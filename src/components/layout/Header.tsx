@@ -1,24 +1,51 @@
 'use client'
 
-import { Search, Bell, ChevronDown, Plus, LayoutGrid, LayoutList } from 'lucide-react'
+import { Search, Bell, ChevronDown, Plus, LayoutGrid, LayoutList, LogOut, Settings as SettingsIcon } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { usePathname, useRouter } from 'next/navigation'
+import { useEffect, useState, useRef } from 'react'
 import { COLORS } from '@/lib/constants'
 import { useNotificationStore } from '@/lib/store/notifications'
+import { createBrowserClient } from '@supabase/ssr'
 
 export function Header() {
   const { getUnreadCount } = useNotificationStore()
   const [mounted, setMounted] = useState(false)
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list')
+  const [showProfileMenu, setShowProfileMenu] = useState(false)
+  const profileMenuRef = useRef<HTMLDivElement>(null)
   const unreadCount = getUnreadCount()
-  const pathname = usePathname()
+  const pathname = usePathname() || ''
+  const router = useRouter()
   const isTicketRoute = pathname.startsWith('/tickets')
+  const [supabase] = useState(() => 
+    createBrowserClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
+  )
 
   useEffect(() => {
     setMounted(true)
+
+    // Close menu when clicking outside
+    const handleClickOutside = (event: MouseEvent) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
+        setShowProfileMenu(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
+
+  const handleSignOut = async () => {
+    const { error } = await supabase.auth.signOut()
+    if (!error) {
+      router.push('/auth/signin')
+    }
+  }
 
   return (
     <header className="h-16 border-b border-gray-200 bg-white px-6 flex items-center justify-between">
@@ -95,17 +122,43 @@ export function Header() {
           )}
         </Link>
         
-        <button className="flex items-center gap-2">
-          <div className="relative w-8 h-8 rounded-full overflow-hidden">
-            <Image
-              src="https://picsum.photos/200"
-              alt="Profile"
-              fill
-              className="object-cover"
-            />
-          </div>
-          <ChevronDown className="w-4 h-4 text-gray-600" />
-        </button>
+        <div className="relative" ref={profileMenuRef}>
+          <button 
+            onClick={() => setShowProfileMenu(!showProfileMenu)}
+            className="flex items-center gap-2"
+          >
+            <div className="relative w-8 h-8 rounded-full overflow-hidden">
+              <Image
+                src="https://picsum.photos/200"
+                alt="Profile"
+                fill
+                className="object-cover"
+              />
+            </div>
+            <ChevronDown className={`w-4 h-4 text-gray-600 transition-transform ${showProfileMenu ? 'rotate-180' : ''}`} />
+          </button>
+
+          {showProfileMenu && (
+            <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+              <Link
+                href="/settings"
+                className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                onClick={() => setShowProfileMenu(false)}
+              >
+                <SettingsIcon className="w-4 h-4" />
+                Settings
+              </Link>
+              <div className="h-px bg-gray-200 my-1" />
+              <button
+                onClick={handleSignOut}
+                className="flex items-center gap-2 w-full px-4 py-2 text-sm text-red-600 hover:bg-gray-50"
+              >
+                <LogOut className="w-4 h-4" />
+                Sign Out
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </header>
   )
