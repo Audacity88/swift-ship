@@ -98,7 +98,7 @@ export default function TicketFollowersPage() {
                 <div className="flex items-center gap-4">
                   <div className="relative w-10 h-10 rounded-full overflow-hidden">
                     <Image
-                      src={follower.avatar}
+                      src={follower.avatar || '/default-avatar.png'}
                       alt={follower.name}
                       fill
                       className="object-cover"
@@ -150,7 +150,7 @@ export default function TicketFollowersPage() {
                   >
                     <div className="relative w-10 h-10 rounded-full overflow-hidden">
                       <Image
-                        src={agent.avatar}
+                        src={agent.avatar || '/default-avatar.png'}
                         alt={agent.name}
                         fill
                         className="object-cover"

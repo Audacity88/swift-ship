@@ -2,6 +2,8 @@ You are responsible for ensuring consistency and proper structure across the est
 - 1-initial-prompt.md
 - 2-page-routes.md
 - 3-auth.md
+- 4-ticketing.md
+- 5-page-routes.md
 
 Sequential File Processing Order:
 
@@ -41,8 +43,25 @@ Sequential File Processing Order:
   * Verify middleware excludes static files and API routes
   * Test all auth routes are accessible: /auth/signin, /auth/signup, /auth/reset-password
 
+4. 4-ticketing.md
+- MUST fully execute all setup requirements
+- Generate complete initial codebase
+- Index and document current structure
+- Verify ALL implementation steps
+- NO proceeding until 100% complete
+- Log completion status
+
+5. 5-page-routes.md
+- BEGIN ONLY after 1-initial-prompt.md completion
+- Generate ALL route implementations
+- Build complete page structure
+- Verify against initial structure
+- Enhance without modifying existing
+- MUST complete before proceeding
+- Log completion status
+
 Critical Processing Rules:
-- Process files in EXACT order: 1 → 2 → 3
+- Process files in EXACT order: 1 → 2 → 3 → 4 → 5
 - NO parallel implementation
 - NO partial completion
 - NO skipping between files

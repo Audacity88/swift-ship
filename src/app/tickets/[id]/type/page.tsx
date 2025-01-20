@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useParams } from 'next/navigation'
-import { FileText, AlertCircle, HelpCircle, Tool, Check } from 'lucide-react'
+import { FileText, AlertCircle, HelpCircle, Wrench, Check } from 'lucide-react'
 import type { TicketType } from '@/types/ticket'
 
 interface TypeOption {
@@ -32,7 +32,7 @@ const typeOptions: TypeOption[] = [
     type: 'task',
     label: 'Task',
     description: 'A task that needs to be completed',
-    icon: Tool,
+    icon: Wrench,
     color: '#36B37E',
   },
   {

@@ -5,7 +5,13 @@ import { COLORS } from '@/lib/constants'
 
 const geoUrl = "https://raw.githubusercontent.com/deldersveld/topojson/master/world-countries.json"
 
-const markers = [
+type Marker = {
+  name: string;
+  coordinates: [number, number];
+  value: number;
+}
+
+const markers: Marker[] = [
   { name: "New York", coordinates: [-74.006, 40.7128], value: 245 },
   { name: "London", coordinates: [-0.1276, 51.5074], value: 312 },
   { name: "Singapore", coordinates: [103.8198, 1.3521], value: 178 },

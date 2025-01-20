@@ -139,7 +139,7 @@ export default function TicketAssigneePage() {
               >
                 <div className="relative w-10 h-10 rounded-full overflow-hidden">
                   <Image
-                    src={agent.avatar}
+                    src={agent.avatar || '/default-avatar.png'}
                     alt={agent.name}
                     fill
                     className="object-cover"
