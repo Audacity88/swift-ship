@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Filter, SortAsc, SortDesc } from 'lucide-react'
 import { TicketList } from '@/components/features/tickets/TicketList'
 import type { TicketListItem, TicketStatus, TicketPriority } from '@/types/ticket'
@@ -37,6 +38,7 @@ const statusOptions: TicketStatus[] = ['open', 'in_progress', 'waiting']
 const priorityOptions: TicketPriority[] = ['urgent', 'high', 'medium', 'low']
 
 export default function ActiveTicketsPage() {
+  const router = useRouter()
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list')
   const [selectedStatus, setSelectedStatus] = useState<TicketStatus[]>([])
   const [selectedPriority, setSelectedPriority] = useState<TicketPriority[]>([])
@@ -55,6 +57,10 @@ export default function ActiveTicketsPage() {
     const dateB = new Date(b.createdAt).getTime()
     return sortOrder === 'asc' ? dateA - dateB : dateB - dateA
   })
+
+  const handleTicketClick = (ticketId: string) => {
+    router.push(`/tickets/${ticketId}`)
+  }
 
   return (
     <div className="space-y-6">
@@ -141,7 +147,7 @@ export default function ActiveTicketsPage() {
       </div>
 
       {/* Tickets List */}
-      <TicketList tickets={sortedTickets} viewMode={viewMode} />
+      <TicketList tickets={sortedTickets} viewMode={viewMode} onTicketClick={handleTicketClick} />
     </div>
   )
 } 

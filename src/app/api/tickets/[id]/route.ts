@@ -1,14 +1,10 @@
-'use client'
+import { NextResponse } from 'next/server'
+import type { Ticket } from '@/types/ticket'
 
-import { useState } from 'react'
-import { useParams } from 'next/navigation'
-import { TicketDetails } from '@/components/features/tickets/TicketDetails'
-import { ReplyComposer } from '@/components/features/tickets/ReplyComposer'
-import type { Message, Ticket } from '@/types/ticket'
-
-// Mock data - replace with actual API call
+// Mock data - replace with actual database query
 const mockTicket: Ticket = {
   id: '1',
+  number: 'TICK-1001',
   title: 'Unable to access dashboard after recent update',
   description: 'After the latest update, I am unable to access the dashboard. The page loads indefinitely and eventually times out. This is blocking our team from accessing critical metrics.',
   status: 'open',
@@ -57,50 +53,28 @@ const mockTicket: Ticket = {
       { id: '2', name: 'dashboard', color: '#00B8D9' },
     ],
     source: 'web',
+    customFields: [
+      'Chrome 120.0.0',
+      'high'
+    ],
   },
 }
 
-export default function TicketDetailsPage() {
-  const params = useParams()
-  const ticketId = params?.id as string
-  const [ticket, setTicket] = useState<Ticket>(mockTicket)
-  const [isSubmitting, setIsSubmitting] = useState(false)
-
-  const handleReply = async (message: Omit<Message, 'id' | 'createdAt'>) => {
-    setIsSubmitting(true)
-    try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000))
-
-      // Add message to ticket
-      const newMessage = {
-        ...message,
-        id: String(ticket.messages.length + 1),
-        createdAt: new Date().toISOString(),
-      }
-
-      setTicket(prev => ({
-        ...prev,
-        messages: [...prev.messages, newMessage],
-        metadata: {
-          ...prev.metadata,
-          updatedAt: new Date().toISOString(),
-        },
-      }))
-    } catch (error) {
-      console.error('Failed to send message:', error)
-    } finally {
-      setIsSubmitting(false)
+export async function GET(
+  request: Request,
+  { params }: { params: { id: string } }
+) {
+  try {
+    // TODO: Replace with actual database query
+    // For now, just return mock data if ID matches
+    if (params.id === '1') {
+      return NextResponse.json({ data: mockTicket })
     }
+
+    // Return 404 if ticket not found
+    return new NextResponse('Ticket not found', { status: 404 })
+  } catch (error) {
+    console.error('Failed to fetch ticket:', error)
+    return new NextResponse('Internal Server Error', { status: 500 })
   }
-
-  return (
-    <div className="space-y-6">
-      {/* Ticket Details */}
-      <TicketDetails ticket={ticket} />
-
-      {/* Reply Composer */}
-      <ReplyComposer onSubmit={handleReply} isSubmitting={isSubmitting} />
-    </div>
-  )
 } 

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { BarChart3, Clock, MessageSquare, Users } from 'lucide-react'
 import { TicketList } from '@/components/features/tickets/TicketList'
 import type { TicketListItem } from '@/types/ticket'
@@ -66,6 +67,12 @@ const mockTickets: TicketListItem[] = [
 ]
 
 export default function TicketsOverviewPage() {
+  const router = useRouter()
+  
+  const handleTicketClick = (ticketId: string) => {
+    router.push(`/tickets/${ticketId}`)
+  }
+
   return (
     <div className="space-y-6">
       {/* Page Header */}
@@ -111,7 +118,7 @@ export default function TicketsOverviewPage() {
             View all tickets
           </button>
         </div>
-        <TicketList tickets={mockTickets} />
+        <TicketList tickets={mockTickets} onTicketClick={handleTicketClick} />
       </div>
     </div>
   )

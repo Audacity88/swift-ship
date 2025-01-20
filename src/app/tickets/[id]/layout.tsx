@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 
 const tabItems = [
-  { icon: Info, label: 'Details', href: '/details' },
+  { icon: Info, label: 'Details', href: '' },
   { icon: UserCheck, label: 'Assignee', href: '/assignee' },
   { icon: Users, label: 'Followers', href: '/followers' },
   { icon: Tag, label: 'Tags', href: '/tags' },
@@ -23,9 +23,9 @@ export default function TicketLayout({
 }: {
   children: React.ReactNode
 }) {
-  const params = useParams()
+  const params = useParams() || {}
   const pathname = usePathname()
-  const ticketId = params.id as string
+  const ticketId = (params.id as string) || ''
 
   return (
     <div className="space-y-6">

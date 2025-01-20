@@ -4,7 +4,8 @@ import { useState, useRef, useEffect } from 'react'
 import Image from 'next/image'
 import { 
   AlertCircle, HelpCircle, Wrench, Check, Search,
-  Tag as TagIcon, X, Users, ChevronDown
+  Tag as TagIcon, X, Users, ChevronDown,
+  type LucideIcon
 } from 'lucide-react'
 import type { TicketType } from '@/types/ticket'
 
@@ -54,7 +55,13 @@ interface TypeDropdownProps {
   onSelect: (type: TicketType) => void
 }
 
-const typeOptions = [
+const typeOptions: Array<{
+  type: TicketType
+  label: string
+  description: string
+  icon: LucideIcon
+  color: string
+}> = [
   {
     type: 'problem',
     label: 'Problem',

@@ -1,3 +1,5 @@
+import type { CustomFieldValue } from './custom-field'
+
 export type TicketStatus = 'open' | 'in_progress' | 'waiting' | 'resolved' | 'closed'
 
 export type TicketPriority = 'low' | 'medium' | 'high' | 'urgent'
@@ -46,10 +48,25 @@ export interface TicketMetadata {
   tags: Tag[]
   category?: string
   source: 'email' | 'web' | 'phone' | 'chat'
+  customFields: CustomFieldValue[]
+  archivedAt?: string
+  archivedBy?: Agent
+  archiveReason?: string
+  lastSnapshotAt?: string
+}
+
+export interface TicketSnapshot {
+  id: string
+  ticketId: string
+  snapshotAt: string
+  data: Omit<Ticket, 'snapshots'>
+  reason?: string
+  triggeredBy: Agent
 }
 
 export interface Ticket {
   id: string
+  number: string
   title: string
   description: string
   status: TicketStatus
@@ -60,7 +77,9 @@ export interface Ticket {
   messages: Message[]
   followers: Agent[]
   metadata: TicketMetadata
-  linkedProblems?: string[] // IDs of linked tickets
+  linkedProblems?: string[]
+  isArchived?: boolean
+  snapshots?: TicketSnapshot[]
 }
 
 export interface TicketListItem {

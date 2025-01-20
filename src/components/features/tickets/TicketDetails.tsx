@@ -1,158 +1,285 @@
 'use client'
 
-import Image from 'next/image'
-import { Clock, Tag, User, MessageSquare, Paperclip, Link as LinkIcon } from 'lucide-react'
-import type { Ticket } from '@/types/ticket'
+import { useState, useEffect } from 'react'
+import { format } from 'date-fns'
+import {
+  User,
+  Mail,
+  Phone,
+  Building,
+  Clock,
+  MessageSquare,
+  Paperclip,
+  History,
+  AlertCircle,
+  CheckCircle,
+  XCircle,
+  Edit,
+  Archive,
+  MoreHorizontal
+} from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Separator } from '@/components/ui/separator'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { SLAIndicator } from '@/components/features/tickets/SLAIndicator'
+import { TagList } from '@/components/features/tags/TagList'
+import { CustomFieldsSection } from '@/components/features/custom-fields/CustomFieldsSection'
+import { StatusTransition } from '@/components/features/tickets/StatusTransition'
+import { AuditLogViewer } from '@/components/features/audit/AuditLogViewer'
+import type { Ticket, Tag } from '@/types/ticket'
+import type { CustomFieldValueWithId } from '@/types/custom-field'
 
 interface TicketDetailsProps {
-  ticket: Ticket
+  ticketId: string
+  className?: string
+  onClose?: () => void
+  onEdit?: () => void
+  onArchive?: () => void
+  onUnarchive?: () => void
 }
 
-const statusColors = {
-  open: 'bg-green-100 text-green-800',
-  in_progress: 'bg-blue-100 text-blue-800',
-  waiting: 'bg-yellow-100 text-yellow-800',
-  resolved: 'bg-purple-100 text-purple-800',
-  closed: 'bg-gray-100 text-gray-800',
-}
+export function TicketDetails({
+  ticketId,
+  className = '',
+  onClose,
+  onEdit,
+  onArchive,
+  onUnarchive
+}: TicketDetailsProps) {
+  // State
+  const [ticket, setTicket] = useState<Ticket | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState<'details' | 'history'>('details')
 
-const priorityColors = {
-  low: 'bg-gray-100 text-gray-800',
-  medium: 'bg-blue-100 text-blue-800',
-  high: 'bg-orange-100 text-orange-800',
-  urgent: 'bg-red-100 text-red-800',
-}
+  // Load ticket data
+  useEffect(() => {
+    const loadTicket = async () => {
+      setIsLoading(true)
+      try {
+        // TODO: Replace with actual API call
+        const response = await fetch(`/api/tickets/${ticketId}`).then(res => res.json())
+        setTicket(response.data)
+      } catch (error) {
+        console.error('Failed to load ticket:', error)
+        // TODO: Show error toast
+      } finally {
+        setIsLoading(false)
+      }
+    }
 
-export function TicketDetails({ ticket }: TicketDetailsProps) {
+    loadTicket()
+  }, [ticketId])
+
+  // Handle tag click
+  const handleTagClick = (tag: Tag) => {
+    // TODO: Implement tag filtering/navigation
+    console.log('Tag clicked:', tag)
+  }
+
+  if (isLoading || !ticket) {
+    return (
+      <div className={`flex items-center justify-center h-full ${className}`}>
+        <div className="animate-spin">
+          {/* TODO: Add loading spinner */}
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="bg-white rounded-lg border border-gray-200">
-      {/* Ticket Header */}
-      <div className="p-6 border-b border-gray-200">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-start gap-4">
-            <div className="relative w-12 h-12 rounded-full overflow-hidden">
-              <Image
-                src={ticket.customer.avatar || 'https://picsum.photos/200'}
-                alt={ticket.customer.name}
-                fill
-                className="object-cover"
-              />
-            </div>
-            <div>
-              <h1 className="text-xl font-semibold text-gray-900">{ticket.title}</h1>
-              <p className="mt-1 text-sm text-gray-500">
-                {ticket.customer.name} - {ticket.customer.email}
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-col gap-2">
-            <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-              statusColors[ticket.status]
-            }`}>
-              {ticket.status.replace('_', ' ')}
-            </span>
-            <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-              priorityColors[ticket.priority]
-            }`}>
-              {ticket.priority}
-            </span>
-          </div>
-        </div>
-
-        {/* Meta Information */}
-        <div className="mt-6 flex items-center gap-6 text-sm text-gray-500">
+    <div className={`flex flex-col h-full ${className}`}>
+      {/* Header */}
+      <div className="flex items-start justify-between p-4 border-b">
+        <div>
           <div className="flex items-center gap-2">
-            <Clock className="w-4 h-4" />
-            <span>Created {new Date(ticket.metadata.createdAt).toLocaleDateString()}</span>
+            <h2 className="text-lg font-semibold">{ticket.title}</h2>
+            <Badge variant="outline">#{ticket.number}</Badge>
+            {ticket.isArchived && (
+              <Badge variant="secondary">Archived</Badge>
+            )}
           </div>
-          {ticket.assignee && (
-            <div className="flex items-center gap-2">
-              <User className="w-4 h-4" />
-              <span>Assigned to {ticket.assignee.name}</span>
-            </div>
-          )}
-          {ticket.metadata.tags.length > 0 && (
-            <div className="flex items-center gap-2">
-              <Tag className="w-4 h-4" />
-              <div className="flex items-center gap-1">
-                {ticket.metadata.tags.map((tag) => (
-                  <span
-                    key={tag.id}
-                    className="px-2 py-0.5 rounded-full text-xs font-medium"
-                    style={{ backgroundColor: `${tag.color}20`, color: tag.color }}
-                  >
-                    {tag.name}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-          {ticket.messages.length > 0 && (
-            <div className="flex items-center gap-2">
-              <MessageSquare className="w-4 h-4" />
-              <span>{ticket.messages.length} messages</span>
-            </div>
-          )}
-          {ticket.linkedProblems && ticket.linkedProblems.length > 0 && (
-            <div className="flex items-center gap-2">
-              <LinkIcon className="w-4 h-4" />
-              <span>{ticket.linkedProblems.length} linked problems</span>
-            </div>
-          )}
+          <div className="mt-1 text-sm text-gray-500">
+            Created {format(new Date(ticket.metadata.createdAt), 'MMM d, yyyy HH:mm')}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onEdit}
+          >
+            <Edit className="w-4 h-4 mr-2" />
+            Edit
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm">
+                <MoreHorizontal className="w-4 h-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {ticket.isArchived ? (
+                <DropdownMenuItem onClick={onUnarchive}>
+                  <Archive className="w-4 h-4 mr-2" />
+                  Unarchive
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem onClick={onArchive}>
+                  <Archive className="w-4 h-4 mr-2" />
+                  Archive
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+          >
+            <XCircle className="w-4 h-4" />
+          </Button>
         </div>
       </div>
 
-      {/* Ticket Description */}
-      <div className="p-6 border-b border-gray-200">
-        <h2 className="text-lg font-medium text-gray-900">Description</h2>
-        <p className="mt-2 text-gray-600 whitespace-pre-wrap">{ticket.description}</p>
-      </div>
+      {/* Content */}
+      <div className="flex-1 min-h-0">
+        {/* Tabs */}
+        <div className="flex border-b">
+          <Button
+            variant={activeTab === 'details' ? 'default' : 'ghost'}
+            className="rounded-none"
+            onClick={() => setActiveTab('details')}
+          >
+            Details
+          </Button>
+          <Button
+            variant={activeTab === 'history' ? 'default' : 'ghost'}
+            className="rounded-none"
+            onClick={() => setActiveTab('history')}
+          >
+            History
+          </Button>
+        </div>
 
-      {/* Messages Thread */}
-      <div className="p-6">
-        <h2 className="text-lg font-medium text-gray-900 mb-4">Messages</h2>
-        <div className="space-y-6">
-          {ticket.messages.map((message) => (
-            <div key={message.id} className="flex gap-4">
-              <div className="relative w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
-                <Image
-                  src={message.author.avatar || 'https://picsum.photos/200'}
-                  alt={message.author.name}
-                  fill
-                  className="object-cover"
+        {/* Tab Content */}
+        <ScrollArea className="flex-1">
+          {activeTab === 'details' ? (
+            <div className="p-4 space-y-6">
+              {/* Status & Priority */}
+              <div className="flex items-center justify-between">
+                <StatusTransition
+                  ticketId={ticket.id}
+                  currentStatus={ticket.status}
+                />
+                <SLAIndicator 
+                  ticket={{
+                    ...ticket,
+                    createdAt: ticket.metadata.createdAt,
+                    updatedAt: ticket.metadata.updatedAt,
+                    tags: ticket.metadata.tags
+                  }} 
                 />
               </div>
-              <div className="flex-1">
-                <div className="flex items-center justify-between">
+
+              {/* Customer Info */}
+              <div className="space-y-2">
+                <h3 className="font-medium">Customer</h3>
+                <div className="grid gap-2 text-sm">
                   <div className="flex items-center gap-2">
-                    <span className="font-medium text-gray-900">{message.author.name}</span>
-                    <span className="text-sm text-gray-500">
-                      {new Date(message.createdAt).toLocaleString()}
-                    </span>
+                    <User className="w-4 h-4 text-gray-500" />
+                    <span>{ticket.customer.name}</span>
                   </div>
+                  <div className="flex items-center gap-2">
+                    <Mail className="w-4 h-4 text-gray-500" />
+                    <span>{ticket.customer.email}</span>
+                  </div>
+                  {ticket.customer.company && (
+                    <div className="flex items-center gap-2">
+                      <Building className="w-4 h-4 text-gray-500" />
+                      <span>{ticket.customer.company}</span>
+                    </div>
+                  )}
                 </div>
-                <div className="mt-2 text-gray-600 whitespace-pre-wrap">{message.content}</div>
-                {message.attachments && message.attachments.length > 0 && (
-                  <div className="mt-3 flex items-center gap-3">
-                    {message.attachments.map((attachment) => (
-                      <a
-                        key={attachment.id}
-                        href={attachment.url}
-                        className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 \
-                          bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <Paperclip className="w-4 h-4" />
-                        {attachment.name}
-                      </a>
-                    ))}
-                  </div>
-                )}
+              </div>
+
+              {/* Tags */}
+              <div className="space-y-2">
+                <h3 className="font-medium">Tags</h3>
+                <TagList
+                  tags={ticket.metadata.tags}
+                  onTagClick={handleTagClick}
+                  limit={10}
+                />
+              </div>
+
+              {/* Custom Fields */}
+              <CustomFieldsSection
+                ticketId={ticket.id}
+                fields={ticket.metadata.customFields.map((value, index) => ({
+                  field_id: `field_${index}`,
+                  value
+                }))}
+              />
+
+              {/* Messages */}
+              <div className="space-y-2">
+                <h3 className="font-medium">Messages</h3>
+                <div className="space-y-4">
+                  {ticket.messages.map(message => (
+                    <div
+                      key={message.id}
+                      className="p-3 bg-gray-50 rounded-lg space-y-2"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          {message.author.avatar && (
+                            <img
+                              src={message.author.avatar}
+                              alt={message.author.name}
+                              className="w-6 h-6 rounded-full"
+                            />
+                          )}
+                          <span className="font-medium">
+                            {message.author.name}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-gray-500">
+                          <Clock className="w-4 h-4" />
+                          <span>
+                            {format(new Date(message.createdAt), 'MMM d, yyyy HH:mm')}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-sm whitespace-pre-wrap">
+                        {message.content}
+                      </div>
+                      {message.attachments && message.attachments.length > 0 && (
+                        <div className="flex items-center gap-2 text-sm text-gray-500">
+                          <Paperclip className="w-4 h-4" />
+                          <span>{message.attachments.length} attachments</span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
-          ))}
-        </div>
+          ) : (
+            <div className="p-4">
+              <AuditLogViewer
+                entityType="ticket"
+                entityId={ticket.id}
+              />
+            </div>
+          )}
+        </ScrollArea>
       </div>
     </div>
   )
