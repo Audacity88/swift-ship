@@ -1,4 +1,4 @@
-1. Finalize the Core Ticket System Enhancements
+1. Finalize the Core Ticket System Enhancements ✅
 Rationale
 To fully align with the guidelines, you should ensure your ticket data model and basic workflow capabilities are robust and flexible enough to handle future features.
 
@@ -42,25 +42,7 @@ Potential scheduling library or approach to track coverage hours.
 APIs or admin UI to manage these resources.
 
 
-3. Routing Intelligence & Automated Assignment
-Rationale
-Having role/team structures in place allows you to implement advanced routing logic that automatically assigns tickets based on rules or skill sets.
-
-Key Steps
-Rule-Based Assignment
-
-Provide a rules engine (e.g., “if priority is ‘urgent’ and category is ‘billing,’ assign to billing team”).
-Support multiple conditional operators (time of day, channel, custom fields).
-Skills-Based & Load-Balanced Routing
-
-Use agent skill sets and current load to distribute tickets evenly.
-Store skill data per agent or team.
-Architectural Focus
-Possibly introduce a small DSL or rule config for routing.
-Evaluate an event-driven model or a background job queue for routing decisions if real-time is not required.
-
-
-4. Self-Service Tools & Knowledge Base
+3. Self-Service Tools & Knowledge Base
 Rationale
 Offering a knowledge base and self-help features is a major requirement in modern support systems, allowing customers to find answers independently.
 
@@ -83,7 +65,7 @@ Potential integration with full-text search solutions (e.g., Postgres tsvector, 
 Connect article metrics to analytics for usage insights.
 
 
-5. Customer Portal Enhancements
+4. Customer Portal Enhancements
 Rationale
 The guidelines call for a comprehensive customer portal. Once tickets and knowledge base are in place, unify them in a simple front-end experience for customers.
 
@@ -99,6 +81,24 @@ Store or display relevant customer data (company, past interactions).
 Architectural Focus
 Reuse the existing ticket endpoints, adding proper ACL checks for customer access.
 Potentially unify the knowledge base and ticket portal under a single front-end app or separate sections.
+
+
+5. Routing Intelligence & Automated Assignment
+Rationale
+Having role/team structures in place allows you to implement advanced routing logic that automatically assigns tickets based on rules or skill sets.
+
+Key Steps
+Rule-Based Assignment
+
+Provide a rules engine (e.g., “if priority is ‘urgent’ and category is ‘billing,’ assign to billing team”).
+Support multiple conditional operators (time of day, channel, custom fields).
+Skills-Based & Load-Balanced Routing
+
+Use agent skill sets and current load to distribute tickets evenly.
+Store skill data per agent or team.
+Architectural Focus
+Possibly introduce a small DSL or rule config for routing.
+Evaluate an event-driven model or a background job queue for routing decisions if real-time is not required.
 
 
 6. AI-Powered Chatbots & Live Chat Integration
