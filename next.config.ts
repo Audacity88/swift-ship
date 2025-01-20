@@ -9,6 +9,7 @@ const config = {
         pathname: '/**',
       },
     ],
+    domains: ['picsum.photos', 'avatars.githubusercontent.com'],
   },
 }
 
