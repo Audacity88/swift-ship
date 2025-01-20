@@ -36,7 +36,7 @@ export function TicketList({ tickets, viewMode = 'list' }: TicketListProps) {
       {tickets.map((ticket) => (
         <Link
           key={ticket.id}
-          href={`/tickets/${ticket.id}/details`}
+          href={`/tickets/${ticket.id}`}
           className={`bg-white rounded-lg border border-gray-200 hover:border-gray-300 transition-colors \
             ${viewMode === 'grid' ? 'p-4' : 'p-4 flex items-start gap-4'}`}
         >
