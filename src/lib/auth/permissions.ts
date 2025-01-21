@@ -233,38 +233,14 @@ export async function isAuthorizedForRoute(pathname: string): Promise<boolean> {
     return true;
   }
 
-  // Check if the route is an admin route
-  if (pathname.startsWith('/settings/') || pathname.startsWith('/admin/')) {
-    return user.role === RoleType.ADMIN;
+  // For non-admin users, check specific permissions
+  const requiredPermissions = getPermissionsForRoute(pathname);
+  if (requiredPermissions.length === 0) {
+    // If no specific permissions are required, allow access
+    return true;
   }
 
-  // Check if the route is an agent route
-  if (
-    pathname === '/tickets' ||
-    pathname.startsWith('/tickets/') ||
-    pathname === '/inbox' ||
-    pathname.startsWith('/inbox/') ||
-    pathname === '/analytics' ||
-    pathname.startsWith('/analytics/') ||
-    pathname === '/knowledge' ||
-    pathname.startsWith('/knowledge/')
-  ) {
-    return user.type === 'agent' || user.role === RoleType.ADMIN;
-  }
-
-  // Check if the route is a customer route
-  if (pathname.startsWith('/portal/')) {
-    return user.type === 'customer';
-  }
-
-  // For any other route, check specific permissions
-  const routePermissions = getPermissionsForRoute(pathname);
-  if (routePermissions.length > 0) {
-    return hasAnyPermission(routePermissions);
-  }
-
-  // If no specific permissions are required, allow access
-  return true;
+  return hasAnyPermission(requiredPermissions);
 }
 
 // Clear cache for a user (useful for testing and role updates)

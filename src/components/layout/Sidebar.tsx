@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { 
   Home, Inbox, Quote, BarChart, Truck, Package, Settings, Ticket, 
   ListChecks, Search, Users, MessageSquare, FileText, Bell, 
-  ShoppingCart, UserCircle 
+  ShoppingCart, UserCircle, UserCog, UsersRound 
 } from 'lucide-react'
 import { ROUTES } from '@/lib/constants'
 import { useTicketStore } from '@/lib/store/tickets'
@@ -28,20 +28,46 @@ const navItems: NavItem[] = [
     href: ROUTES.inbox,
     badge: () => useTicketStore.getState().tickets.filter(t => !t.assigneeId).length
   },
-  { icon: Quote, label: 'Quote', href: ROUTES.quote },
+  { 
+    icon: Quote, 
+    label: 'Quote', 
+    href: ROUTES.quote,
+    roles: [RoleType.CUSTOMER, RoleType.AGENT, RoleType.SUPERVISOR]
+  },
   { 
     icon: BarChart, 
     label: 'Analytics', 
     href: ROUTES.analytics,
     roles: [RoleType.ADMIN, RoleType.SUPERVISOR]
   },
-  { icon: Truck, label: 'Shipments', href: ROUTES.shipments },
-  { icon: Package, label: 'Pickup', href: ROUTES.pickup },
+  { 
+    icon: Truck, 
+    label: 'Shipments', 
+    href: ROUTES.shipments,
+    roles: [RoleType.CUSTOMER, RoleType.AGENT, RoleType.SUPERVISOR]
+  },
+  { 
+    icon: Package, 
+    label: 'Pickup', 
+    href: ROUTES.pickup,
+    roles: [RoleType.CUSTOMER, RoleType.AGENT, RoleType.SUPERVISOR]
+  },
+  { 
+    icon: UserCog, 
+    label: 'Agents', 
+    href: ROUTES.agents,
+    roles: [RoleType.ADMIN]
+  },
+  {
+    icon: UsersRound,
+    label: 'Teams',
+    href: ROUTES.teams,
+    roles: [RoleType.ADMIN]
+  },
   { 
     icon: Settings, 
     label: 'Settings', 
-    href: ROUTES.settings.root,
-    roles: [RoleType.ADMIN]
+    href: ROUTES.settings.root
   },
 ]
 

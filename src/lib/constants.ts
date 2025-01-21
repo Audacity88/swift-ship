@@ -20,9 +20,15 @@ export const ROUTES = {
   upgrade: '/upgrade-now',
   profile: '/profile',
   tickets: '/tickets',
+  agents: '/agents',
+  teams: '/teams',
   settings: {
     root: '/settings',
-    teams: '/settings/teams',
+    profile: '/settings/profile',
+    notifications: '/settings/notifications',
+    security: '/settings/security',
+    billing: '/settings/billing',
+    preferences: '/settings/preferences',
   },
   portal: {
     home: '/portal',

@@ -7,7 +7,7 @@ import { useAuth } from '@/lib/hooks/useAuth'
 import { USER_ROLE_LABELS } from '@/types/role'
 import { COLORS } from '@/lib/constants'
 
-export default function ProfilePage() {
+export default function SettingsProfilePage() {
   const { user } = useAuth()
   
   if (!user) {

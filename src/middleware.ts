@@ -24,7 +24,6 @@ const PUBLIC_ASSETS = [
 const DEFAULT_AUTHENTICATED_ROUTES = [
   '/',
   '/home',
-  '/profile',
   '/notifications',
   '/quote',
   '/portal',
@@ -35,9 +34,11 @@ const DEFAULT_AUTHENTICATED_ROUTES = [
   '/search',
   '/upgrade',
   '/settings',
-  '/settings/roles',
-  '/settings/teams',
-  '/settings/users',
+  '/settings/profile',
+  '/settings/notifications',
+  '/settings/security',
+  '/settings/billing',
+  '/settings/preferences',
   '/shipments',
   '/pickup',
   '/shipments/[id]',
@@ -62,16 +63,16 @@ const AGENT_ROUTES = [
   '/tickets/queue',
   '/analytics/',
   '/analytics/[id]',
-  '/teams/[id]',
   '/knowledge',
   '/knowledge/[id]',
 ]
 
 // Define routes that require admin permissions
 const ADMIN_ROUTES = [
-  '/settings/roles/[id]',
-  '/settings/teams/[id]',
-  '/settings/users/[id]',
+  '/agents',
+  '/agents/[id]',
+  '/teams',
+  '/teams/[id]',
   '/admin',
   '/admin/[id]',
 ]
@@ -173,6 +174,11 @@ export async function middleware(request: NextRequest) {
     .single()
 
   const isCustomer = !agent
+
+  // If user is admin, allow access to everything
+  if (agent?.role === 'admin') {
+    return response
+  }
 
   // Redirect customers to home page if trying to access dashboard
   if (isCustomer && request.nextUrl.pathname === '/') {

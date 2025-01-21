@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Settings, Users, Building, Bell, Shield } from 'lucide-react'
+import { Settings, Users, Bell, Shield, CreditCard, Globe } from 'lucide-react'
 import { ROUTES } from '@/lib/constants'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { RoleType } from '@/types/role'
@@ -16,31 +16,29 @@ interface SettingsNavItem {
 
 const navItems: SettingsNavItem[] = [
   { 
-    icon: Settings, 
-    label: 'General', 
-    href: ROUTES.settings.root 
-  },
-  { 
     icon: Users, 
-    label: 'Agents', 
-    href: '/settings/agents',
-    roles: [RoleType.ADMIN]
-  },
-  { 
-    icon: Building, 
-    label: 'Teams', 
-    href: ROUTES.settings.teams,
-    roles: [RoleType.ADMIN, RoleType.SUPERVISOR]
+    label: 'Profile Information', 
+    href: ROUTES.settings.profile
   },
   { 
     icon: Bell, 
     label: 'Notifications', 
-    href: '/settings/notifications' 
+    href: ROUTES.settings.notifications
   },
   { 
     icon: Shield, 
     label: 'Security', 
-    href: '/settings/security' 
+    href: ROUTES.settings.security
+  },
+  { 
+    icon: CreditCard, 
+    label: 'Billing & Plans', 
+    href: ROUTES.settings.billing
+  },
+  { 
+    icon: Globe, 
+    label: 'Preferences', 
+    href: ROUTES.settings.preferences
   },
 ]
 
