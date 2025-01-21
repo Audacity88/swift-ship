@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { format } from 'date-fns'
 import {
-  User,
+  User as UserIcon,
   Mail,
   Phone,
   Building,
@@ -33,7 +33,9 @@ import { TagList } from '@/components/features/tags/TagList'
 import { CustomFieldsSection } from '@/components/features/custom-fields/CustomFieldsSection'
 import { StatusTransition } from '@/components/features/tickets/StatusTransition'
 import { AuditLogViewer } from '@/components/features/audit/AuditLogViewer'
-import type { Ticket, Tag } from '@/types/ticket'
+import type { Ticket, Tag, TicketComment, Customer, Agent } from '@/types/ticket'
+import type { User } from '@/types/user'
+import { TicketStatus, TicketPriority } from '@/types/enums'
 import type { CustomFieldValueWithId } from '@/types/custom-field'
 
 interface TicketDetailsProps {
@@ -43,6 +45,18 @@ interface TicketDetailsProps {
   onEdit?: () => void
   onArchive?: () => void
   onUnarchive?: () => void
+}
+
+interface TicketListItem {
+  id: string;
+  title: string;
+  status: TicketStatus;
+  priority: TicketPriority;
+  customer: Customer;
+  assignee?: Agent;
+  createdAt: string;
+  updatedAt: string;
+  tags: Tag[];
 }
 
 export function TicketDetails({
@@ -93,20 +107,26 @@ export function TicketDetails({
     )
   }
 
+  const isArchived = ticket.metadata?.archivedAt != null
+  const createdAt = ticket.metadata?.createdAt || ticket.createdAt
+  const updatedAt = ticket.metadata?.updatedAt || ticket.updatedAt
+  const tags = ticket.metadata?.tags || []
+  const customFields = ticket.metadata?.customFields || []
+
   return (
     <div className={`flex flex-col h-full ${className}`}>
       {/* Header */}
       <div className="flex items-start justify-between p-4 border-b">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-lg font-semibold">{ticket.title}</h2>
-            <Badge variant="outline">#{ticket.number}</Badge>
-            {ticket.isArchived && (
+            <h2 className="text-lg font-semibold">{ticket.subject}</h2>
+            <Badge variant="outline">#{ticket.id}</Badge>
+            {isArchived && (
               <Badge variant="secondary">Archived</Badge>
             )}
           </div>
           <div className="mt-1 text-sm text-gray-500">
-            Created {format(new Date(ticket.metadata.createdAt), 'MMM d, yyyy HH:mm')}
+            Created {format(new Date(createdAt), 'MMM d, yyyy HH:mm')}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -125,7 +145,7 @@ export function TicketDetails({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              {ticket.isArchived ? (
+              {isArchived ? (
                 <DropdownMenuItem onClick={onUnarchive}>
                   <Archive className="w-4 h-4 mr-2" />
                   Unarchive
@@ -180,10 +200,27 @@ export function TicketDetails({
                 />
                 <SLAIndicator 
                   ticket={{
-                    ...ticket,
-                    createdAt: ticket.metadata.createdAt,
-                    updatedAt: ticket.metadata.updatedAt,
-                    tags: ticket.metadata.tags
+                    id: ticket.id,
+                    title: ticket.subject,
+                    status: ticket.status,
+                    priority: ticket.priority,
+                    customer: {
+                      id: ticket.customer.id,
+                      name: ticket.customer.name,
+                      email: ticket.customer.email,
+                      avatar: ticket.customer.avatar,
+                      company: ticket.metadata?.company
+                    },
+                    assignee: ticket.assignee ? {
+                      id: ticket.assignee.id,
+                      name: ticket.assignee.name,
+                      email: ticket.assignee.email,
+                      avatar: ticket.assignee.avatar,
+                      role: ticket.assignee.role.toLowerCase() as 'agent' | 'admin'
+                    } : undefined,
+                    createdAt,
+                    updatedAt,
+                    tags
                   }} 
                 />
               </div>
@@ -193,17 +230,17 @@ export function TicketDetails({
                 <h3 className="font-medium">Customer</h3>
                 <div className="grid gap-2 text-sm">
                   <div className="flex items-center gap-2">
-                    <User className="w-4 h-4 text-gray-500" />
+                    <UserIcon className="w-4 h-4 text-gray-500" />
                     <span>{ticket.customer.name}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Mail className="w-4 h-4 text-gray-500" />
                     <span>{ticket.customer.email}</span>
                   </div>
-                  {ticket.customer.company && (
+                  {ticket.metadata?.company && (
                     <div className="flex items-center gap-2">
                       <Building className="w-4 h-4 text-gray-500" />
-                      <span>{ticket.customer.company}</span>
+                      <span>{ticket.metadata.company}</span>
                     </div>
                   )}
                 </div>
@@ -213,7 +250,7 @@ export function TicketDetails({
               <div className="space-y-2">
                 <h3 className="font-medium">Tags</h3>
                 <TagList
-                  tags={ticket.metadata.tags}
+                  tags={tags}
                   onTagClick={handleTagClick}
                   limit={10}
                 />
@@ -222,7 +259,7 @@ export function TicketDetails({
               {/* Custom Fields */}
               <CustomFieldsSection
                 ticketId={ticket.id}
-                fields={ticket.metadata.customFields.map((value, index) => ({
+                fields={customFields.map((value: any, index: number) => ({
                   field_id: `field_${index}`,
                   value
                 }))}
@@ -232,42 +269,39 @@ export function TicketDetails({
               <div className="space-y-2">
                 <h3 className="font-medium">Messages</h3>
                 <div className="space-y-4">
-                  {ticket.messages.map(message => (
-                    <div
-                      key={message.id}
-                      className="p-3 bg-gray-50 rounded-lg space-y-2"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          {message.author.avatar && (
-                            <img
-                              src={message.author.avatar}
-                              alt={message.author.name}
-                              className="w-6 h-6 rounded-full"
-                            />
-                          )}
-                          <span className="font-medium">
-                            {message.author.name}
-                          </span>
+                  {ticket.comments?.map((comment) => {
+                    const commentUser = comment.user;
+                    return (
+                      <div
+                        key={comment.id}
+                        className="p-3 bg-gray-50 rounded-lg space-y-2"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            {commentUser?.avatar && (
+                              <img
+                                src={commentUser.avatar}
+                                alt={commentUser.name}
+                                className="w-6 h-6 rounded-full"
+                              />
+                            )}
+                            <span className="font-medium">
+                              {commentUser?.name}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm text-gray-500">
+                            <Clock className="w-4 h-4" />
+                            <span>
+                              {format(comment.createdAt, 'MMM d, yyyy HH:mm')}
+                            </span>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2 text-sm text-gray-500">
-                          <Clock className="w-4 h-4" />
-                          <span>
-                            {format(new Date(message.createdAt), 'MMM d, yyyy HH:mm')}
-                          </span>
+                        <div className="text-sm whitespace-pre-wrap">
+                          {comment.content}
                         </div>
                       </div>
-                      <div className="text-sm whitespace-pre-wrap">
-                        {message.content}
-                      </div>
-                      {message.attachments && message.attachments.length > 0 && (
-                        <div className="flex items-center gap-2 text-sm text-gray-500">
-                          <Paperclip className="w-4 h-4" />
-                          <span>{message.attachments.length} attachments</span>
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>

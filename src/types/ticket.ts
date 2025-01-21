@@ -1,8 +1,19 @@
 import type { CustomFieldValue } from './custom-field'
+import { User } from './user'
 
-export type TicketStatus = 'open' | 'in_progress' | 'waiting' | 'resolved' | 'closed'
+export enum TicketStatus {
+  OPEN = 'open',
+  IN_PROGRESS = 'in_progress',
+  RESOLVED = 'resolved',
+  CLOSED = 'closed'
+}
 
-export type TicketPriority = 'low' | 'medium' | 'high' | 'urgent'
+export enum TicketPriority {
+  LOW = 'low',
+  MEDIUM = 'medium',
+  HIGH = 'high',
+  URGENT = 'urgent'
+}
 
 export type TicketType = 'question' | 'problem' | 'incident' | 'task'
 
@@ -64,22 +75,43 @@ export interface TicketSnapshot {
   triggeredBy: Agent
 }
 
+export interface TicketComment {
+  id: string
+  ticketId: string
+  content: string
+  user: User
+  isInternal: boolean
+  createdAt: string
+  updatedAt: string
+}
+
 export interface Ticket {
   id: string
-  number: string
   title: string
+  subject: string
   description: string
   status: TicketStatus
   priority: TicketPriority
-  type: TicketType
-  customer: Customer
-  assignee?: Agent
-  messages: Message[]
-  followers: Agent[]
-  metadata: TicketMetadata
-  linkedProblems?: string[]
-  isArchived?: boolean
-  snapshots?: TicketSnapshot[]
+  isArchived: boolean
+  metadata: {
+    createdAt: string
+    updatedAt: string
+    lastSnapshotAt?: string
+    archivedAt?: string
+    archivedBy?: Agent
+    archiveReason?: string
+    tags: Tag[]
+    customFields?: Record<string, any>
+    company?: string
+  }
+  customerId: string
+  assigneeId?: string
+  customer: User
+  assignee?: User
+  comments: TicketComment[]
+  createdAt: string
+  updatedAt: string
+  resolvedAt?: string
 }
 
 export interface TicketListItem {

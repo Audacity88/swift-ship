@@ -3,25 +3,26 @@
 import { useState } from 'react'
 import { Search, Filter, X } from 'lucide-react'
 import { TicketList } from '@/components/features/tickets/TicketList'
-import type { TicketListItem, TicketStatus, TicketPriority } from '@/types/ticket'
+import { TicketStatus, TicketPriority } from '@/types/enums'
+import type { TicketListItem } from '@/types/ticket'
 
 // Mock data - replace with actual API calls
 const mockTickets: TicketListItem[] = [
   {
     id: '1',
     title: 'Unable to access dashboard after recent update',
-    status: 'open',
-    priority: 'high',
+    status: TicketStatus.OPEN,
+    priority: TicketPriority.HIGH,
     customer: {
       id: '1',
       name: 'John Doe',
-      email: 'john@example.com',
+      email: 'john@example.com'
     },
     assignee: {
       id: '1',
       name: 'Support Agent',
       email: 'agent@example.com',
-      role: 'agent',
+      role: 'agent'
     },
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -123,11 +124,10 @@ export default function SearchTicketsPage() {
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
                 >
                   <option value="">Any status</option>
-                  <option value="open">Open</option>
-                  <option value="in_progress">In Progress</option>
-                  <option value="waiting">Waiting</option>
-                  <option value="resolved">Resolved</option>
-                  <option value="closed">Closed</option>
+                  <option value={TicketStatus.OPEN}>Open</option>
+                  <option value={TicketStatus.IN_PROGRESS}>In Progress</option>
+                  <option value={TicketStatus.RESOLVED}>Resolved</option>
+                  <option value={TicketStatus.CLOSED}>Closed</option>
                 </select>
               </div>
 
@@ -142,10 +142,10 @@ export default function SearchTicketsPage() {
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
                 >
                   <option value="">Any priority</option>
-                  <option value="urgent">Urgent</option>
-                  <option value="high">High</option>
-                  <option value="medium">Medium</option>
-                  <option value="low">Low</option>
+                  <option value={TicketPriority.URGENT}>Urgent</option>
+                  <option value={TicketPriority.HIGH}>High</option>
+                  <option value={TicketPriority.MEDIUM}>Medium</option>
+                  <option value={TicketPriority.LOW}>Low</option>
                 </select>
               </div>
 

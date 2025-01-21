@@ -1,4 +1,4 @@
-import type { TicketStatus, TicketPriority } from './ticket'
+import { TicketStatus, TicketPriority } from './ticket'
 
 export interface SLAConfig {
   id: string
@@ -71,7 +71,7 @@ export const DEFAULT_SLA_CONFIGS: SLAConfig[] = [
   {
     id: 'urgent_sla',
     name: 'Urgent Tickets',
-    priority: 'urgent',
+    priority: TicketPriority.URGENT,
     responseTime: 30, // 30 minutes
     resolutionTime: 240, // 4 hours
     escalations: [
@@ -100,7 +100,7 @@ export const DEFAULT_SLA_CONFIGS: SLAConfig[] = [
   {
     id: 'high_sla',
     name: 'High Priority',
-    priority: 'high',
+    priority: TicketPriority.HIGH,
     responseTime: 60, // 1 hour
     resolutionTime: 480, // 8 hours
     escalations: [
@@ -122,7 +122,7 @@ export const DEFAULT_SLA_CONFIGS: SLAConfig[] = [
   {
     id: 'medium_sla',
     name: 'Medium Priority',
-    priority: 'medium',
+    priority: TicketPriority.MEDIUM,
     responseTime: 240, // 4 hours
     resolutionTime: 1440, // 24 hours
     escalations: [
@@ -144,7 +144,7 @@ export const DEFAULT_SLA_CONFIGS: SLAConfig[] = [
   {
     id: 'low_sla',
     name: 'Low Priority',
-    priority: 'low',
+    priority: TicketPriority.LOW,
     responseTime: 480, // 8 hours
     resolutionTime: 2880, // 48 hours
     escalations: [
@@ -168,13 +168,13 @@ export const DEFAULT_STATUS_AUTOMATIONS: StatusAutomation[] = [
       {
         type: 'time_in_status',
         params: {
-          status: 'in_progress',
+          status: TicketStatus.IN_PROGRESS,
           timeThreshold: 1440 // 24 hours
         }
       }
     ],
     actions: [
-      { type: 'change_status', status: 'waiting' },
+      { type: 'change_status', status: TicketStatus.OPEN },
       { type: 'notify', roles: ['customer'] }
     ],
     isActive: true
@@ -187,13 +187,13 @@ export const DEFAULT_STATUS_AUTOMATIONS: StatusAutomation[] = [
       {
         type: 'time_in_status',
         params: {
-          status: 'resolved',
+          status: TicketStatus.RESOLVED,
           timeThreshold: 10080 // 7 days
         }
       }
     ],
     actions: [
-      { type: 'change_status', status: 'closed' },
+      { type: 'change_status', status: TicketStatus.CLOSED },
       { type: 'notify', roles: ['assignee', 'customer'] }
     ],
     isActive: true

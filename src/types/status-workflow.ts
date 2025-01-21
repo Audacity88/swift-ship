@@ -1,4 +1,4 @@
-import type { TicketStatus } from './ticket'
+import { TicketStatus } from './ticket'
 import type { Agent } from './ticket'
 
 export interface StatusTransition {
@@ -43,8 +43,8 @@ export interface StatusHistory {
 // Default status workflow configuration
 export const DEFAULT_STATUS_WORKFLOW: StatusTransition[] = [
   {
-    from: 'open',
-    to: 'in_progress',
+    from: TicketStatus.OPEN,
+    to: TicketStatus.IN_PROGRESS,
     conditions: [
       {
         type: 'required_fields',
@@ -63,8 +63,8 @@ export const DEFAULT_STATUS_WORKFLOW: StatusTransition[] = [
     ]
   },
   {
-    from: 'in_progress',
-    to: 'waiting',
+    from: TicketStatus.IN_PROGRESS,
+    to: TicketStatus.OPEN,
     automationHooks: [
       {
         type: 'notification',
@@ -81,8 +81,8 @@ export const DEFAULT_STATUS_WORKFLOW: StatusTransition[] = [
     ]
   },
   {
-    from: 'waiting',
-    to: 'in_progress',
+    from: TicketStatus.OPEN,
+    to: TicketStatus.IN_PROGRESS,
     automationHooks: [
       {
         type: 'sla_update',
@@ -93,8 +93,8 @@ export const DEFAULT_STATUS_WORKFLOW: StatusTransition[] = [
     ]
   },
   {
-    from: 'in_progress',
-    to: 'resolved',
+    from: TicketStatus.IN_PROGRESS,
+    to: TicketStatus.RESOLVED,
     conditions: [
       {
         type: 'required_fields',
@@ -119,8 +119,8 @@ export const DEFAULT_STATUS_WORKFLOW: StatusTransition[] = [
     ]
   },
   {
-    from: 'resolved',
-    to: 'closed',
+    from: TicketStatus.RESOLVED,
+    to: TicketStatus.CLOSED,
     conditions: [
       {
         type: 'time_elapsed',

@@ -170,4 +170,44 @@ export const buildSearchQuery = (group: SearchGroup): string => {
 export const parseSearchQuery = (query: string): SearchGroup => {
   // TODO: Implement query string parsing
   return { type: 'and', conditions: [] }
+}
+
+export interface SearchFilters {
+  categoryId?: string;
+  tags?: string[];
+  limit?: number;
+  offset?: number;
+}
+
+export interface SearchResult<T> {
+  items: T[];
+  total: number;
+  metadata: {
+    executionTimeMs: number;
+    query: string;
+  };
+}
+
+export interface SearchAnalytics {
+  query: string;
+  searcherId: string;
+  searcherType: 'customer' | 'agent';
+  filters: SearchFilters;
+  resultCount: number;
+  executionTimeMs: number;
+}
+
+export interface SearchSuggestion {
+  word: string;
+  frequency: number;
+  lastSearchedAt: Date;
+}
+
+export interface FailedSearch {
+  query: string;
+  searcherId: string;
+  searcherType: 'customer' | 'agent';
+  filters: SearchFilters;
+  errorMessage: string;
+  createdAt: Date;
 } 

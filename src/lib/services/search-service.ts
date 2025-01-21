@@ -1,23 +1,34 @@
-import type { 
+import { createClient } from '@supabase/supabase-js';
+import { 
   SearchField, 
   SearchGroup,
   SavedSearch,
   SearchCondition,
-  SearchResponse
+  SearchResponse,
+  SearchFilters,
+  SearchAnalytics
 } from '@/types/search'
 import { DEFAULT_SEARCH_FIELDS, buildSearchQuery } from '@/types/search'
 import type { Ticket } from '@/types/ticket'
+import { db } from '@/lib/db'
+import { Article } from '@/types/knowledge'
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 export interface SearchFacets {
   [key: string]: Array<{ value: string | number; count: number }>
 }
 
-export interface SearchResult {
-  total: number
-  page: number
-  pageSize: number
-  results: Ticket[]
-  facets: SearchFacets
+export interface SearchResult<T> {
+  items: T[];
+  total: number;
+  metadata: {
+    executionTimeMs: number;
+    query: string;
+  };
 }
 
 export class SearchService {
@@ -36,10 +47,9 @@ export class SearchService {
       page?: number
       pageSize?: number
       sort?: { field: string; direction: 'asc' | 'desc' }[]
-      facets?: string[]
     } = {}
-  ): Promise<SearchResult> {
-    const { page = 1, pageSize = 20, sort = [], facets = [] } = options
+  ): Promise<SearchResult<Ticket>> {
+    const { page = 1, pageSize = 20, sort = [] } = options
 
     // Build search query string
     const queryString = buildSearchQuery(query)
@@ -48,11 +58,12 @@ export class SearchService {
     // This would typically use Elasticsearch, Algolia, or similar
 
     return {
+      items: [],
       total: 0,
-      page,
-      pageSize,
-      results: [],
-      facets: {}
+      metadata: {
+        executionTimeMs: 0,
+        query: queryString
+      }
     }
   }
 
@@ -169,35 +180,118 @@ export class SearchService {
   }
 
   /**
-   * Build facets for search results
-   */
-  private buildFacets(tickets: Ticket[], fields: string[]): SearchResult['facets'] {
-    const facets: SearchResult['facets'] = {}
-
-    fields.forEach(field => {
-      const values = new Map<string | number, number>()
-      
-      tickets.forEach(ticket => {
-        const value = this.getFieldValue(ticket, field)
-        if (value !== undefined) {
-          values.set(value, (values.get(value) || 0) + 1)
-        }
-      })
-
-      facets[field] = Array.from(values.entries()).map(([value, count]) => ({
-        value,
-        count
-      }))
-    })
-
-    return facets
-  }
-
-  /**
    * Get a field value from a ticket using dot notation
    */
   private getFieldValue(ticket: any, path: string): any {
     return path.split('.').reduce((obj, key) => obj?.[key], ticket)
+  }
+
+  // Search articles with relevance scoring and highlighting
+  async searchArticles(
+    query: string,
+    filters: SearchFilters,
+    userId: string,
+    userType: 'customer' | 'agent'
+  ): Promise<SearchResult<Article>> {
+    const startTime = Date.now();
+    
+    try {
+      const { data: results, error } = await supabase
+        .from('articles')
+        .select('*')
+        .textSearch('search_vector', query)
+        .eq('status', 'published')
+        .range(filters.offset || 0, (filters.offset || 0) + (filters.limit || 10) - 1);
+
+      if (error) throw error;
+      
+      await this.trackSearchAnalytics({
+        query,
+        searcherId: userId,
+        searcherType: userType,
+        filters,
+        resultCount: results.length,
+        executionTimeMs: Date.now() - startTime
+      });
+
+      return {
+        items: results,
+        total: results.length,
+        metadata: {
+          executionTimeMs: Date.now() - startTime,
+          query
+        }
+      };
+    } catch (error) {
+      await this.trackFailedSearch({
+        query,
+        searcherId: userId,
+        searcherType: userType,
+        filters,
+        errorMessage: error instanceof Error ? error.message : 'Unknown error'
+      });
+      throw error;
+    }
+  }
+
+  // Get search suggestions based on past searches
+  async getSearchSuggestions(
+    partialQuery: string,
+    limit: number = 5
+  ): Promise<string[]> {
+    const { data: results, error } = await supabase
+      .from('search_suggestions')
+      .select('word')
+      .ilike('word', `${partialQuery}%`)
+      .order('frequency', { ascending: false })
+      .order('last_searched_at', { ascending: false })
+      .limit(limit);
+
+    if (error) throw error;
+    return results.map(row => row.word);
+  }
+
+  // Track successful searches for analytics
+  private async trackSearchAnalytics(data: SearchAnalytics): Promise<void> {
+    const { error } = await supabase
+      .from('search_analytics')
+      .insert([{
+        query: data.query,
+        searcher_type: data.searcherType,
+        searcher_id: data.searcherId,
+        filters: data.filters,
+        result_count: data.resultCount,
+        execution_time_ms: data.executionTimeMs
+      }]);
+
+    if (error) throw error;
+  }
+
+  // Track failed searches for monitoring
+  private async trackFailedSearch(data: {
+    query: string;
+    searcherId: string;
+    searcherType: 'customer' | 'agent';
+    filters: SearchFilters;
+    errorMessage: string;
+  }): Promise<void> {
+    const { error } = await supabase
+      .from('failed_searches')
+      .insert([{
+        query: data.query,
+        searcher_type: data.searcherType,
+        searcher_id: data.searcherId,
+        filters: data.filters,
+        error_message: data.errorMessage
+      }]);
+
+    if (error) throw error;
+  }
+
+  // Refresh search suggestions materialized view
+  async refreshSearchSuggestions(): Promise<void> {
+    const { error } = await supabase.rpc('refresh_search_suggestions');
+    if (error) throw error;
   }
 }
 

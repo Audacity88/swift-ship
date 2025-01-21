@@ -1,46 +1,81 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { Paperclip, Send } from 'lucide-react'
-import type { Message } from '@/types/ticket'
+import { Paperclip, Send, X } from 'lucide-react'
+import type { User } from '@/types/user'
+import { UserRole } from '@/types/enums'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 
-interface ReplyComposerProps {
-  onSubmit: (message: Omit<Message, 'id' | 'createdAt'>) => void
-  isSubmitting?: boolean
+interface ReplyMessage {
+  content: string;
+  user: User;
+  attachments?: File[];
 }
 
-export function ReplyComposer({ onSubmit, isSubmitting = false }: ReplyComposerProps) {
+interface ReplyComposerProps {
+  onSubmit: (message: ReplyMessage) => void;
+  isSubmitting: boolean;
+}
+
+export function ReplyComposer({ onSubmit, isSubmitting }: ReplyComposerProps) {
   const [content, setContent] = useState('')
   const [attachments, setAttachments] = useState<File[]>([])
+  const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!content.trim() && attachments.length === 0) return
+  const handleSubmit = () => {
+    if (!content.trim()) return
+
+    // Mock user data - replace with actual user data from auth context
+    const mockUser: User = {
+      id: '1',
+      name: 'Support Agent',
+      email: 'agent@example.com',
+      role: UserRole.AGENT,
+      isActive: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }
 
     onSubmit({
-      content,
-      author: {
-        id: 'current-user-id', // This should come from auth context
-        name: 'Current User', // This should come from auth context
-        email: 'user@example.com', // This should come from auth context
-        role: 'agent',
-      },
-      attachments: attachments.map((file, index) => ({
-        id: `temp-${index}`,
-        name: file.name,
-        url: URL.createObjectURL(file),
-        type: file.type,
-      })),
+      content: content.trim(),
+      user: mockUser,
+      attachments: attachments.length > 0 ? attachments : undefined
     })
-
     setContent('')
     setAttachments([])
   }
 
+  const handleFileSelect = () => {
+    fileInputRef.current?.click()
+  }
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
+    const totalSize = files.reduce((sum, file) => sum + file.size, 0)
+    
+    // Check file size (10MB limit per file)
+    const oversizedFiles = files.filter(file => file.size > 10 * 1024 * 1024)
+    if (oversizedFiles.length > 0) {
+      setError('Some files exceed the 10MB size limit')
+      return
+    }
+
+    // Check total size (50MB total limit)
+    if (totalSize > 50 * 1024 * 1024) {
+      setError('Total attachment size exceeds 50MB limit')
+      return
+    }
+
+    setError(null)
     setAttachments((prev) => [...prev, ...files])
+    
+    // Reset input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
   }
 
   const handlePaste = (e: React.ClipboardEvent) => {
@@ -50,83 +85,104 @@ export function ReplyComposer({ onSubmit, isSubmitting = false }: ReplyComposerP
       .map((item) => item.getAsFile())
       .filter((file): file is File => file !== null)
     
-    setAttachments((prev) => [...prev, ...files])
+    if (files.length > 0) {
+      const totalSize = files.reduce((sum, file) => sum + file.size, 0)
+      
+      // Check file size (10MB limit per file)
+      const oversizedFiles = files.filter(file => file.size > 10 * 1024 * 1024)
+      if (oversizedFiles.length > 0) {
+        setError('Some pasted files exceed the 10MB size limit')
+        return
+      }
+
+      // Check total size (50MB total limit)
+      if (totalSize > 50 * 1024 * 1024) {
+        setError('Total attachment size exceeds 50MB limit')
+        return
+      }
+
+      setError(null)
+      setAttachments((prev) => [...prev, ...files])
+    }
   }
 
   const removeAttachment = (index: number) => {
     setAttachments((prev) => prev.filter((_, i) => i !== index))
+    if (attachments.length === 1) {
+      setError(null)
+    }
   }
 
   return (
-    <form onSubmit={handleSubmit} className="bg-white border border-gray-200 rounded-lg">
-      <div className="p-4">
-        <textarea
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          onPaste={handlePaste}
-          placeholder="Type your reply..."
-          className="w-full min-h-[100px] resize-y text-sm text-gray-900 bg-transparent border-0 \
-            focus:ring-0 focus:outline-none"
-          disabled={isSubmitting}
-        />
-
-        {/* Attachments Preview */}
-        {attachments.length > 0 && (
-          <div className="mt-4 flex flex-wrap gap-2">
-            {attachments.map((file, index) => (
-              <div
-                key={index}
-                className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 rounded-lg text-sm text-gray-600"
+    <div className="space-y-4">
+      <Textarea
+        value={content}
+        onChange={(e) => setContent(e.target.value)}
+        onPaste={handlePaste}
+        placeholder="Type your reply..."
+        rows={4}
+      />
+      
+      {/* File Attachments */}
+      {attachments.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {attachments.map((file, index) => (
+            <div
+              key={index}
+              className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1"
+            >
+              <span className="text-sm text-gray-700">{file.name}</span>
+              <button
+                onClick={() => removeAttachment(index)}
+                className="text-gray-500 hover:text-gray-700"
               >
-                <Paperclip className="w-4 h-4" />
-                <span>{file.name}</span>
-                <button
-                  type="button"
-                  onClick={() => removeAttachment(index)}
-                  className="ml-2 text-gray-400 hover:text-gray-600"
-                >
-                  &times;
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Actions */}
-      <div className="flex items-center justify-between gap-4 px-4 py-3 border-t border-gray-200">
-        <div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            className="hidden"
-            onChange={handleFileChange}
-            disabled={isSubmitting}
-          />
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 \
-              transition-colors"
-            disabled={isSubmitting}
-          >
-            <Paperclip className="w-4 h-4" />
-            Attach files
-          </button>
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
         </div>
+      )}
 
-        <button
-          type="submit"
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white \
-            bg-primary rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
-          disabled={isSubmitting || (!content.trim() && attachments.length === 0)}
-          style={{ backgroundColor: '#0052CC' }}
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      <div className="flex justify-between items-center">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={handleFileSelect}
+          disabled={isSubmitting}
         >
-          <Send className="w-4 h-4" />
-          Send Reply
-        </button>
+          <Paperclip className="h-4 w-4 mr-2" />
+          Attach Files
+        </Button>
+
+        <Button
+          onClick={handleSubmit}
+          disabled={!content.trim() || isSubmitting}
+        >
+          {isSubmitting ? (
+            'Sending...'
+          ) : (
+            <>
+              <Send className="h-4 w-4 mr-2" />
+              Send Reply
+            </>
+          )}
+        </Button>
       </div>
-    </form>
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        onChange={handleFileChange}
+        className="hidden"
+      />
+    </div>
   )
 } 

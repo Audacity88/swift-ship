@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useParams } from 'next/navigation'
 import { AlertTriangle, ArrowUp, ArrowDown, Check } from 'lucide-react'
-import type { TicketPriority } from '@/types/ticket'
+import { TicketPriority } from '@/types/ticket'
 
 interface PriorityOption {
   priority: TicketPriority
@@ -16,7 +16,7 @@ interface PriorityOption {
 
 const priorityOptions: PriorityOption[] = [
   {
-    priority: 'urgent',
+    priority: TicketPriority.URGENT,
     label: 'Urgent',
     description: 'Critical issue requiring immediate attention',
     icon: AlertTriangle,
@@ -24,7 +24,7 @@ const priorityOptions: PriorityOption[] = [
     sla: '1 hour',
   },
   {
-    priority: 'high',
+    priority: TicketPriority.HIGH,
     label: 'High',
     description: 'Serious issue that needs to be resolved quickly',
     icon: ArrowUp,
@@ -32,7 +32,7 @@ const priorityOptions: PriorityOption[] = [
     sla: '4 hours',
   },
   {
-    priority: 'medium',
+    priority: TicketPriority.MEDIUM,
     label: 'Medium',
     description: 'Important issue but not time-critical',
     icon: ArrowUp,
@@ -40,7 +40,7 @@ const priorityOptions: PriorityOption[] = [
     sla: '24 hours',
   },
   {
-    priority: 'low',
+    priority: TicketPriority.LOW,
     label: 'Low',
     description: 'Minor issue that can be addressed later',
     icon: ArrowDown,
@@ -52,7 +52,7 @@ const priorityOptions: PriorityOption[] = [
 export default function TicketPriorityPage() {
   const params = useParams()
   const ticketId = params?.id as string
-  const [selectedPriority, setSelectedPriority] = useState<TicketPriority>('medium')
+  const [selectedPriority, setSelectedPriority] = useState<TicketPriority>(TicketPriority.MEDIUM)
   const [isUpdating, setIsUpdating] = useState(false)
 
   const handleUpdate = async () => {

@@ -65,11 +65,6 @@ Potential integration with full-text search solutions (e.g., Postgres tsvector, 
 Connect article metrics to analytics for usage insights.
 
 
-4. Customer Portal Enhancements
-Rationale
-The guidelines call for a comprehensive customer portal. Once tickets and knowledge base are in place, unify them in a simple front-end experience for customers.
-
-Key Steps
 Ticket Viewing & Updates
 
 Provide a self-service ticket list, status updates, and messaging threads.

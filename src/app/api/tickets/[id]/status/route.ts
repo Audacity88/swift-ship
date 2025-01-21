@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
-import type { TicketStatus } from '@/types/ticket'
+import { TicketStatus } from '@/types/ticket'
 import { DEFAULT_STATUS_WORKFLOW } from '@/types/status-workflow'
 
 interface StatusTransitionRequest {
@@ -34,9 +34,9 @@ const createClient = () => {
 }
 
 const mockTransitions: Record<TicketStatus, StatusTransition[]> = {
-  'open': [
+  [TicketStatus.OPEN]: [
     {
-      status: 'in_progress',
+      status: TicketStatus.IN_PROGRESS,
       conditions: [
         {
           type: 'required_fields',
@@ -45,7 +45,7 @@ const mockTransitions: Record<TicketStatus, StatusTransition[]> = {
       ]
     },
     {
-      status: 'closed',
+      status: TicketStatus.CLOSED,
       conditions: [
         {
           type: 'resolution',
@@ -54,18 +54,9 @@ const mockTransitions: Record<TicketStatus, StatusTransition[]> = {
       ]
     }
   ],
-  'in_progress': [
+  [TicketStatus.IN_PROGRESS]: [
     {
-      status: 'waiting',
-      conditions: [
-        {
-          type: 'comment',
-          message: 'A comment must be added explaining what we are waiting for'
-        }
-      ]
-    },
-    {
-      status: 'resolved',
+      status: TicketStatus.RESOLVED,
       conditions: [
         {
           type: 'resolution',
@@ -74,26 +65,12 @@ const mockTransitions: Record<TicketStatus, StatusTransition[]> = {
       ]
     }
   ],
-  'waiting': [
+  [TicketStatus.RESOLVED]: [
     {
-      status: 'in_progress'
+      status: TicketStatus.CLOSED
     },
     {
-      status: 'resolved',
-      conditions: [
-        {
-          type: 'resolution',
-          message: 'Resolution must be provided'
-        }
-      ]
-    }
-  ],
-  'resolved': [
-    {
-      status: 'closed'
-    },
-    {
-      status: 'in_progress',
+      status: TicketStatus.IN_PROGRESS,
       conditions: [
         {
           type: 'comment',
@@ -102,9 +79,9 @@ const mockTransitions: Record<TicketStatus, StatusTransition[]> = {
       ]
     }
   ],
-  'closed': [
+  [TicketStatus.CLOSED]: [
     {
-      status: 'in_progress',
+      status: TicketStatus.IN_PROGRESS,
       requiredRole: 'admin',
       conditions: [
         {
@@ -302,7 +279,7 @@ export async function GET(
   try {
     // Get current ticket status
     // For now, just use mock data
-    const currentStatus: TicketStatus = 'open'
+    const currentStatus: TicketStatus = TicketStatus.OPEN
 
     // Get available transitions
     const availableTransitions = mockTransitions[currentStatus] || []

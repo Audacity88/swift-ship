@@ -243,44 +243,44 @@ export class SLAService {
     conditions: StatusCondition[]
   ): Promise<boolean> {
     for (const condition of conditions) {
-      let met = false
+      let met = false;
 
       switch (condition.type) {
         case 'time_in_status':
           if (condition.params.status === ticket.status) {
-            const timeInStatus = Date.now() - new Date(ticket.metadata.updatedAt).getTime()
-            const thresholdMs = (condition.params.timeThreshold || 0) * 60 * 1000
-            met = timeInStatus >= thresholdMs
+            const timeInStatus = Date.now() - new Date(ticket.metadata?.updatedAt || Date.now()).getTime();
+            const thresholdMs = (condition.params.timeThreshold || 0) * 60 * 1000;
+            met = timeInStatus >= thresholdMs;
           }
-          break
+          break;
 
         case 'priority':
           if (condition.params.minPriority) {
-            const priorities = ['low', 'medium', 'high', 'urgent']
-            const minIndex = priorities.indexOf(condition.params.minPriority)
-            const currentIndex = priorities.indexOf(ticket.priority)
-            met = currentIndex >= minIndex
+            const priorities = ['low', 'medium', 'high', 'urgent'];
+            const minIndex = priorities.indexOf(condition.params.minPriority);
+            const currentIndex = priorities.indexOf(ticket.priority);
+            met = currentIndex >= minIndex;
           }
-          break
+          break;
 
         case 'tag':
           if (condition.params.tags) {
-            const ticketTags = new Set(ticket.metadata.tags.map(t => t.id))
-            met = condition.params.tags.every(tag => ticketTags.has(tag))
+            const ticketTags = new Set(ticket.metadata?.tags?.map(t => t.id) || []);
+            met = condition.params.tags.every(tag => ticketTags.has(tag));
           }
-          break
+          break;
 
         case 'custom':
           if (condition.params.customCheck) {
-            met = await condition.params.customCheck(ticket.id)
+            met = await condition.params.customCheck(ticket.id);
           }
-          break
+          break;
       }
 
-      if (!met) return false
+      if (!met) return false;
     }
 
-    return true
+    return true;
   }
 
   /**

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Image from 'next/image'
 import { Users, BarChart3, Clock, AlertTriangle } from 'lucide-react'
 import { TicketList } from '@/components/features/tickets/TicketList'
+import { TicketStatus, TicketPriority } from '@/types/enums'
 import type { TicketListItem, Agent } from '@/types/ticket'
 
 // Mock data - replace with actual API calls
@@ -35,12 +36,12 @@ const mockTickets: TicketListItem[] = [
   {
     id: '1',
     title: 'Unable to access dashboard after recent update',
-    status: 'open',
-    priority: 'high',
+    status: TicketStatus.OPEN,
+    priority: TicketPriority.HIGH,
     customer: {
       id: '1',
       name: 'John Doe',
-      email: 'john@example.com',
+      email: 'john@example.com'
     },
     assignee: mockAgents[0],
     createdAt: new Date().toISOString(),

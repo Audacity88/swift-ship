@@ -1,63 +1,82 @@
 import { NextResponse } from 'next/server'
-import type { Ticket } from '@/types/ticket'
+import type { Ticket, TicketComment } from '@/types/ticket'
+import { TicketStatus, TicketPriority } from '@/types/ticket'
+import { UserRole } from '@/types/user'
 
 // Mock data - replace with actual database query
 const mockTicket: Ticket = {
   id: '1',
-  number: 'TICK-1001',
   title: 'Unable to access dashboard after recent update',
+  subject: 'Unable to access dashboard after recent update',
   description: 'After the latest update, I am unable to access the dashboard. The page loads indefinitely and eventually times out. This is blocking our team from accessing critical metrics.',
-  status: 'open',
-  priority: 'high',
-  type: 'problem',
+  status: TicketStatus.OPEN,
+  priority: TicketPriority.HIGH,
+  isArchived: false,
+  metadata: {
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    tags: [],
+    customFields: {},
+    company: 'Acme Corp'
+  },
+  customerId: '1',
+  assigneeId: '2',
   customer: {
     id: '1',
     name: 'John Doe',
     email: 'john@example.com',
+    role: UserRole.CUSTOMER,
+    isActive: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
   },
   assignee: {
-    id: '1',
+    id: '2',
     name: 'Support Agent',
     email: 'agent@example.com',
-    role: 'agent',
+    role: UserRole.AGENT,
+    isActive: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
   },
-  messages: [
+  comments: [
     {
       id: '1',
+      ticketId: '1',
       content: 'Hi, I am experiencing issues accessing the dashboard after the recent update.',
-      createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-      author: {
+      user: {
         id: '1',
         name: 'John Doe',
         email: 'john@example.com',
+        role: UserRole.CUSTOMER,
+        isActive: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       },
+      isInternal: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     },
     {
       id: '2',
+      ticketId: '1',
       content: 'Thank you for reporting this issue. Could you please provide your browser version and any error messages you are seeing?',
-      createdAt: new Date(Date.now() - 23 * 60 * 60 * 1000).toISOString(),
-      author: {
-        id: '1',
+      user: {
+        id: '2',
         name: 'Support Agent',
         email: 'agent@example.com',
-        role: 'agent',
+        role: UserRole.AGENT,
+        isActive: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       },
-    },
+      isInternal: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }
   ],
-  followers: [],
-  metadata: {
-    createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 23 * 60 * 60 * 1000).toISOString(),
-    tags: [
-      { id: '1', name: 'bug', color: '#DE350B' },
-      { id: '2', name: 'dashboard', color: '#00B8D9' },
-    ],
-    source: 'web',
-    customFields: [
-      'Chrome 120.0.0',
-      'high'
-    ],
-  },
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString()
 }
 
 export async function GET(

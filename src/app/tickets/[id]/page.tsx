@@ -8,7 +8,9 @@ import {
   Tag, Link as LinkIcon, Users, ChevronDown, MessageSquare
 } from 'lucide-react'
 import { COLORS } from '@/lib/constants'
-import type { Message, TicketType, Ticket, TicketPriority } from '@/types/ticket'
+import { TicketStatus, TicketPriority, UserRole } from '@/types/enums'
+import type { Ticket, TicketComment, TicketType } from '@/types/ticket'
+import type { User } from '@/types/user'
 import { 
   TypeDropdown, 
   PriorityDropdown, 
@@ -21,57 +23,80 @@ import { StatusTransition } from '@/components/features/tickets/StatusTransition
 // Mock data - replace with actual API call
 const mockTicket: Ticket = {
   id: '1',
-  number: 'TICK-1001',
   title: 'Unable to access dashboard after recent update',
+  subject: 'Unable to access dashboard after recent update',
   description: 'After the latest update, I am unable to access the dashboard. The page loads indefinitely and eventually times out. This is blocking our team from accessing critical metrics.',
-  status: 'open',
-  priority: 'high',
-  type: 'problem',
+  status: TicketStatus.OPEN,
+  priority: TicketPriority.HIGH,
+  isArchived: false,
+  metadata: {
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    tags: [
+      { id: '1', name: 'bug', color: '#DE350B' },
+      { id: '2', name: 'dashboard', color: '#00B8D9' },
+    ],
+    customFields: {},
+    company: 'Acme Corp'
+  },
+  customerId: '1',
+  assigneeId: '1',
   customer: {
     id: '1',
     name: 'John Doe',
     email: 'john@example.com',
+    role: UserRole.CUSTOMER,
+    isActive: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
   },
   assignee: {
     id: '1',
     name: 'Support Agent',
     email: 'agent@example.com',
-    role: 'agent',
+    role: UserRole.AGENT,
+    isActive: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
   },
-  messages: [
+  comments: [
     {
       id: '1',
+      ticketId: '1',
       content: 'Hi, I am experiencing issues accessing the dashboard after the recent update.',
-      createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-      author: {
+      user: {
         id: '1',
         name: 'John Doe',
         email: 'john@example.com',
+        role: UserRole.CUSTOMER,
+        isActive: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       },
+      isInternal: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     },
     {
       id: '2',
+      ticketId: '1',
       content: 'Thank you for reporting this issue. Could you please provide your browser version and any error messages you are seeing?',
-      createdAt: new Date(Date.now() - 23 * 60 * 60 * 1000).toISOString(),
-      author: {
+      user: {
         id: '1',
         name: 'Support Agent',
         email: 'agent@example.com',
-        role: 'agent',
+        role: UserRole.AGENT,
+        isActive: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       },
-    },
+      isInternal: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }
   ],
-  followers: [],
-  metadata: {
-    createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 23 * 60 * 60 * 1000).toISOString(),
-    tags: [
-      { id: '1', name: 'bug', color: '#DE350B' },
-      { id: '2', name: 'dashboard', color: '#00B8D9' },
-    ],
-    source: 'web',
-    customFields: [],
-  },
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString()
 }
 
 interface Tag {
@@ -80,14 +105,19 @@ interface Tag {
   color: string
 }
 
+interface ReplyMessage {
+  content: string;
+  user: User;
+}
+
 export default function TicketPage() {
   const params = useParams()
   const ticketId = params?.id as string
   const [ticket, setTicket] = useState<Ticket>(mockTicket)
-  const [selectedType, setSelectedType] = useState<TicketType>(ticket.type)
-  const [selectedPriority, setSelectedPriority] = useState<string>(ticket.priority)
-  const [selectedAssignee, setSelectedAssignee] = useState<string | null>(ticket.assignee?.id || null)
-  const [tags, setTags] = useState<Tag[]>(ticket.metadata.tags)
+  const [selectedType, setSelectedType] = useState<TicketType>('problem')
+  const [selectedPriority, setSelectedPriority] = useState<TicketPriority>(ticket.priority)
+  const [selectedAssignee, setSelectedAssignee] = useState<string | null>(ticket.assigneeId || null)
+  const [tags, setTags] = useState<Tag[]>(ticket.metadata?.tags || [])
   const [linkedProblem, setLinkedProblem] = useState<string | null>(null)
   const [followers, setFollowers] = useState(['Dan G'])
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -122,26 +152,27 @@ export default function TicketPage() {
   }
 
   // Reply handler
-  const handleReply = async (message: Omit<Message, 'id' | 'createdAt'>) => {
+  const handleReply = async (message: ReplyMessage) => {
     setIsSubmitting(true)
     try {
       // Simulate API call
       await new Promise(resolve => setTimeout(resolve, 1000))
 
-      // Add message to ticket
-      const newMessage = {
-        ...message,
-        id: String(ticket.messages.length + 1),
+      // Add comment to ticket
+      const newComment: TicketComment = {
+        id: String(ticket.comments.length + 1),
+        ticketId: ticket.id,
+        content: message.content,
+        user: message.user,
+        isInternal: false,
         createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       }
 
       setTicket(prev => ({
         ...prev,
-        messages: [...prev.messages, newMessage],
-        metadata: {
-          ...prev.metadata,
-          updatedAt: new Date().toISOString(),
-        },
+        comments: [...prev.comments, newComment],
+        updatedAt: new Date().toISOString()
       }))
     } catch (error) {
       console.error('Failed to send message:', error)
@@ -158,10 +189,10 @@ export default function TicketPage() {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-2xl font-semibold text-gray-900">
-                {ticket.title}
+                {ticket.subject}
               </h1>
               <div className="mt-1 text-sm text-gray-500">
-                Created {new Date(ticket.metadata.createdAt).toLocaleString()}
+                Created {new Date(ticket.createdAt).toLocaleString()}
               </div>
             </div>
             <div className="flex items-center gap-4">
@@ -172,28 +203,28 @@ export default function TicketPage() {
             </div>
           </div>
 
-          {/* Messages */}
+          {/* Comments */}
           <div className="space-y-6 mb-6">
-            {ticket.messages.map(message => (
-              <div key={message.id} className="bg-blue-50 rounded-lg p-4">
+            {ticket.comments.map((comment) => (
+              <div key={comment.id} className="bg-blue-50 rounded-lg p-4">
                 <div className="flex items-center gap-3 mb-2">
                   <div className="relative w-8 h-8 rounded-full overflow-hidden">
                     <Image
                       src="/default-avatar.png"
-                      alt={message.author.name}
+                      alt={comment.user.name}
                       fill
                       className="object-cover"
                     />
                   </div>
                   <div>
-                    <h3 className="font-medium">{message.author.name}</h3>
+                    <h3 className="font-medium">{comment.user.name}</h3>
                     <p className="text-sm text-gray-500">
-                      {new Date(message.createdAt).toLocaleString()}
+                      {new Date(comment.createdAt).toLocaleString()}
                     </p>
                   </div>
                 </div>
                 <p className="text-gray-700 whitespace-pre-wrap">
-                  {message.content}
+                  {comment.content}
                 </p>
               </div>
             ))}
@@ -279,7 +310,7 @@ export default function TicketPage() {
             show={showPriorityDropdown}
             onClose={() => setShowPriorityDropdown(false)}
             selectedPriority={selectedPriority}
-            onSelect={setSelectedPriority}
+            onSelect={(priority) => setSelectedPriority(priority as TicketPriority)}
           />
         </div>
 

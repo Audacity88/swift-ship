@@ -29,6 +29,8 @@ export function ArchiveActions({
   const [snapshots, setSnapshots] = useState<TicketSnapshot[]>([])
   const [showSnapshotsDialog, setShowSnapshotsDialog] = useState(false)
 
+  const isArchived = !!ticket.metadata?.archivedAt
+
   const handleArchive = async () => {
     setError(undefined)
     setIsLoading(true)
@@ -102,7 +104,7 @@ export function ArchiveActions({
 
   return (
     <div className={`space-x-2 ${className}`}>
-      {!ticket.isArchived ? (
+      {!isArchived ? (
         <Dialog open={showArchiveDialog} onOpenChange={setShowArchiveDialog}>
           <DialogTrigger asChild>
             <Button

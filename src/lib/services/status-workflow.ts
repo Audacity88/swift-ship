@@ -53,11 +53,11 @@ export class StatusWorkflowService {
     switch (condition.type) {
       case 'required_fields':
         if (condition.params.fieldIds) {
+          const customFields = ticket.metadata?.customFields as Record<string, any> || {};
           const missingFields = condition.params.fieldIds.filter(fieldId => {
-            const customFields = (ticket.metadata.customFields || []) as unknown as TicketCustomField[]
-            const field = customFields.find(f => f.id === fieldId)
-            return !field || field.value === null || field.value === undefined
-          })
+            const field = customFields[fieldId];
+            return !field || field === null || field === undefined;
+          });
           if (missingFields.length > 0) {
             return { 
               valid: false, 
@@ -65,12 +65,12 @@ export class StatusWorkflowService {
             }
           }
         }
-        break
+        break;
 
       case 'time_elapsed':
         if (condition.params.minTimeInStatus) {
-          const timeInStatus = Date.now() - new Date(ticket.metadata.updatedAt).getTime()
-          const minTimeMs = condition.params.minTimeInStatus * 60 * 1000 // Convert minutes to ms
+          const timeInStatus = Date.now() - new Date(ticket.metadata?.updatedAt || Date.now()).getTime();
+          const minTimeMs = condition.params.minTimeInStatus * 60 * 1000; // Convert minutes to ms
           if (timeInStatus < minTimeMs) {
             return { 
               valid: false, 
@@ -78,7 +78,7 @@ export class StatusWorkflowService {
             }
           }
         }
-        break
+        break;
 
       case 'priority_check':
         if (condition.params.minPriority) {
