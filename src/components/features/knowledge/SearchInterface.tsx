@@ -251,38 +251,42 @@ export const SearchInterface = ({
                 <p className="text-sm text-muted-foreground mb-2">
                   {result.article.excerpt}
                 </p>
-                {result.highlights.map((highlight, index) => (
-                  <div
-                    key={index}
-                    className="text-sm bg-muted/50 p-2 rounded-md mt-2"
-                    dangerouslySetInnerHTML={{ __html: highlight.snippet }}
-                  />
+                {result.highlights.map((highlight, i) => (
+                  <Badge key={i} variant="secondary" className="ml-2">
+                    {highlight}
+                  </Badge>
                 ))}
               </CardContent>
             </Card>
           ))}
         </div>
-      ) : results.length === 0 && !isLoading && searchQuery && (
-        <div className="text-center py-8">
-          <p className="text-gray-500">
-            No results found for &quot;{searchQuery}&quot;
-          </p>
-        </div>
-      ) : popularArticles.length > 0 && !searchQuery && (
+      ) : searchQuery && !isLoading ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>No results found</CardTitle>
+            <CardDescription>
+              Try adjusting your search or filters to find what you're looking for
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      ) : popularArticles.length > 0 ? (
         <div className="space-y-4">
-          <h3 className="text-sm font-medium text-gray-500">
-            Popular Articles
-          </h3>
-          <div className="space-y-2">
-            {popularArticles.map((article) => (
-              <div key={article.id} className="p-4 bg-white rounded-lg border hover:border-primary">
-                <h4 className="font-medium">
-                  &quot;{article.title}&quot;
-                </h4>
-                <p className="text-sm text-gray-500">{article.excerpt}</p>
-              </div>
-            ))}
-          </div>
+          <h3 className="text-lg font-semibold">Popular Articles</h3>
+          {popularArticles.map((article) => (
+            <Card key={article.id}>
+              <CardHeader>
+                <CardTitle>{article.title}</CardTitle>
+                <CardDescription>
+                  {categories.find(c => c.id === article.categoryId)?.name}
+                  <span className="mx-2">•</span>
+                  Updated {format(new Date(article.updatedAt), 'MMM d, yyyy')}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {article.excerpt}
+              </CardContent>
+            </Card>
+          ))}
         </div>
       ) : null}
     </div>

@@ -1,10 +1,9 @@
-import React, { ComponentType } from 'react'
+import { NextPage } from 'next';
+import { Permission } from '@/types/auth';
 
-export const withRoleProtection = <P extends object>(
-  Component: ComponentType<P>,
-  allowedRoles: string[],
-  requiredPermissions?: string[]
+export const withRoleProtection = (
+  Component: NextPage,
+  requiredPermissions?: Permission[]
 ) => {
-  const WrappedComponent = (props: P) => <Component {...props} />
-  return WrappedComponent
-} 
+  return Component;
+}; 
