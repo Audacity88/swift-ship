@@ -206,7 +206,7 @@ export function Header() {
           >
             <div className="relative w-8 h-8 rounded-full overflow-hidden bg-gray-100">
               <Image
-                src={user?.avatar || "/default-avatar.png"}
+                src={user?.avatar || "/images/default-avatar.png"}
                 alt={user?.name || "Profile"}
                 width={32}
                 height={32}

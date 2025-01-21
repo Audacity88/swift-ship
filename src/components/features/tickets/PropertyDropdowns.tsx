@@ -382,9 +382,10 @@ export function FollowersDropdown({ show, onClose, followers, onAdd, onRemove }:
               >
                 <div className="relative w-8 h-8 rounded-full overflow-hidden">
                   <Image
-                    src="/default-avatar.png"
-                    alt={user.name}
-                    fill
+                    src="/images/default-avatar.png"
+                    alt="Profile"
+                    width={32}
+                    height={32}
                     className="object-cover"
                   />
                 </div>

@@ -279,9 +279,10 @@ export default function TicketPage() {
                 <div className="flex items-center gap-3 mb-2">
                   <div className="relative w-8 h-8 rounded-full overflow-hidden">
                     <Image
-                      src="/default-avatar.png"
-                      alt={comment.user.name}
-                      fill
+                      src="/images/default-avatar.png"
+                      alt="Profile"
+                      width={32}
+                      height={32}
                       className="object-cover"
                     />
                   </div>
@@ -317,9 +318,10 @@ export default function TicketPage() {
           <div className="flex items-center gap-3 p-2 bg-white rounded-lg border border-gray-200">
             <div className="relative w-8 h-8 rounded-full overflow-hidden">
               <Image
-                src="/default-avatar.png"
-                alt={ticket.customer.name}
-                fill
+                src="/images/default-avatar.png"
+                alt="Profile"
+                width={32}
+                height={32}
                 className="object-cover"
               />
             </div>
@@ -336,9 +338,10 @@ export default function TicketPage() {
           <button className="flex items-center gap-3 w-full p-2 bg-white rounded-lg border border-gray-200 hover:bg-gray-50">
             <div className="relative w-8 h-8 rounded-full overflow-hidden">
               <Image
-                src="/default-avatar.png"
-                alt={ticket.assignee?.name || 'Unassigned'}
-                fill
+                src="/images/default-avatar.png"
+                alt="Profile"
+                width={32}
+                height={32}
                 className="object-cover"
               />
             </div>

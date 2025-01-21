@@ -13,6 +13,13 @@ const PUBLIC_ROUTES = [
   '/500',
 ]
 
+// Define public assets that don't require authentication
+const PUBLIC_ASSETS = [
+  '/images/',
+  '/fonts/',
+  '/favicon.ico',
+]
+
 // Define routes that require authentication but not specific permissions
 const DEFAULT_AUTHENTICATED_ROUTES = [
   '/',
@@ -70,6 +77,12 @@ const ADMIN_ROUTES = [
 ]
 
 export async function middleware(request: NextRequest) {
+  // Allow access to public assets without authentication
+  const pathname = request.nextUrl.pathname
+  if (PUBLIC_ASSETS.some(path => pathname.startsWith(path))) {
+    return NextResponse.next()
+  }
+
   // Skip middleware for API routes and public assets
   if (
     request.nextUrl.pathname.startsWith('/_next') ||
