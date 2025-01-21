@@ -253,7 +253,10 @@ export async function PATCH(
         // Convert to parameterized query for sql template literal
         const updateQuery = sql`
           UPDATE tickets 
-          SET ${sql.__dangerous__rawValue(updates.map((update, i) => `${update} = $${i + 1}`).join(', '))}, updated_at = NOW()
+          SET ${sql.join(
+            updates.map((update, i) => sql`${sql.__dangerous__rawValue(update)} = ${values[i]}`),
+            ', '
+          )}, updated_at = NOW()
           WHERE id = ${params.id}
           RETURNING *
         `
@@ -266,11 +269,10 @@ export async function PATCH(
             DELETE FROM ticket_tags WHERE ticket_id = ${params.id}
           `)
           if (body.tags.length > 0) {
-            const tagsJson = JSON.stringify(body.tags);
             await tx.execute(sql`
               INSERT INTO ticket_tags (ticket_id, tag_id)
-              SELECT ${params.id}, CAST(tag_id AS uuid)
-              FROM json_array_elements_text(${tagsJson}::json) AS tag_id
+              SELECT ${params.id}, tag_id
+              FROM unnest(${body.tags}::uuid[]) AS tag_id
             `)
           }
         }

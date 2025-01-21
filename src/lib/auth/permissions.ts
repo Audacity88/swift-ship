@@ -205,14 +205,14 @@ export async function isAuthorizedForRoute(pathname: string): Promise<boolean> {
   };
 
   // Admin has access to everything
-  if (user.role === RoleType.ADMIN) {
+  if (user.role === 'admin') {
     return true;
   }
 
   // Check if the route is an admin route
   if (pathname.startsWith('/settings/') || pathname.startsWith('/admin/')) {
     // Only ADMIN role can access admin routes
-    return user.role === RoleType.ADMIN;
+    return user.role === 'admin';
   }
 
   // Check if the route is an agent route
@@ -232,8 +232,8 @@ export async function isAuthorizedForRoute(pathname: string): Promise<boolean> {
     pathname === '/knowledge' ||
     pathname.startsWith('/knowledge/')
   ) {
-    // Admin and agent roles can access agent routes
-    return user.role === RoleType.ADMIN || user.type === 'agent';
+    // Only ADMIN, SUPERVISOR, or AGENT roles can access agent routes
+    return user.type === 'agent';
   }
 
   // Handle dynamic routes

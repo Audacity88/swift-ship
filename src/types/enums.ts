@@ -14,4 +14,4 @@ export enum TicketPriority {
 }
 
 // Re-export UserRole from role.ts for backward compatibility
-export type { UserRole, RoleType } from './role';
+export type { UserRole } from './role';

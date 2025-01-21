@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { RoleType } from '@/types/role'
-import { CookieOptions } from '@supabase/ssr'
 
 const createClient = async (request: NextRequest) => {
   const cookieStore = await cookies()
@@ -15,14 +14,14 @@ const createClient = async (request: NextRequest) => {
         get(name: string) {
           return cookieStore.get(name)?.value
         },
-        set(name: string, value: string, options: CookieOptions) {
+        set(name: string, value: string, options: any) {
           try {
             cookieStore.set({ name, value, ...options })
           } catch (error) {
             // Handle cookie setting error
           }
         },
-        remove(name: string, options: CookieOptions) {
+        remove(name: string, options: any) {
           try {
             cookieStore.set({ name, value: '', ...options })
           } catch (error) {
@@ -34,9 +33,9 @@ const createClient = async (request: NextRequest) => {
   )
 }
 
-export async function POST(_request: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient(_request)
+    const supabase = await createClient(request)
     
     // Get current user's session
     const { data: { session } } = await supabase.auth.getSession()
