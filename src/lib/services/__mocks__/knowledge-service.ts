@@ -1,0 +1,5 @@
+export const saveArticle = jest.fn()
+export const publishArticle = jest.fn()
+export const getArticle = jest.fn()
+export const deleteArticle = jest.fn()
+export const getCategories = jest.fn() 

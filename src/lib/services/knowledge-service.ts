@@ -285,4 +285,14 @@ export class KnowledgeService {
     if (error) throw error;
     return data;
   }
+}
+
+export const saveArticle = async (article: Article) => {
+  // TODO: Implement actual API call
+  return { data: article }
+}
+
+export const publishArticle = async (article: Article) => {
+  // TODO: Implement actual API call
+  return { data: { ...article, status: ArticleStatus.PUBLISHED } }
 } 

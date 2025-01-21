@@ -3,3 +3,5 @@ Look through @to-do list.md and create a checklist at @7-roles.md for implementi
 
 implementation
 Check @8-customer.md for our workflow. Update this file with tasks recently completed and implementation notes if necessary. Then move on to the next step on the list. Pay attention to the @Agent Instructions 
+
+npm audit fix

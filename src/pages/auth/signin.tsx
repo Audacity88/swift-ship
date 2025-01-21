@@ -9,6 +9,10 @@ export default function SignIn() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [validationErrors, setValidationErrors] = useState<{
+    email?: string;
+    password?: string;
+  }>({})
   const router = useRouter()
 
   const supabase = createBrowserClient(
@@ -16,9 +20,27 @@ export default function SignIn() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
 
+  const validateForm = () => {
+    const errors: { email?: string; password?: string } = {}
+    if (!email) {
+      errors.email = 'Email is required'
+    }
+    if (!password) {
+      errors.password = 'Password is required'
+    }
+    setValidationErrors(errors)
+    return Object.keys(errors).length === 0
+  }
+
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
+    setValidationErrors({})
+
+    if (!validateForm()) {
+      return
+    }
+
     setLoading(true)
 
     try {
@@ -77,7 +99,6 @@ export default function SignIn() {
                   name="email"
                   type="email"
                   autoComplete="email"
-                  required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="block w-full appearance-none rounded-lg border border-gray-200 \
@@ -85,6 +106,9 @@ export default function SignIn() {
                     focus:ring-primary sm:text-sm"
                 />
               </div>
+              {validationErrors.email && (
+                <p className="mt-1 text-sm text-red-600">{validationErrors.email}</p>
+              )}
             </div>
 
             <div>
@@ -97,7 +121,6 @@ export default function SignIn() {
                   name="password"
                   type="password"
                   autoComplete="current-password"
-                  required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="block w-full appearance-none rounded-lg border border-gray-200 \
@@ -105,6 +128,9 @@ export default function SignIn() {
                     focus:ring-primary sm:text-sm"
                 />
               </div>
+              {validationErrors.password && (
+                <p className="mt-1 text-sm text-red-600">{validationErrors.password}</p>
+              )}
             </div>
 
             <div className="flex items-center justify-between">

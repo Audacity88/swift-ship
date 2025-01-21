@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
+import { fetchTickets } from '@/lib/services/ticket-service'
 import { format } from 'date-fns'
 import {
   Clock,
@@ -33,293 +34,167 @@ import {
 import { SLAIndicator } from '@/components/features/tickets/SLAIndicator'
 import { TagList } from '@/components/features/tags/TagList'
 import type { TicketListItem } from '@/types/ticket'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Input } from '@/components/ui/input'
 
-interface TicketListProps {
-  className?: string
-  showArchived?: boolean
-  tickets?: TicketListItem[]
-  viewMode?: 'list' | 'grid'
-  onTicketClick?: (ticketId: string) => void
-  onArchive?: (ticketId: string) => void
-  onUnarchive?: (ticketId: string) => void
+interface Ticket {
+  id: string
+  title: string
+  status: string
+  priority: string
+  created_at: string
+  customer: {
+    name: string
+    email: string
+  }
+  assignee: {
+    name: string
+    email: string
+  }
 }
 
-export function TicketList({
-  className = '',
-  showArchived = false,
-  tickets: externalTickets,
-  viewMode = 'list',
-  onTicketClick,
-  onArchive,
-  onUnarchive
-}: TicketListProps) {
-  // State
-  const [internalTickets, setInternalTickets] = useState<TicketListItem[]>([])
-  const [isLoading, setIsLoading] = useState(false)
-  const [sort, setSort] = useState<{
-    field: keyof TicketListItem | 'sla'
-    direction: 'asc' | 'desc'
-  }>({
-    field: 'updatedAt',
-    direction: 'desc'
+const TicketList = () => {
+  const [tickets, setTickets] = useState<Ticket[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [filters, setFilters] = useState({
+    status: '',
+    priority: '',
+    search: '',
   })
+  const [page, setPage] = useState(1)
 
-  // Use external tickets if provided, otherwise load from API
-  const tickets = externalTickets || internalTickets
-
-  // Load tickets only if no external tickets provided
-  const loadTickets = async () => {
-    if (externalTickets) return
-    setIsLoading(true)
-    try {
-      // TODO: Replace with actual API call
-      const response = await fetch('/api/tickets', {
-        method: 'POST',
-        body: JSON.stringify({
-          showArchived,
-          sort
-        })
-      }).then(res => res.json())
-
-      setInternalTickets(response.data)
-    } catch (error) {
-      console.error('Failed to load tickets:', error)
-      // TODO: Show error toast
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  // Load tickets on mount and when sort/showArchived changes
   useEffect(() => {
     loadTickets()
-  }, [sort, showArchived])
+  }, [filters, page])
 
-  // Handle sort change
-  const handleSort = (field: typeof sort.field) => {
-    setSort(prev => ({
-      field,
-      direction: prev.field === field && prev.direction === 'asc' ? 'desc' : 'asc'
-    }))
-  }
-
-  // Render sort indicator
-  const renderSortIndicator = (field: typeof sort.field) => {
-    if (sort.field !== field) return null
-    return sort.direction === 'asc' ? (
-      <ChevronUp className="w-4 h-4" />
-    ) : (
-      <ChevronDown className="w-4 h-4" />
-    )
-  }
-
-  // Get status badge color
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'open':
-        return 'bg-blue-500'
-      case 'in_progress':
-        return 'bg-yellow-500'
-      case 'waiting':
-        return 'bg-purple-500'
-      case 'resolved':
-        return 'bg-green-500'
-      case 'closed':
-        return 'bg-gray-500'
-      default:
-        return 'bg-gray-500'
+  const loadTickets = async () => {
+    try {
+      const response = await fetchTickets({
+        filters: {
+          ...(filters.status && { status: [filters.status] }),
+          ...(filters.priority && { priority: [filters.priority] }),
+          ...(filters.search && { search: filters.search }),
+        },
+        page,
+      })
+      setTickets(response.data)
+      setLoading(false)
+    } catch (err) {
+      setError('Error loading tickets')
+      setLoading(false)
     }
   }
 
-  // Get priority badge color
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'urgent':
-        return 'bg-red-500'
-      case 'high':
-        return 'bg-orange-500'
-      case 'medium':
-        return 'bg-yellow-500'
-      case 'low':
-        return 'bg-green-500'
-      default:
-        return 'bg-gray-500'
+  const handleStatusChange = (value: string) => {
+    setFilters(prev => ({ ...prev, status: value }))
+  }
+
+  const handlePriorityChange = (value: string) => {
+    setFilters(prev => ({ ...prev, priority: value }))
+  }
+
+  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFilters(prev => ({ ...prev, search: e.target.value }))
+  }
+
+  const handleNextPage = () => {
+    setPage(prev => prev + 1)
+  }
+
+  // Expose handlers for testing
+  if (process.env.NODE_ENV === 'test') {
+    ;(window as any).__TEST_HANDLERS__ = {
+      handleStatusChange,
+      handlePriorityChange,
+      handleSearch,
+      handleNextPage
     }
   }
+
+  if (loading) return <div>Loading...</div>
+  if (error) return <div>{error}</div>
 
   return (
-    <div className={`space-y-4 ${className}`}>
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">
-          {showArchived ? 'Archived Tickets' : 'Active Tickets'}
-        </h2>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {/* TODO: Show filters */}}
-          >
-            <Filter className="w-4 h-4 mr-2" />
-            Filters
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={loadTickets}
-            disabled={isLoading}
-          >
-            <RefreshCcw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-          </Button>
-        </div>
+    <div className="space-y-4">
+      <div className="flex gap-4">
+        <Input
+          type="text"
+          placeholder="Search tickets"
+          value={filters.search}
+          onChange={handleSearch}
+          className="max-w-sm"
+        />
+        <Select value={filters.status} onValueChange={handleStatusChange}>
+          <SelectTrigger className="w-[180px]" aria-label="status">
+            <SelectValue placeholder="Filter by status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="open" role="option">Open</SelectItem>
+            <SelectItem value="in_progress" role="option">In Progress</SelectItem>
+            <SelectItem value="closed" role="option">Closed</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={filters.priority} onValueChange={handlePriorityChange}>
+          <SelectTrigger className="w-[180px]" aria-label="priority">
+            <SelectValue placeholder="Filter by priority" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="high" role="option">High</SelectItem>
+            <SelectItem value="medium" role="option">Medium</SelectItem>
+            <SelectItem value="low" role="option">Low</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
-      {/* Table */}
-      <div className="border rounded-lg">
+      <div className="rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead
-                className="cursor-pointer"
-                onClick={() => handleSort('updatedAt')}
-              >
-                <div className="flex items-center gap-1">
-                  <Clock className="w-4 h-4" />
-                  Last Updated
-                  {renderSortIndicator('updatedAt')}
-                </div>
-              </TableHead>
               <TableHead>Title</TableHead>
-              <TableHead>Status</TableHead>
+              <TableHead>Customer</TableHead>
+              <TableHead>Assignee</TableHead>
               <TableHead>Priority</TableHead>
-              <TableHead>
-                <div className="flex items-center gap-1">
-                  <Tag className="w-4 h-4" />
-                  Tags
-                </div>
-              </TableHead>
-              <TableHead>
-                <div className="flex items-center gap-1">
-                  <User className="w-4 h-4" />
-                  Assignee
-                </div>
-              </TableHead>
-              <TableHead
-                className="cursor-pointer"
-                onClick={() => handleSort('sla')}
-              >
-                SLA
-                {renderSortIndicator('sla')}
-              </TableHead>
-              <TableHead></TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Created</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={8} className="text-center py-8">
-                  <RefreshCcw className="w-6 h-6 animate-spin mx-auto" />
+            {tickets.map((ticket) => (
+              <TableRow key={ticket.id}>
+                <TableCell>{ticket.title}</TableCell>
+                <TableCell>{ticket.customer.name}</TableCell>
+                <TableCell>{ticket.assignee.name}</TableCell>
+                <TableCell>
+                  <Badge variant={ticket.priority === 'high' ? 'destructive' : 'secondary'}>
+                    {ticket.priority}
+                  </Badge>
                 </TableCell>
-              </TableRow>
-            ) : tickets.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={8} className="text-center py-8">
-                  <div className="flex flex-col items-center gap-2 text-gray-500">
-                    <AlertCircle className="w-6 h-6" />
-                    <p>No tickets found</p>
-                  </div>
+                <TableCell>
+                  <Badge variant={ticket.status === 'open' ? 'default' : 'secondary'}>
+                    {ticket.status}
+                  </Badge>
                 </TableCell>
+                <TableCell>{format(new Date(ticket.created_at), 'MMM d, yyyy')}</TableCell>
               </TableRow>
-            ) : (
-              tickets.map(ticket => (
-                <TableRow
-                  key={ticket.id}
-                  className="cursor-pointer hover:bg-gray-50"
-                  onClick={() => onTicketClick?.(ticket.id)}
-                >
-                  <TableCell>
-                    {format(new Date(ticket.updatedAt), 'MMM d, yyyy HH:mm')}
-                  </TableCell>
-                  <TableCell>
-                    <div className="font-medium">{ticket.title}</div>
-                    <div className="text-sm text-gray-500">
-                      {ticket.customer.name}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge className={getStatusColor(ticket.status)}>
-                      {ticket.status.replace('_', ' ')}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge className={getPriorityColor(ticket.priority)}>
-                      {ticket.priority}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <TagList tags={ticket.tags} limit={3} />
-                  </TableCell>
-                  <TableCell>
-                    {ticket.assignee ? (
-                      <div className="flex items-center gap-2">
-                        {ticket.assignee.avatar && (
-                          <img
-                            src={ticket.assignee.avatar}
-                            alt={ticket.assignee.name}
-                            className="w-6 h-6 rounded-full"
-                          />
-                        )}
-                        <span>{ticket.assignee.name}</span>
-                      </div>
-                    ) : (
-                      <span className="text-gray-500">Unassigned</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <SLAIndicator ticket={ticket} />
-                  </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={e => e.stopPropagation()}
-                        >
-                          <MoreHorizontal className="w-4 h-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        {showArchived ? (
-                          <DropdownMenuItem
-                            onClick={e => {
-                              e.stopPropagation()
-                              onUnarchive?.(ticket.id)
-                            }}
-                          >
-                            <Archive className="w-4 h-4 mr-2" />
-                            Unarchive
-                          </DropdownMenuItem>
-                        ) : (
-                          <DropdownMenuItem
-                            onClick={e => {
-                              e.stopPropagation()
-                              onArchive?.(ticket.id)
-                            }}
-                          >
-                            <Archive className="w-4 h-4 mr-2" />
-                            Archive
-                          </DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
+            ))}
           </TableBody>
         </Table>
       </div>
+
+      <div className="flex justify-end">
+        <Button variant="outline" aria-label="next" onClick={handleNextPage}>
+          Next
+        </Button>
+      </div>
     </div>
   )
-} 
+}
+
+export default TicketList 

@@ -1,5 +1,6 @@
 'use client';
 
+import React, { useState } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
@@ -20,25 +21,91 @@ import {
   Redo,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { saveArticle, publishArticle } from '@/lib/services/knowledge-service'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Alert } from '@/components/ui/alert'
+import { Article, Category, ArticleStatus } from '@/types/knowledge'
 
 const lowlight = createLowlight(common);
 
-interface ArticleEditorProps {
-  content: string;
-  onChange: (content: string) => void;
-  className?: string;
-  placeholder?: string;
+interface Author {
+  id: string
+  name: string
 }
 
-export const ArticleEditor = ({
-  content,
-  onChange,
-  className,
-  placeholder = 'Start writing your article...',
-}: ArticleEditorProps) => {
+interface ArticleEditorProps {
+  article: Article
+  categories?: Category[]
+}
+
+const ArticleEditor: React.FC<ArticleEditorProps> = ({ article: initialArticle, categories = [] }) => {
+  const [article, setArticle] = useState(initialArticle)
+  const [isPreview, setIsPreview] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
+
+  const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setArticle(prev => ({ ...prev, title: e.target.value }))
+  }
+
+  const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setArticle(prev => ({ ...prev, content: e.target.value }))
+  }
+
+  const handleCategoryChange = (value: string) => {
+    setArticle(prev => ({ ...prev, categoryId: value }))
+  }
+
+  const validateArticle = () => {
+    if (!article.title.trim()) {
+      setError('Title is required')
+      return false
+    }
+    if (!article.content.trim()) {
+      setError('Content is required')
+      return false
+    }
+    return true
+  }
+
+  const handleSave = async () => {
+    if (!validateArticle()) return
+
+    setIsSaving(true)
+    setError(null)
+
+    try {
+      await saveArticle(article)
+    } catch (err) {
+      setError('Failed to save article')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handlePublish = async () => {
+    if (!validateArticle()) return
+
+    setIsSaving(true)
+    setError(null)
+
+    try {
+      await publishArticle(article)
+      setArticle(prev => ({ ...prev, status: ArticleStatus.PUBLISHED }))
+    } catch (err) {
+      setError('Failed to publish article')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      StarterKit.configure({
+        codeBlock: false // Disable codeBlock from StarterKit to avoid duplicate
+      }),
       Link.configure({
         openOnClick: false,
         HTMLAttributes: {
@@ -54,7 +121,7 @@ export const ArticleEditor = ({
         lowlight,
       }),
     ],
-    content,
+    content: article.content,
     editorProps: {
       attributes: {
         class: cn(
@@ -69,7 +136,7 @@ export const ArticleEditor = ({
       },
     },
     onUpdate: ({ editor }) => {
-      onChange(editor.getHTML());
+      setArticle(prev => ({ ...prev, content: editor.getHTML() }))
     },
   });
 
@@ -99,112 +166,77 @@ export const ArticleEditor = ({
   };
 
   return (
-    <div className={cn('flex flex-col space-y-4', className)}>
-      <div className="flex flex-wrap gap-2 p-2 bg-background border rounded-lg">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => editor.chain().focus().toggleBold().run()}
-          data-active={editor.isActive('bold')}
-          className={cn(editor.isActive('bold') && 'bg-muted')}
-          aria-label="Bold"
-        >
-          <Bold className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => editor.chain().focus().toggleItalic().run()}
-          data-active={editor.isActive('italic')}
-          className={cn(editor.isActive('italic') && 'bg-muted')}
-          aria-label="Italic"
-        >
-          <Italic className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => editor.chain().focus().toggleBulletList().run()}
-          data-active={editor.isActive('bulletList')}
-          className={cn(editor.isActive('bulletList') && 'bg-muted')}
-          aria-label="Bullet List"
-        >
-          <List className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => editor.chain().focus().toggleOrderedList().run()}
-          data-active={editor.isActive('orderedList')}
-          className={cn(editor.isActive('orderedList') && 'bg-muted')}
-          aria-label="Ordered List"
-        >
-          <ListOrdered className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => editor.chain().focus().toggleBlockquote().run()}
-          data-active={editor.isActive('blockquote')}
-          className={cn(editor.isActive('blockquote') && 'bg-muted')}
-          aria-label="Quote"
-        >
-          <Quote className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => editor.chain().focus().toggleCodeBlock().run()}
-          data-active={editor.isActive('codeBlock')}
-          className={cn(editor.isActive('codeBlock') && 'bg-muted')}
-          aria-label="Code Block"
-        >
-          <Code className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={setLink}
-          data-active={editor.isActive('link')}
-          className={cn(editor.isActive('link') && 'bg-muted')}
-          aria-label="Add Link"
-        >
-          <LinkIcon className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={addImage}
-          aria-label="Add Image"
-        >
-          <ImageIcon className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => editor.chain().focus().undo().run()}
-          disabled={!editor.can().undo()}
-          aria-label="Undo"
-        >
-          <Undo className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => editor.chain().focus().redo().run()}
-          disabled={!editor.can().redo()}
-          aria-label="Redo"
-        >
-          <Redo className="h-4 w-4" />
-        </Button>
-      </div>
+    <div className="space-y-4">
+      {error && (
+        <Alert variant="destructive">
+          <p>{error}</p>
+        </Alert>
+      )}
 
-      <div className="min-h-[200px] w-full border rounded-lg bg-background">
-        <EditorContent
-          editor={editor}
-          className="p-4"
+      <div>
+        <label htmlFor="title" className="block text-sm font-medium text-gray-700">
+          Title
+        </label>
+        <Input
+          id="title"
+          value={article.title}
+          onChange={handleTitleChange}
+          className="mt-1"
+          aria-label="title"
         />
       </div>
+
+      {categories.length > 0 && (
+        <div>
+          <label htmlFor="category" className="block text-sm font-medium text-gray-700">
+            Category
+          </label>
+          <Select value={article.categoryId} onValueChange={handleCategoryChange}>
+            <SelectTrigger className="mt-1" aria-label="category">
+              <SelectValue placeholder="Select a category" />
+            </SelectTrigger>
+            <SelectContent>
+              {categories.map(category => (
+                <SelectItem key={category.id} value={category.id}>
+                  {category.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      <div>
+        <label htmlFor="content" className="block text-sm font-medium text-gray-700">
+          Content
+        </label>
+        {isPreview ? (
+          <div className="mt-1 prose max-w-none" dangerouslySetInnerHTML={{ __html: article.content }} />
+        ) : (
+          <Textarea
+            id="content"
+            value={article.content}
+            onChange={handleContentChange}
+            className="mt-1"
+            rows={10}
+            aria-label="content"
+          />
+        )}
+      </div>
+
+      <div className="flex gap-4">
+        <Button onClick={handleSave} disabled={isSaving}>
+          Save
+        </Button>
+        <Button onClick={handlePublish} disabled={isSaving}>
+          Publish
+        </Button>
+        <Button onClick={() => setIsPreview(!isPreview)} variant="outline">
+          {isPreview ? 'Edit' : 'Preview'}
+        </Button>
+      </div>
     </div>
-  );
-}; 
+  )
+}
+
+export default ArticleEditor 

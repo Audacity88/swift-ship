@@ -114,4 +114,15 @@ export interface ArticleAnalytics extends ArticleMetadata {
   searchImpressions: number;
   searchClicks: number;
   conversionRate: number;
+}
+
+export interface Author {
+  id: string
+  name: string
+  email: string
+}
+
+export interface Category {
+  id: string
+  name: string
 } 
