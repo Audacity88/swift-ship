@@ -17,7 +17,7 @@ export const ROUTES = {
   pickup: '/pickup',
   search: '/search',
   notifications: '/notifications',
-  upgrade: '/upgrade-now',
+  upgrade: '/upgrade',
   profile: '/profile',
   tickets: '/tickets',
   agents: '/agents',

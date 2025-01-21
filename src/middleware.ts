@@ -175,11 +175,6 @@ export async function middleware(request: NextRequest) {
 
   const isCustomer = !agent
 
-  // If user is admin, allow access to everything
-  if (agent?.role === 'admin') {
-    return response
-  }
-
   // Redirect customers to home page if trying to access dashboard
   if (isCustomer && request.nextUrl.pathname === '/') {
     return NextResponse.redirect(new URL('/home', request.url))

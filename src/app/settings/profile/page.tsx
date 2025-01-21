@@ -16,19 +16,17 @@ export default function SettingsProfilePage() {
 
   return (
     <div className="container mx-auto py-8 px-4">
-      <h1 className="text-2xl font-bold mb-8">Profile Settings</h1>
-      
       <div className="max-w-3xl mx-auto">
         <div className="space-y-6">
-          <h2 className="text-lg font-semibold">Profile Information</h2>
-          
           <div className="flex items-center gap-6 pb-6 border-b border-gray-200">
             <div className="relative w-24 h-24">
               <Image
-                src="https://picsum.photos/200"
-                alt="Profile"
+                src={user.avatar || "/images/default-avatar.png"}
+                alt={user.name || "Profile"}
                 fill
                 className="rounded-full object-cover"
+                priority
+                unoptimized
               />
               <button 
                 className="absolute bottom-0 right-0 p-1.5 bg-primary text-white rounded-full text-sm"

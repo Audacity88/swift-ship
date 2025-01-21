@@ -64,11 +64,6 @@ const navItems: NavItem[] = [
     href: ROUTES.teams,
     roles: [RoleType.ADMIN]
   },
-  { 
-    icon: Settings, 
-    label: 'Settings', 
-    href: ROUTES.settings.root
-  },
 ]
 
 const ticketItems: NavItem[] = [
@@ -102,8 +97,17 @@ const quickAccessItems: NavItem[] = [
     href: ROUTES.notifications,
     badge: () => 0 // TODO: Implement notifications count
   },
-  { icon: ShoppingCart, label: 'Upgrade', href: ROUTES.upgrade },
-  { icon: UserCircle, label: 'Profile', href: ROUTES.profile },
+  { 
+    icon: ShoppingCart, 
+    label: 'Upgrade', 
+    href: ROUTES.upgrade,
+    roles: [RoleType.CUSTOMER, RoleType.AGENT, RoleType.SUPERVISOR]
+  },
+  { 
+    icon: Settings, 
+    label: 'Settings', 
+    href: ROUTES.settings.root
+  },
 ]
 
 export function Sidebar() {
