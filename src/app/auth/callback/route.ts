@@ -1,38 +1,37 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
-import { type NextApiRequest, type NextApiResponse } from 'next'
+import { cookies } from 'next/headers'
+import { NextResponse } from 'next/server'
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method not allowed' })
-  }
-
-  const requestUrl = new URL(req.url!, `http://${req.headers.host}`)
+export async function GET(request: Request) {
+  const requestUrl = new URL(request.url)
   const code = requestUrl.searchParams.get('code')
   const next = requestUrl.searchParams.get('next') || '/'
 
   if (code) {
+    const cookieStore = cookies()
+
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         cookies: {
           get(name: string) {
-            return req.cookies[name]
+            return cookieStore.get(name)?.value
           },
           set(name: string, value: string, options: CookieOptions) {
-            res.setHeader('Set-Cookie', `${name}=${value}; Path=/; HttpOnly; SameSite=Lax`)
+            cookieStore.set(name, value, options)
           },
           remove(name: string, options: CookieOptions) {
-            res.setHeader('Set-Cookie', `${name}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`)
+            cookieStore.set(name, '', { ...options, maxAge: 0 })
           },
         },
       }
     )
 
     await supabase.auth.exchangeCodeForSession(code)
-    return res.redirect(next)
+    return NextResponse.redirect(new URL(next, requestUrl))
   }
 
   // Return the user to an error page with instructions
-  return res.redirect('/auth/auth-error')
+  return NextResponse.redirect(new URL('/auth/auth-error', requestUrl))
 } 

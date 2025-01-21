@@ -17,7 +17,9 @@ const nextConfig = {
     ],
   },
   experimental: {
-    serverActions: true
+    serverActions: {
+      enabled: true
+    }
   },
   // Optimize production build
   productionBrowserSourceMaps: false,

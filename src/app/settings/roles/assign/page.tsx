@@ -6,8 +6,9 @@ import { RoleAssignment } from '@/components/features/roles/RoleAssignment';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
+import { Suspense } from 'react';
 
-export default function AssignRolePage() {
+function RoleAssignmentContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const roleParam = searchParams?.get('role');
@@ -19,6 +20,24 @@ export default function AssignRolePage() {
       router.refresh();
     }
   };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Role Assignment</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <RoleAssignment
+          initialRole={initialRole}
+          onAssign={handleAssignmentComplete}
+        />
+      </CardContent>
+    </Card>
+  );
+}
+
+export default function AssignRolePage() {
+  const router = useRouter();
 
   return (
     <div className="container mx-auto py-8 max-w-2xl space-y-8">
@@ -33,17 +52,20 @@ export default function AssignRolePage() {
         <h1 className="text-3xl font-bold">Assign Role</h1>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Role Assignment</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <RoleAssignment
-            initialRole={initialRole}
-            onAssign={handleAssignmentComplete}
-          />
-        </CardContent>
-      </Card>
+      <Suspense fallback={
+        <Card>
+          <CardHeader>
+            <CardTitle>Loading...</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[200px] flex items-center justify-center">
+              Loading role assignment...
+            </div>
+          </CardContent>
+        </Card>
+      }>
+        <RoleAssignmentContent />
+      </Suspense>
     </div>
   );
 } 
