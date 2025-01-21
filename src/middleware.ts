@@ -8,7 +8,9 @@ const PUBLIC_ROUTES = [
   '/auth/signup',
   '/auth/forgot-password',
   '/auth/reset-password',
-  '/403', // Add error page to public routes
+  '/403',
+  '/404',
+  '/500',
 ]
 
 // Define routes that require authentication but not specific permissions
@@ -17,6 +19,59 @@ const DEFAULT_AUTHENTICATED_ROUTES = [
   '/home',
   '/profile',
   '/notifications',
+  '/quote',
+  '/portal',
+  '/portal/profile',
+  '/portal/tickets',
+  '/portal/knowledge',
+  '/inbox',
+  '/tickets',
+  '/tickets/overview',
+  '/tickets/active',
+  '/tickets/search',
+  '/tickets/queue',
+  '/shipments',
+  '/pickup',
+  '/search',
+  '/upgrade',
+]
+
+// Define routes that require customer permissions
+const CUSTOMER_ROUTES = [
+  '/portal/tickets/new',
+  '/portal/tickets/[id]',
+  '/portal/knowledge/articles/[id]',
+]
+
+// Define routes that require agent permissions
+const AGENT_ROUTES = [
+  '/inbox',
+  '/inbox/[id]',
+  '/tickets',
+  '/tickets/[id]',
+  '/analytics',
+  '/analytics/[id]',
+  '/shipments',
+  '/shipments/[id]',
+  '/pickup',
+  '/pickup/[id]',
+  '/teams',
+  '/teams/[id]',
+  '/knowledge',
+  '/knowledge/[id]',
+]
+
+// Define routes that require admin permissions
+const ADMIN_ROUTES = [
+  '/settings',
+  '/settings/roles',
+  '/settings/roles/[id]',
+  '/settings/teams',
+  '/settings/teams/[id]',
+  '/settings/users',
+  '/settings/users/[id]',
+  '/admin',
+  '/admin/[id]',
 ]
 
 export async function middleware(request: NextRequest) {
@@ -25,8 +80,10 @@ export async function middleware(request: NextRequest) {
     request.nextUrl.pathname.startsWith('/_next') ||
     request.nextUrl.pathname.startsWith('/api/auth') ||
     request.nextUrl.pathname.startsWith('/public') ||
-    request.nextUrl.pathname.startsWith('/api/users') || // Skip auth check for user API
-    request.nextUrl.pathname === '/403'
+    request.nextUrl.pathname.startsWith('/api/users') ||
+    request.nextUrl.pathname === '/403' ||
+    request.nextUrl.pathname === '/404' ||
+    request.nextUrl.pathname === '/500'
   ) {
     return NextResponse.next()
   }
@@ -63,16 +120,20 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  await supabase.auth.getSession()
+  const { data: { session } } = await supabase.auth.getSession()
 
   // Allow access to public routes
   if (PUBLIC_ROUTES.includes(request.nextUrl.pathname)) {
     // If user is signed in and trying to access auth pages, redirect to home
-    const { data: { session } } = await supabase.auth.getSession()
     if (session && request.nextUrl.pathname.startsWith('/auth/')) {
       return NextResponse.redirect(new URL('/', request.url))
     }
     return response
+  }
+
+  // Require authentication for all other routes
+  if (!session) {
+    return NextResponse.redirect(new URL('/auth/signin', request.url))
   }
 
   // Allow access to default authenticated routes without permission check
@@ -80,9 +141,35 @@ export async function middleware(request: NextRequest) {
     return response
   }
 
+  // Check if the route is a customer route
+  const isCustomerRoute = CUSTOMER_ROUTES.some(route => {
+    // Convert route pattern to regex to handle dynamic segments
+    const pattern = route.replace(/\[.*?\]/g, '[^/]+')
+    const regex = new RegExp(`^${pattern}$`)
+    return regex.test(request.nextUrl.pathname)
+  })
+
+  // Check if the route is an agent route
+  const isAgentRoute = AGENT_ROUTES.some(route => {
+    const pattern = route.replace(/\[.*?\]/g, '[^/]+')
+    const regex = new RegExp(`^${pattern}$`)
+    return regex.test(request.nextUrl.pathname)
+  })
+
+  // Check if the route is an admin route
+  const isAdminRoute = ADMIN_ROUTES.some(route => {
+    const pattern = route.replace(/\[.*?\]/g, '[^/]+')
+    const regex = new RegExp(`^${pattern}$`)
+    return regex.test(request.nextUrl.pathname)
+  })
+
   // Check route authorization for protected routes
   const isAuthorized = await isAuthorizedForRoute(request.nextUrl.pathname)
   if (!isAuthorized) {
+    // Add the 403 page to public routes to prevent redirect loop
+    if (!PUBLIC_ROUTES.includes('/403')) {
+      PUBLIC_ROUTES.push('/403')
+    }
     return NextResponse.redirect(new URL('/403', request.url))
   }
 
@@ -91,21 +178,13 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/',
-    '/home',
-    '/inbox/:path*',
-    '/quote/:path*',
-    '/analytics/:path*',
-    '/shipments/:path*',
-    '/pickup',
-    '/settings/:path*',
-    '/search',
-    '/notifications',
-    '/profile',
-    '/auth/:path*',
-    '/403',
-    '/api/:path*', // Match all API routes
-    // Exclude static files and images
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
-  ],
+    /*
+     * Match all request paths except for the ones starting with:
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - public folder
+     */
+    '/((?!_next/static|_next/image|favicon.ico|public).*)',
+  ]
 } 

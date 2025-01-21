@@ -32,24 +32,20 @@ export function useAuth() {
           return
         }
 
-        console.log('Auth user:', authUser) // Debug log
-
         // Check if user is an agent
-        const { data: agent, error: agentError } = await supabase
+        const { data: agent } = await supabase
           .from('agents')
           .select('*')
           .eq('id', authUser.id)
           .single()
-
-        console.log('Agent data:', agent, 'Error:', agentError) // Debug log
 
         if (agent) {
           // Ensure role is uppercase to match RoleType enum
           const role = agent.role.toUpperCase() as keyof typeof RoleType
           setUser({
             id: agent.id,
-            name: agent.name,
-            email: agent.email,
+            name: agent.name || authUser.email?.split('@')[0] || 'Agent',
+            email: agent.email || authUser.email || '',
             role: RoleType[role],
             isAgent: true
           })
@@ -64,13 +60,11 @@ export function useAuth() {
           .eq('id', authUser.id)
           .single()
 
-        console.log('Customer data:', customer) // Debug log
-
         if (customer) {
           setUser({
             id: customer.id,
-            name: customer.name,
-            email: customer.email,
+            name: customer.name || authUser.email?.split('@')[0] || 'Customer',
+            email: customer.email || authUser.email || '',
             role: RoleType.CUSTOMER,
             isAgent: false
           })
@@ -84,15 +78,13 @@ export function useAuth() {
             .from('customers')
             .insert({
               id: authUser.id,
-              name: authUser.user_metadata.name || authUser.email?.split('@')[0],
+              name: authUser.user_metadata.name || authUser.email?.split('@')[0] || 'Customer',
               email: authUser.email,
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString()
             })
             .select()
             .single()
-
-          console.log('New customer data:', newCustomer, 'Error:', createError) // Debug log
 
           if (!createError && newCustomer) {
             setUser({

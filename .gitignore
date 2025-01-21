@@ -18,7 +18,7 @@
 # misc
 .DS_Store
 *.pem
-create-admin.js
+/src/scripts/create-admin.js
 
 # debug
 npm-debug.log*

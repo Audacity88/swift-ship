@@ -33,11 +33,9 @@ export function Header() {
   const router = useRouter()
   const isTicketRoute = pathname.startsWith('/tickets')
   const { user } = useAuth()
-  const [supabase] = useState(() => 
-    createBrowserClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
 
   useEffect(() => {
@@ -83,12 +81,18 @@ export function Header() {
 
   const handleSignOut = async () => {
     try {
+      // First clear any UI state
+      setShowProfileMenu(false)
+      
+      // Sign out from Supabase
       const { error } = await supabase.auth.signOut()
       if (error) {
         console.error('Error signing out:', error)
         return
       }
-      router.push('/auth/signin')
+      
+      // The auth state change listener in useAuth will handle the redirect
+      // and clearing of user state
     } catch (error) {
       console.error('Error signing out:', error)
     }
