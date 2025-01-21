@@ -173,13 +173,8 @@ export function getAllPermissionsForRole(role: RoleType): Permission[] {
   return [...new Set([...basePermissions, ...inheritedPermissions])];
 }
 
-export async function isAuthorizedForRoute(pathname: string): Promise<boolean> {
-  const user = await getUserRole();
-  
-  if (!user) {
-    return false;
-  }
-
+// Add this before isAuthorizedForRoute
+function getPermissionsForRoute(pathname: string): Permission[] {
   // Define route permission mappings
   const routePermissions: Record<string, Permission[]> = {
     // Admin routes
@@ -194,9 +189,6 @@ export async function isAuthorizedForRoute(pathname: string): Promise<boolean> {
     '/inbox': [Permission.VIEW_TICKETS],
     '/tickets': [Permission.VIEW_TICKETS],
     '/analytics': [Permission.VIEW_ANALYTICS],
-    '/shipments': [Permission.VIEW_TICKETS],
-    '/pickup': [Permission.VIEW_TICKETS],
-    '/teams': [Permission.VIEW_TEAMS],
     '/knowledge': [Permission.VIEW_KNOWLEDGE_BASE],
     
     // Customer routes
@@ -204,85 +196,75 @@ export async function isAuthorizedForRoute(pathname: string): Promise<boolean> {
     '/portal/knowledge/articles': [Permission.VIEW_PUBLIC_ARTICLES],
   };
 
-  // Admin has access to everything
-  if (user.role === 'admin') {
-    return true;
-  }
-
-  // Check if the route is an admin route
-  if (pathname.startsWith('/settings/') || pathname.startsWith('/admin/')) {
-    // Only ADMIN role can access admin routes
-    return user.role === 'admin';
-  }
-
-  // Check if the route is an agent route
-  if (
-    pathname === '/inbox' ||
-    pathname.startsWith('/inbox/') ||
-    pathname === '/tickets' ||
-    pathname.startsWith('/tickets/') ||
-    pathname === '/analytics' ||
-    pathname.startsWith('/analytics/') ||
-    pathname === '/shipments' ||
-    pathname.startsWith('/shipments/') ||
-    pathname === '/pickup' ||
-    pathname.startsWith('/pickup/') ||
-    pathname === '/teams' ||
-    pathname.startsWith('/teams/') ||
-    pathname === '/knowledge' ||
-    pathname.startsWith('/knowledge/')
-  ) {
-    // Only ADMIN, SUPERVISOR, or AGENT roles can access agent routes
-    return user.type === 'agent';
-  }
-
   // Handle dynamic routes
-  if (pathname === '/settings/teams' || pathname.startsWith('/settings/teams/')) {
+  if (pathname.startsWith('/settings/teams/')) {
     if (pathname.includes('/members')) {
-      return hasPermission(Permission.MANAGE_TEAM_MEMBERS);
+      return [Permission.MANAGE_TEAM_MEMBERS];
     }
     if (pathname.includes('/schedule')) {
-      return hasPermission(Permission.MANAGE_TEAM_SCHEDULE);
+      return [Permission.MANAGE_TEAM_SCHEDULE];
     }
     if (pathname.includes('/metrics')) {
-      return hasPermission(Permission.VIEW_TEAM_METRICS);
+      return [Permission.VIEW_TEAM_METRICS];
     }
-    return hasPermission(Permission.MANAGE_TEAMS);
-  }
-
-  // Handle dynamic ticket routes
-  if (pathname === '/tickets' || pathname.startsWith('/tickets/')) {
-    return hasPermission(Permission.VIEW_TICKETS);
-  }
-
-  // Handle dynamic portal ticket routes
-  if (pathname.startsWith('/portal/tickets/')) {
-    const ticketId = pathname.split('/')[3];
-    if (ticketId === 'new') {
-      return hasPermission(Permission.CREATE_OWN_TICKETS);
-    }
-    return hasPermission(Permission.VIEW_OWN_TICKETS);
+    return [Permission.MANAGE_TEAMS];
   }
 
   // Handle dynamic knowledge base routes
   if (pathname.startsWith('/knowledge/')) {
     if (pathname.includes('/edit') || pathname.includes('/new')) {
-      return hasPermission(Permission.MANAGE_KNOWLEDGE_BASE);
+      return [Permission.MANAGE_KNOWLEDGE_BASE];
     }
-    return hasPermission(Permission.VIEW_KNOWLEDGE_BASE);
+    return [Permission.VIEW_KNOWLEDGE_BASE];
   }
 
-  // Handle dynamic portal knowledge base routes
-  if (pathname.startsWith('/portal/knowledge/articles/')) {
-    return hasPermission(Permission.VIEW_PUBLIC_ARTICLES);
+  return routePermissions[pathname] || [];
+}
+
+export async function isAuthorizedForRoute(pathname: string): Promise<boolean> {
+  const user = await getUserRole();
+  
+  if (!user) {
+    return false;
   }
 
-  const requiredPermissions = routePermissions[pathname];
-  if (!requiredPermissions) {
-    return true; // Allow access to routes without specific permissions
+  // Admin has access to everything
+  if (user.role === RoleType.ADMIN) {
+    return true;
   }
 
-  return hasAnyPermission(requiredPermissions);
+  // Check if the route is an admin route
+  if (pathname.startsWith('/settings/') || pathname.startsWith('/admin/')) {
+    return user.role === RoleType.ADMIN;
+  }
+
+  // Check if the route is an agent route
+  if (
+    pathname === '/tickets' ||
+    pathname.startsWith('/tickets/') ||
+    pathname === '/inbox' ||
+    pathname.startsWith('/inbox/') ||
+    pathname === '/analytics' ||
+    pathname.startsWith('/analytics/') ||
+    pathname === '/knowledge' ||
+    pathname.startsWith('/knowledge/')
+  ) {
+    return user.type === 'agent' || user.role === RoleType.ADMIN;
+  }
+
+  // Check if the route is a customer route
+  if (pathname.startsWith('/portal/')) {
+    return user.type === 'customer';
+  }
+
+  // For any other route, check specific permissions
+  const routePermissions = getPermissionsForRoute(pathname);
+  if (routePermissions.length > 0) {
+    return hasAnyPermission(routePermissions);
+  }
+
+  // If no specific permissions are required, allow access
+  return true;
 }
 
 // Clear cache for a user (useful for testing and role updates)

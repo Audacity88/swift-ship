@@ -25,21 +25,16 @@ const DEFAULT_AUTHENTICATED_ROUTES = [
   '/portal/tickets',
   '/portal/knowledge',
   '/inbox',
-  '/tickets',
-  '/tickets/overview',
-  '/tickets/active',
-  '/tickets/search',
-  '/tickets/queue',
-  '/tickets/[id]',
-  '/shipments',
-  '/pickup',
   '/search',
   '/upgrade',
-  '/analytics',
   '/settings',
   '/settings/roles',
   '/settings/teams',
   '/settings/users',
+  '/shipments',
+  '/pickup',
+  '/shipments/[id]',
+  '/pickup/[id]',
 ]
 
 // Define routes that require customer permissions
@@ -52,9 +47,14 @@ const CUSTOMER_ROUTES = [
 // Define routes that require agent permissions
 const AGENT_ROUTES = [
   '/inbox/[id]',
+  '/tickets',
+  '/tickets/[id]',
+  '/tickets/overview',
+  '/tickets/active',
+  '/tickets/search',
+  '/tickets/queue',
+  '/analytics/',
   '/analytics/[id]',
-  '/shipments/[id]',
-  '/pickup/[id]',
   '/teams/[id]',
   '/knowledge',
   '/knowledge/[id]',
@@ -138,7 +138,7 @@ export async function middleware(request: NextRequest) {
   if (PUBLIC_ROUTES.includes(request.nextUrl.pathname)) {
     // If user is signed in and trying to access auth pages, redirect to home
     if (session && request.nextUrl.pathname.startsWith('/auth/')) {
-      return NextResponse.redirect(new URL('/', request.url))
+      return NextResponse.redirect(new URL('/home', request.url))
     }
     return response
   }
@@ -146,6 +146,20 @@ export async function middleware(request: NextRequest) {
   // Require authentication for all other routes
   if (!session) {
     return NextResponse.redirect(new URL('/auth/signin', request.url))
+  }
+
+  // Get user role
+  const { data: agent } = await supabase
+    .from('agents')
+    .select('id, role')
+    .eq('id', session.user.id)
+    .single()
+
+  const isCustomer = !agent
+
+  // Redirect customers to home page if trying to access dashboard
+  if (isCustomer && request.nextUrl.pathname === '/') {
+    return NextResponse.redirect(new URL('/home', request.url))
   }
 
   // Allow access to default authenticated routes without permission check

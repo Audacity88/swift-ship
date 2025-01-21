@@ -132,40 +132,42 @@ export function Sidebar() {
         })}
 
         {/* Ticket Section */}
-        <div className="pt-4">
-          <div className="px-3 mb-2 text-xs font-semibold text-gray-400 uppercase">
-            Tickets
-          </div>
-          {ticketItems.map((item) => {
-            if (!isAllowed(item)) return null
-            const Icon = item.icon
-            const active = isActive(item.href)
-            const badge = item.badge?.()
+        {role !== RoleType.CUSTOMER && (
+          <div className="pt-4">
+            <div className="px-3 mb-2 text-xs font-semibold text-gray-400 uppercase">
+              Tickets
+            </div>
+            {ticketItems.map((item) => {
+              if (!isAllowed(item)) return null
+              const Icon = item.icon
+              const active = isActive(item.href)
+              const badge = item.badge?.()
 
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-lg \
-                  transition-colors ${
-                  active
-                    ? 'bg-primary text-white'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                }`}
-                style={active ? { backgroundColor: '#0066FF' } : {}}
-              >
-                <Icon className="w-5 h-5" />
-                <span>{item.label}</span>
-                {badge !== undefined && (
-                  <span className={`ml-auto inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium \
-                    ${active ? 'bg-white text-primary' : 'bg-gray-100 text-gray-600'}`}>
-                    {badge}
-                  </span>
-                )}
-              </Link>
-            )
-          })}
-        </div>
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-lg \
+                    transition-colors ${
+                    active
+                      ? 'bg-primary text-white'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  }`}
+                  style={active ? { backgroundColor: '#0066FF' } : {}}
+                >
+                  <Icon className="w-5 h-5" />
+                  <span>{item.label}</span>
+                  {badge !== undefined && (
+                    <span className={`ml-auto inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium \
+                      ${active ? 'bg-white text-primary' : 'bg-gray-100 text-gray-600'}`}>
+                      {badge}
+                    </span>
+                  )}
+                </Link>
+              )
+            })}
+          </div>
+        )}
 
         {/* Quick Access */}
         <div className="pt-4">
