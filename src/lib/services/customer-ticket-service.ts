@@ -169,8 +169,9 @@ export const customerTicketService = {
 
     // Validate status transition
     const allowedTransitions: Record<TicketStatus, TicketStatus[]> = {
-      'open': ['closed' as TicketStatus],
-      'in_progress': ['closed' as TicketStatus],
+      'open': ['closed' as TicketStatus, 'awaiting_response' as TicketStatus],
+      'in_progress': ['closed' as TicketStatus, 'awaiting_response' as TicketStatus],
+      'awaiting_response': ['closed' as TicketStatus, 'in_progress' as TicketStatus],
       'resolved': ['closed' as TicketStatus, 'open' as TicketStatus],
       'closed': ['open' as TicketStatus],
     };

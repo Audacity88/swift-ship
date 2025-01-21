@@ -1,46 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { Permission } from '@/types/role';
-import { TeamMember, TeamMemberUpdate } from '@/types/team';
+import { checkUserPermissions } from '@/lib/auth/check-permissions';
+import { z } from 'zod';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-// Helper function to check user authentication and permissions
-async function checkUserPermissions(requiredPermission: Permission) {
-  const { data: { session }, error: authError } = await supabase.auth.getSession();
-  if (authError || !session) {
-    return { error: 'Unauthorized', status: 401 };
-  }
+const addMemberSchema = z.object({
+  teamId: z.string().uuid(),
+  agentId: z.string().uuid(),
+  role: z.enum(['member', 'lead'])
+});
 
-  const { data: userData, error: userError } = await supabase
-    .from('users')
-    .select('role, custom_permissions')
-    .eq('id', session.user.id)
-    .single();
+const removeMemberSchema = z.object({
+  teamId: z.string().uuid(),
+  agentId: z.string().uuid()
+});
 
-  if (userError || !userData) {
-    return { error: 'User not found', status: 404 };
-  }
-
-  const { data: permissions } = await supabase
-    .from('role_permissions')
-    .select('permissions')
-    .eq('role', userData.role)
-    .single();
-
-  if (!permissions?.permissions?.includes(requiredPermission)) {
-    return { error: 'Insufficient permissions', status: 403 };
-  }
-
-  return { session, userData };
-}
-
-// Add member to team
 export async function POST(request: NextRequest) {
   try {
+    // Check permissions
     const permissionCheck = await checkUserPermissions(Permission.MANAGE_TEAMS);
     if ('error' in permissionCheck) {
       return NextResponse.json(
@@ -49,14 +31,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Parse and validate request body
     const body = await request.json();
-    const { teamId, userId, role, schedule, skills } = body as TeamMember;
+    const validatedData = addMemberSchema.parse(body);
 
-    // Validate required fields
-    if (!teamId || !userId || !role) {
+    // Check if agent exists
+    const { data: agent, error: agentError } = await supabase
+      .from('agents')
+      .select('id')
+      .eq('id', validatedData.agentId)
+      .single();
+
+    if (agentError || !agent) {
       return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
+        { error: 'Agent not found' },
+        { status: 404 }
       );
     }
 
@@ -64,7 +53,7 @@ export async function POST(request: NextRequest) {
     const { data: team, error: teamError } = await supabase
       .from('teams')
       .select('id')
-      .eq('id', teamId)
+      .eq('id', validatedData.teamId)
       .single();
 
     if (teamError || !team) {
@@ -74,62 +63,38 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if user exists
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('id')
-      .eq('id', userId)
-      .single();
-
-    if (userError || !user) {
-      return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
-      );
-    }
-
-    // Check if user is already in team
-    const { data: existingMember, error: memberError } = await supabase
-      .from('team_members')
-      .select('id')
-      .eq('team_id', teamId)
-      .eq('user_id', userId)
-      .single();
-
-    if (existingMember) {
-      return NextResponse.json(
-        { error: 'User is already a member of this team' },
-        { status: 400 }
-      );
-    }
-
     // Add member to team
-    const { data: member, error: addError } = await supabase
+    const { error: memberError } = await supabase
       .from('team_members')
       .insert({
-        team_id: teamId,
-        user_id: userId,
-        role,
-        schedule,
-        skills,
-        joined_at: new Date().toISOString(),
-      })
-      .select()
-      .single();
+        team_id: validatedData.teamId,
+        agent_id: validatedData.agentId,
+        role: validatedData.role
+      });
 
-    if (addError) {
-      console.error('Error adding team member:', addError);
+    if (memberError) {
+      if (memberError.code === '23505') {
+        return NextResponse.json(
+          { error: 'Agent is already a member of this team' },
+          { status: 400 }
+        );
+      }
+      console.error('Error adding team member:', memberError);
       return NextResponse.json(
         { error: 'Failed to add team member' },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({
-      message: 'Team member added successfully',
-      member
-    });
+    return new NextResponse(null, { status: 201 });
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Invalid request data', details: error.errors },
+        { status: 400 }
+      );
+    }
+
     console.error('Error in POST /api/teams/members:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
@@ -138,82 +103,9 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Update member details
-export async function PUT(request: NextRequest) {
-  try {
-    const permissionCheck = await checkUserPermissions(Permission.MANAGE_TEAMS);
-    if ('error' in permissionCheck) {
-      return NextResponse.json(
-        { error: permissionCheck.error },
-        { status: permissionCheck.status }
-      );
-    }
-
-    const body = await request.json();
-    const { teamId, userId, role, schedule, skills } = body as TeamMemberUpdate;
-
-    // Validate required fields
-    if (!teamId || !userId) {
-      return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
-      );
-    }
-
-    // Check if member exists
-    const { data: existingMember, error: memberError } = await supabase
-      .from('team_members')
-      .select('id')
-      .eq('team_id', teamId)
-      .eq('user_id', userId)
-      .single();
-
-    if (memberError || !existingMember) {
-      return NextResponse.json(
-        { error: 'Team member not found' },
-        { status: 404 }
-      );
-    }
-
-    // Update member details
-    const updateData: any = {};
-    if (role) updateData.role = role;
-    if (schedule) updateData.schedule = schedule;
-    if (skills) updateData.skills = skills;
-    updateData.updated_at = new Date().toISOString();
-
-    const { data: member, error: updateError } = await supabase
-      .from('team_members')
-      .update(updateData)
-      .eq('team_id', teamId)
-      .eq('user_id', userId)
-      .select()
-      .single();
-
-    if (updateError) {
-      console.error('Error updating team member:', updateError);
-      return NextResponse.json(
-        { error: 'Failed to update team member' },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({
-      message: 'Team member updated successfully',
-      member
-    });
-  } catch (error) {
-    console.error('Error in PUT /api/teams/members:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
-  }
-}
-
-// Remove member from team
 export async function DELETE(request: NextRequest) {
   try {
+    // Check permissions
     const permissionCheck = await checkUserPermissions(Permission.MANAGE_TEAMS);
     if ('error' in permissionCheck) {
       return NextResponse.json(
@@ -222,51 +114,34 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const { searchParams } = new URL(request.url);
-    const teamId = searchParams.get('teamId');
-    const userId = searchParams.get('userId');
-
-    if (!teamId || !userId) {
-      return NextResponse.json(
-        { error: 'Missing required parameters' },
-        { status: 400 }
-      );
-    }
-
-    // Check if member exists
-    const { data: existingMember, error: memberError } = await supabase
-      .from('team_members')
-      .select('id')
-      .eq('team_id', teamId)
-      .eq('user_id', userId)
-      .single();
-
-    if (memberError || !existingMember) {
-      return NextResponse.json(
-        { error: 'Team member not found' },
-        { status: 404 }
-      );
-    }
+    // Parse and validate request body
+    const body = await request.json();
+    const validatedData = removeMemberSchema.parse(body);
 
     // Remove member from team
-    const { error: deleteError } = await supabase
+    const { error } = await supabase
       .from('team_members')
       .delete()
-      .eq('team_id', teamId)
-      .eq('user_id', userId);
+      .eq('team_id', validatedData.teamId)
+      .eq('agent_id', validatedData.agentId);
 
-    if (deleteError) {
-      console.error('Error removing team member:', deleteError);
+    if (error) {
+      console.error('Error removing team member:', error);
       return NextResponse.json(
         { error: 'Failed to remove team member' },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({
-      message: 'Team member removed successfully'
-    });
+    return new NextResponse(null, { status: 204 });
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Invalid request data', details: error.errors },
+        { status: 400 }
+      );
+    }
+
     console.error('Error in DELETE /api/teams/members:', error);
     return NextResponse.json(
       { error: 'Internal server error' },

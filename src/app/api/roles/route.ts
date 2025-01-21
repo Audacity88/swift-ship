@@ -1,48 +1,57 @@
-import { NextResponse } from 'next/server';
-import { Permission, RoleType } from '@/types/role';
+import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { roleService } from '@/lib/services/role-service';
+import { Permission } from '@/types/role';
+import { checkUserPermissions } from '@/lib/auth/check-permissions';
+import { z } from 'zod';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-export async function GET() {
+const createRoleSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().optional(),
+  permissions: z.array(z.nativeEnum(Permission))
+});
+
+export async function GET(request: NextRequest) {
   try {
-    // Check if user is authenticated
-    const { data: { session }, error: authError } = await supabase.auth.getSession();
-    if (authError || !session) {
+    // Check permissions
+    const permissionCheck = await checkUserPermissions(Permission.VIEW_ROLES);
+    if ('error' in permissionCheck) {
       return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
+        { error: permissionCheck.error },
+        { status: permissionCheck.status }
       );
     }
 
-    const userId = session.user.id;
-    
-    // Check if user has permission to view roles
-    const hasPermission = await roleService.hasAnyPermission(
-      userId, 
-      [Permission.VIEW_ROLES, Permission.MANAGE_ROLES]
-    );
+    // Get roles with permissions
+    const { data: roles, error } = await supabase
+      .from('roles')
+      .select(`
+        *,
+        permissions:role_permissions (
+          permission
+        )
+      `)
+      .order('name', { ascending: true });
 
-    if (!hasPermission) {
+    if (error) {
+      console.error('Error fetching roles:', error);
       return NextResponse.json(
-        { error: 'Insufficient permissions' },
-        { status: 403 }
+        { error: 'Failed to fetch roles' },
+        { status: 500 }
       );
     }
 
-    // Get all roles and generate permission matrix
-    const roles = await roleService.getAllRoles();
-    const permissionMatrix = roleService.generatePermissionMatrix();
+    // Format roles
+    const formattedRoles = roles.map(role => ({
+      ...role,
+      permissions: role.permissions.map(p => p.permission)
+    }));
 
-    return NextResponse.json({
-      roles,
-      permissions: Object.values(Permission),
-      permissionMatrix
-    });
+    return NextResponse.json(formattedRoles);
   } catch (error) {
     console.error('Error in GET /api/roles:', error);
     return NextResponse.json(
@@ -52,57 +61,67 @@ export async function GET() {
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const { data: { session }, error: authError } = await supabase.auth.getSession();
-    if (authError || !session) {
+    // Check permissions
+    const permissionCheck = await checkUserPermissions(Permission.MANAGE_ROLES);
+    if ('error' in permissionCheck) {
       return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
+        { error: permissionCheck.error },
+        { status: permissionCheck.status }
       );
     }
 
-    const userId = session.user.id;
-
-    // Check if user has permission to manage roles
-    const hasPermission = await roleService.hasPermission(userId, Permission.MANAGE_ROLES);
-    if (!hasPermission) {
-      return NextResponse.json(
-        { error: 'Insufficient permissions' },
-        { status: 403 }
-      );
-    }
-
+    // Parse and validate request body
     const body = await request.json();
-    const { targetUserId, role, customPermissions } = body;
+    const validatedData = createRoleSchema.parse(body);
 
-    // Validate role assignment
-    const validation = await roleService.validateRoleAssignment(userId, targetUserId, role);
-    if (!validation.valid) {
+    // Start transaction
+    const { data: role, error: roleError } = await supabase
+      .from('roles')
+      .insert({
+        name: validatedData.name,
+        description: validatedData.description,
+        created_by: permissionCheck.user.id
+      })
+      .select()
+      .single();
+
+    if (roleError) {
+      console.error('Error creating role:', roleError);
       return NextResponse.json(
-        { error: validation.error },
-        { status: 400 }
-      );
-    }
-
-    // Assign role
-    const success = await roleService.assignRole({
-      userId: targetUserId,
-      role,
-      customPermissions,
-      assignedBy: userId,
-      assignedAt: new Date()
-    });
-
-    if (!success) {
-      return NextResponse.json(
-        { error: 'Failed to assign role' },
+        { error: 'Failed to create role' },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({ success: true });
+    // Add permissions
+    const { error: permissionsError } = await supabase
+      .from('role_permissions')
+      .insert(
+        validatedData.permissions.map(permission => ({
+          role_id: role.id,
+          permission
+        }))
+      );
+
+    if (permissionsError) {
+      console.error('Error adding role permissions:', permissionsError);
+      return NextResponse.json(
+        { error: 'Failed to add role permissions' },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json(role);
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Invalid request data', details: error.errors },
+        { status: 400 }
+      );
+    }
+
     console.error('Error in POST /api/roles:', error);
     return NextResponse.json(
       { error: 'Internal server error' },

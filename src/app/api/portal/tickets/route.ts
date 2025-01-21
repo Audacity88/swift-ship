@@ -1,47 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { Permission } from '@/types/role';
+import { checkUserPermissions } from '@/lib/auth/check-permissions';
+import { z } from 'zod';
+import { TicketPriority, TicketStatus } from '@/types/ticket';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-// Helper function to check user permissions
-async function checkUserPermissions(requiredPermission: Permission) {
-  const { data: { session }, error: authError } = await supabase.auth.getSession();
-  if (authError || !session) {
-    return { error: 'Unauthorized', status: 401 };
-  }
-
-  const { data: userData, error: userError } = await supabase
-    .from('users')
-    .select('role, custom_permissions')
-    .eq('id', session.user.id)
-    .single();
-
-  if (userError || !userData) {
-    return { error: 'User not found', status: 404 };
-  }
-
-  const { data: permissions } = await supabase
-    .from('role_permissions')
-    .select('permissions')
-    .eq('role', userData.role)
-    .single();
-
-  if (!permissions?.permissions?.includes(requiredPermission)) {
-    return { error: 'Insufficient permissions', status: 403 };
-  }
-
-  return { session, userData };
-}
+const createTicketSchema = z.object({
+  title: z.string().min(1),
+  description: z.string().min(1),
+  priority: z.nativeEnum(TicketPriority).optional()
+});
 
 // GET /api/portal/tickets - List customer tickets
 export async function GET(request: NextRequest) {
   try {
     // Check permissions
-    const permissionCheck = await checkUserPermissions(Permission.VIEW_PORTAL);
+    const permissionCheck = await checkUserPermissions(Permission.VIEW_TICKETS);
     if ('error' in permissionCheck) {
       return NextResponse.json(
         { error: permissionCheck.error },
@@ -49,102 +28,114 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const { session } = permissionCheck;
-
     // Get query parameters
     const searchParams = request.nextUrl.searchParams;
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '10');
-    const status = searchParams.get('status');
-    const priority = searchParams.get('priority');
-    const sortBy = searchParams.get('sortBy') || 'createdAt';
-    const sortOrder = searchParams.get('sortOrder') || 'desc';
+    const status = searchParams.get('status') as TicketStatus | null;
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
 
     // Build query
     let query = supabase
       .from('tickets')
       .select(`
         *,
-        assignee:users!assigneeId (
-          id,
-          name,
-          email
-        ),
-        team:teams (
-          id,
-          name
-        ),
+        assignee:agents (id, name),
         comments:ticket_comments (
           id,
           content,
-          createdAt,
-          author:users (
-            id,
-            name
-          )
+          created_at,
+          created_by,
+          is_internal
         )
-      `)
-      .eq('customerId', session.user.id);
+      `, { count: 'exact' })
+      .eq('customer_id', permissionCheck.user.id);
 
     // Apply filters
     if (status) {
       query = query.eq('status', status);
     }
-    if (priority) {
-      query = query.eq('priority', priority);
-    }
 
-    // Apply sorting
-    query = query.order(sortBy, { ascending: sortOrder === 'asc' });
+    // Get tickets with pagination
+    const { data: tickets, count, error } = await query
+      .order('created_at', { ascending: false })
+      .range(from, to);
 
-    // Apply pagination
-    const from = (page - 1) * limit;
-    const to = from + limit - 1;
-    query = query.range(from, to);
-
-    // Execute query
-    const { data: tickets, error: ticketError, count } = await query;
-
-    if (ticketError) {
-      console.error('Error fetching tickets:', ticketError);
+    if (error) {
+      console.error('Error fetching tickets:', error);
       return NextResponse.json(
         { error: 'Failed to fetch tickets' },
         { status: 500 }
       );
     }
 
-    // Get total count for pagination
-    const { count: totalCount, error: countError } = await supabase
-      .from('tickets')
-      .select('*', { count: 'exact', head: true })
-      .eq('customerId', session.user.id);
-
-    if (countError) {
-      console.error('Error getting total count:', countError);
-      return NextResponse.json(
-        { error: 'Failed to get total count' },
-        { status: 500 }
-      );
-    }
-
-    // Process tickets to include latest comment
-    const processedTickets = tickets?.map(ticket => ({
-      ...ticket,
-      latestComment: ticket.comments?.[0] || null,
-      comments: undefined // Remove full comments array from response
-    }));
-
+    // Format response
     return NextResponse.json({
-      tickets: processedTickets,
+      tickets: tickets || [],
       pagination: {
+        total: count || 0,
+        pages: Math.ceil((count || 0) / limit),
         page,
-        limit,
-        total: totalCount || 0,
-        totalPages: Math.ceil((totalCount || 0) / limit)
+        limit
       }
     });
   } catch (error) {
     console.error('Error in GET /api/portal/tickets:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    // Check permissions
+    const permissionCheck = await checkUserPermissions(Permission.CREATE_TICKETS);
+    if ('error' in permissionCheck) {
+      return NextResponse.json(
+        { error: permissionCheck.error },
+        { status: permissionCheck.status }
+      );
+    }
+
+    // Parse and validate request body
+    const body = await request.json();
+    const validatedData = createTicketSchema.parse(body);
+
+    // Create ticket
+    const { data: ticket, error: ticketError } = await supabase
+      .from('tickets')
+      .insert({
+        title: validatedData.title,
+        description: validatedData.description,
+        priority: validatedData.priority || TicketPriority.MEDIUM,
+        status: TicketStatus.OPEN,
+        customer_id: permissionCheck.user.id,
+        source: 'portal'
+      })
+      .select()
+      .single();
+
+    if (ticketError) {
+      console.error('Error creating ticket:', ticketError);
+      return NextResponse.json(
+        { error: 'Failed to create ticket' },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json(ticket);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Invalid request data', details: error.errors },
+        { status: 400 }
+      );
+    }
+
+    console.error('Error in POST /api/portal/tickets:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

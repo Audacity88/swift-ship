@@ -82,19 +82,28 @@ export function TicketDetails({
   const [isInternalNote, setIsInternalNote] = useState(false)
   const [isSubmittingComment, setIsSubmittingComment] = useState(false)
   const commentsEndRef = useRef<HTMLDivElement>(null)
+  const [error, setError] = useState<string | null>(null)
 
   // Load ticket data
   useEffect(() => {
     const loadTicket = async () => {
       setIsLoading(true)
       try {
-        const response = await fetch(`/api/tickets/${ticketId}`)
-        if (!response.ok) throw new Error('Failed to load ticket')
-        const data = await response.json()
+        const response = await fetch(`/api/tickets/${ticketId}`, {
+          credentials: 'include'
+        })
+        console.log('Ticket response status:', response.status)
+        if (!response.ok) {
+          const error = await response.json()
+          console.error('Failed to load ticket:', error)
+          throw new Error(error.error || 'Failed to load ticket')
+        }
+        const { data } = await response.json()
+        console.log('Ticket data:', data)
         setTicket(data)
       } catch (error) {
         console.error('Failed to load ticket:', error)
-        // TODO: Show error toast
+        setError(error instanceof Error ? error.message : 'Failed to load ticket')
       } finally {
         setIsLoading(false)
       }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { Team } from '@/types/team';
 import { Permission } from '@/types/role';
+import { checkUserPermissions } from '@/lib/auth/check-permissions';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -10,40 +11,12 @@ const supabase = createClient(
 
 export async function GET(request: NextRequest) {
   try {
-    // Check if user is authenticated
-    const { data: { session }, error: authError } = await supabase.auth.getSession();
-    if (authError || !session) {
+    // Check permissions
+    const permissionCheck = await checkUserPermissions(Permission.VIEW_TEAMS);
+    if ('error' in permissionCheck) {
       return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    // Get user's role and permissions
-    const { data: userData, error: userError } = await supabase
-      .from('users')
-      .select('role, custom_permissions')
-      .eq('id', session.user.id)
-      .single();
-
-    if (userError || !userData) {
-      return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
-      );
-    }
-
-    // Check if user has permission to view teams
-    const { data: permissions } = await supabase
-      .from('role_permissions')
-      .select('permissions')
-      .eq('role', userData.role)
-      .single();
-
-    if (!permissions?.permissions?.includes(Permission.VIEW_TEAMS)) {
-      return NextResponse.json(
-        { error: 'Insufficient permissions' },
-        { status: 403 }
+        { error: permissionCheck.error },
+        { status: permissionCheck.status }
       );
     }
 
@@ -53,7 +26,7 @@ export async function GET(request: NextRequest) {
     const query = supabase.from('teams').select(`
       *,
       members:team_members (
-        user:users (
+        agent:agents (
           id,
           name,
           email,
@@ -79,16 +52,14 @@ export async function GET(request: NextRequest) {
       )
     `);
 
-    // Apply active filter if provided
     if (isActive !== null) {
       query.eq('is_active', isActive === 'true');
     }
 
-    // Execute query
-    const { data: teams, error: teamsError } = await query;
+    const { data: teams, error } = await query;
 
-    if (teamsError) {
-      console.error('Error fetching teams:', teamsError);
+    if (error) {
+      console.error('Error fetching teams:', error);
       return NextResponse.json(
         { error: 'Failed to fetch teams' },
         { status: 500 }
@@ -107,40 +78,12 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    // Check if user is authenticated
-    const { data: { session }, error: authError } = await supabase.auth.getSession();
-    if (authError || !session) {
+    // Check permissions
+    const permissionCheck = await checkUserPermissions(Permission.MANAGE_TEAMS);
+    if ('error' in permissionCheck) {
       return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    // Get user's role and permissions
-    const { data: userData, error: userError } = await supabase
-      .from('users')
-      .select('role, custom_permissions')
-      .eq('id', session.user.id)
-      .single();
-
-    if (userError || !userData) {
-      return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
-      );
-    }
-
-    // Check if user has permission to manage teams
-    const { data: permissions } = await supabase
-      .from('role_permissions')
-      .select('permissions')
-      .eq('role', userData.role)
-      .single();
-
-    if (!permissions?.permissions?.includes(Permission.MANAGE_TEAMS)) {
-      return NextResponse.json(
-        { error: 'Insufficient permissions' },
-        { status: 403 }
+        { error: permissionCheck.error },
+        { status: permissionCheck.status }
       );
     }
 
@@ -156,17 +99,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create new team
+    // Create team
     const { data: team, error: createError } = await supabase
       .from('teams')
       .insert({
         name,
         description,
         schedule,
-        created_by: session.user.id,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        is_active: true,
+        created_by: permissionCheck.session.user.id,
+        is_active: true
       })
       .select()
       .single();
@@ -180,19 +121,19 @@ export async function POST(request: NextRequest) {
     }
 
     // Add skills if provided
-    if (skills && skills.length > 0) {
+    if (skills?.length) {
       const { error: skillsError } = await supabase
         .from('team_skills')
         .insert(
           skills.map((skill: any) => ({
             team_id: team.id,
-            ...skill,
+            ...skill
           }))
         );
 
       if (skillsError) {
         console.error('Error adding team skills:', skillsError);
-        // Don't fail the request, but log the error
+        // Don't fail the request, just log the error
       }
     }
 

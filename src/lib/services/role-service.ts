@@ -51,43 +51,83 @@ export class RoleService {
   }
 
   async getUserRole(userId: string): Promise<RoleType | null> {
-    const { data, error } = await supabase
-      .from('users')
+    // First check if user is an agent
+    const { data: agentData } = await supabase
+      .from('agents')
       .select('role')
       .eq('id', userId)
       .single();
 
-    if (error || !data) return null;
-    return data.role as RoleType;
+    if (agentData) {
+      return agentData.role as RoleType;
+    }
+
+    // If not an agent, check if user is a customer
+    const { data: customerData } = await supabase
+      .from('customers')
+      .select('id')
+      .eq('id', userId)
+      .single();
+
+    if (customerData) {
+      return RoleType.CUSTOMER;
+    }
+
+    return null;
   }
 
   async assignRole(roleData: UserRoleData): Promise<boolean> {
+    // Only agents can have roles assigned (customers are always CUSTOMER role)
+    if (roleData.role === RoleType.CUSTOMER) {
+      const { error } = await supabase
+        .from('customers')
+        .upsert({
+          id: roleData.userId,
+          created_at: new Date().toISOString(),
+        });
+      return !error;
+    }
+
     const { error } = await supabase
-      .from('users')
-      .update({
+      .from('agents')
+      .upsert({
+        id: roleData.userId,
         role: roleData.role,
         custom_permissions: roleData.customPermissions,
         role_assigned_by: roleData.assignedBy,
         role_assigned_at: roleData.assignedAt.toISOString(),
-      })
-      .eq('id', roleData.userId);
+      });
 
     return !error;
   }
 
   // Permission Management
   async getUserPermissions(userId: string): Promise<Permission[]> {
-    const { data, error } = await supabase
-      .from('users')
+    // First check if user is an agent
+    const { data: agentData } = await supabase
+      .from('agents')
       .select('role, custom_permissions')
       .eq('id', userId)
       .single();
 
-    if (error || !data) return [];
+    if (agentData) {
+      // Return custom permissions if set, otherwise return default permissions for the role
+      return (agentData.custom_permissions as Permission[]) || 
+             DEFAULT_ROLE_PERMISSIONS[agentData.role as RoleType];
+    }
 
-    // Return custom permissions if set, otherwise return default permissions for the role
-    return (data.custom_permissions as Permission[]) || 
-           DEFAULT_ROLE_PERMISSIONS[data.role as RoleType];
+    // If not an agent, check if user is a customer
+    const { data: customerData } = await supabase
+      .from('customers')
+      .select('id')
+      .eq('id', userId)
+      .single();
+
+    if (customerData) {
+      return DEFAULT_ROLE_PERMISSIONS[RoleType.CUSTOMER];
+    }
+
+    return [];
   }
 
   async hasPermission(userId: string, permission: Permission): Promise<boolean> {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Permission } from '@/types/role';
 import { createClient } from '@supabase/supabase-js';
-import { roleService } from '@/lib/services/role-service';
+import { Permission } from '@/types/role';
+import { checkUserPermissions } from '@/lib/auth/check-permissions';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -10,52 +10,58 @@ const supabase = createClient(
 
 export async function GET(request: NextRequest) {
   try {
-    // Check if user is authenticated
-    const { data: { session }, error: authError } = await supabase.auth.getSession();
-    if (authError || !session) {
+    // Check permissions
+    const permissionCheck = await checkUserPermissions(Permission.VIEW_ROLES);
+    if ('error' in permissionCheck) {
       return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
+        { error: permissionCheck.error },
+        { status: permissionCheck.status }
       );
     }
 
-    const userId = session.user.id;
+    // Get all permissions
+    const permissions = Object.values(Permission);
 
-    // Check specific permission if provided in query
-    const searchParams = request.nextUrl.searchParams;
-    const checkPermission = searchParams.get('check') as Permission;
+    // Get role permissions matrix
+    const { data: rolePermissions, error } = await supabase
+      .from('role_permissions')
+      .select(`
+        role:roles (
+          id,
+          name,
+          description
+        ),
+        permission
+      `)
+      .order('permission', { ascending: true });
 
-    if (checkPermission) {
-      // Validate if the permission exists
-      if (!roleService.isValidPermission(checkPermission)) {
-        return NextResponse.json(
-          { error: 'Invalid permission' },
-          { status: 400 }
-        );
+    if (error) {
+      console.error('Error fetching role permissions:', error);
+      return NextResponse.json(
+        { error: 'Failed to fetch role permissions' },
+        { status: 500 }
+      );
+    }
+
+    // Build permissions matrix
+    const matrix = rolePermissions.reduce((acc, { role, permission }) => {
+      if (!acc[role.id]) {
+        acc[role.id] = {
+          role: {
+            id: role.id,
+            name: role.name,
+            description: role.description
+          },
+          permissions: []
+        };
       }
+      acc[role.id].permissions.push(permission);
+      return acc;
+    }, {} as Record<string, { role: { id: string; name: string; description: string | null }; permissions: Permission[] }>);
 
-      // Return whether the user has the specific permission
-      const hasPermission = await roleService.hasPermission(userId, checkPermission);
-      return NextResponse.json({ hasPermission });
-    }
-
-    // Get user's role and permissions
-    const role = await roleService.getUserRole(userId);
-    if (!role) {
-      return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
-      );
-    }
-
-    const permissions = await roleService.getUserPermissions(userId);
-    const defaultPermissions = roleService.getDefaultPermissions(role);
-    
-    // Return all permissions for the user
     return NextResponse.json({
-      role,
       permissions,
-      isCustom: JSON.stringify(permissions) !== JSON.stringify(defaultPermissions)
+      roles: Object.values(matrix)
     });
   } catch (error) {
     console.error('Error in GET /api/roles/permissions:', error);

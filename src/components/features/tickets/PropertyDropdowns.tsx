@@ -5,9 +5,10 @@ import Image from 'next/image'
 import { 
   AlertCircle, HelpCircle, Wrench, Check, Search,
   Tag as TagIcon, X, Users, ChevronDown,
-  type LucideIcon
+  type LucideIcon, Loader2
 } from 'lucide-react'
 import type { TicketType } from '@/types/ticket'
+import { supabase } from '@/lib/supabase'
 
 interface DropdownProps {
   show: boolean
@@ -294,12 +295,31 @@ interface FollowersDropdownProps {
 
 export function FollowersDropdown({ show, onClose, followers, onAdd, onRemove }: FollowersDropdownProps) {
   const [searchQuery, setSearchQuery] = useState('')
+  const [suggestedFollowers, setSuggestedFollowers] = useState<{ id: string; name: string; email: string }[]>([])
+  const [loading, setLoading] = useState(true)
 
-  const suggestedFollowers = [
-    { id: '1', name: 'Dan G', email: 'dan@example.com' },
-    { id: '2', name: 'Sarah Wilson', email: 'sarah@example.com' },
-    { id: '3', name: 'Michael Chen', email: 'michael@example.com' },
-  ].filter(user => !followers.includes(user.name))
+  useEffect(() => {
+    const fetchAgents = async () => {
+      try {
+        const { data: agents, error } = await supabase
+          .from('agents')
+          .select('id, name, email')
+          .not('name', 'in', `(${followers.map(f => `'${f}'`).join(',')})`)
+
+        if (error) throw error
+
+        setSuggestedFollowers(agents || [])
+      } catch (error) {
+        console.error('Error fetching agents:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    if (show) {
+      fetchAgents()
+    }
+  }, [show, followers])
 
   const filteredFollowers = suggestedFollowers.filter(user => 
     user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -335,7 +355,7 @@ export function FollowersDropdown({ show, onClose, followers, onAdd, onRemove }:
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
             type="search"
-            placeholder="Search users..."
+            placeholder="Search agents..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg \
@@ -345,26 +365,36 @@ export function FollowersDropdown({ show, onClose, followers, onAdd, onRemove }:
 
         {/* Suggested Users */}
         <div className="space-y-2">
-          {filteredFollowers.map(user => (
-            <button
-              key={user.id}
-              onClick={() => onAdd(user.name)}
-              className="flex items-center gap-3 w-full p-2 rounded hover:bg-gray-50"
-            >
-              <div className="relative w-8 h-8 rounded-full overflow-hidden">
-                <Image
-                  src="/default-avatar.png"
-                  alt={user.name}
-                  fill
-                  className="object-cover"
-                />
-              </div>
-              <div className="flex-1 text-left">
-                <p className="text-sm font-medium text-gray-900">{user.name}</p>
-                <p className="text-xs text-gray-500">{user.email}</p>
-              </div>
-            </button>
-          ))}
+          {loading ? (
+            <div className="flex items-center justify-center py-4">
+              <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+            </div>
+          ) : filteredFollowers.length === 0 ? (
+            <div className="text-sm text-gray-500 text-center py-4">
+              No agents found
+            </div>
+          ) : (
+            filteredFollowers.map(user => (
+              <button
+                key={user.id}
+                onClick={() => onAdd(user.name)}
+                className="flex items-center gap-3 w-full p-2 rounded hover:bg-gray-50"
+              >
+                <div className="relative w-8 h-8 rounded-full overflow-hidden">
+                  <Image
+                    src="/default-avatar.png"
+                    alt={user.name}
+                    fill
+                    className="object-cover"
+                  />
+                </div>
+                <div className="flex-1 text-left">
+                  <p className="text-sm font-medium text-gray-900">{user.name}</p>
+                  <p className="text-xs text-gray-500">{user.email}</p>
+                </div>
+              </button>
+            ))
+          )}
         </div>
       </div>
     </Dropdown>

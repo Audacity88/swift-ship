@@ -2,41 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { Permission } from '@/types/role';
 import { TeamMetrics } from '@/types/team';
+import { checkUserPermissions } from '@/lib/auth/check-permissions';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
-
-// Helper function to check user authentication and permissions
-async function checkUserPermissions(requiredPermission: Permission) {
-  const { data: { session }, error: authError } = await supabase.auth.getSession();
-  if (authError || !session) {
-    return { error: 'Unauthorized', status: 401 };
-  }
-
-  const { data: userData, error: userError } = await supabase
-    .from('users')
-    .select('role, custom_permissions')
-    .eq('id', session.user.id)
-    .single();
-
-  if (userError || !userData) {
-    return { error: 'User not found', status: 404 };
-  }
-
-  const { data: permissions } = await supabase
-    .from('role_permissions')
-    .select('permissions')
-    .eq('role', userData.role)
-    .single();
-
-  if (!permissions?.permissions?.includes(requiredPermission)) {
-    return { error: 'Insufficient permissions', status: 403 };
-  }
-
-  return { session, userData };
-}
 
 // Get team metrics
 export async function GET(
@@ -44,7 +15,8 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const permissionCheck = await checkUserPermissions(Permission.VIEW_TEAM_METRICS);
+    // Check permissions
+    const permissionCheck = await checkUserPermissions(Permission.VIEW_TEAMS);
     if ('error' in permissionCheck) {
       return NextResponse.json(
         { error: permissionCheck.error },
@@ -52,51 +24,71 @@ export async function GET(
       );
     }
 
-    // Get team metrics
-    const { data: metrics, error: metricsError } = await supabase
+    // Get query parameters
+    const searchParams = request.nextUrl.searchParams;
+    const dateFrom = searchParams.get('from');
+    const dateTo = searchParams.get('to');
+
+    // Build base query
+    let query = supabase
       .from('team_metrics')
       .select(`
         *,
-        team:teams (
+        team:teams(
           id,
           name
         )
       `)
-      .eq('team_id', params.id)
-      .single();
+      .eq('team_id', params.id);
 
-    if (metricsError) {
-      console.error('Error fetching team metrics:', metricsError);
+    // Apply date filters if provided
+    if (dateFrom) {
+      query = query.gte('date', dateFrom);
+    }
+    if (dateTo) {
+      query = query.lte('date', dateTo);
+    }
+
+    // Execute query
+    const { data: metrics, error } = await query;
+
+    if (error) {
+      console.error('Error fetching team metrics:', error);
       return NextResponse.json(
         { error: 'Failed to fetch team metrics' },
         { status: 500 }
       );
     }
 
-    if (!metrics) {
-      return NextResponse.json(
-        { error: 'Team metrics not found' },
-        { status: 404 }
-      );
+    // Calculate aggregated metrics
+    const aggregatedMetrics = {
+      totalTickets: 0,
+      resolvedTickets: 0,
+      averageResponseTime: 0,
+      averageResolutionTime: 0,
+      customerSatisfactionScore: 0,
+      metrics: metrics || []
+    };
+
+    if (metrics && metrics.length > 0) {
+      let totalResponseTime = 0;
+      let totalResolutionTime = 0;
+      let totalSatisfactionScore = 0;
+
+      metrics.forEach(metric => {
+        aggregatedMetrics.totalTickets += metric.total_tickets || 0;
+        aggregatedMetrics.resolvedTickets += metric.resolved_tickets || 0;
+        totalResponseTime += metric.average_response_time || 0;
+        totalResolutionTime += metric.average_resolution_time || 0;
+        totalSatisfactionScore += metric.customer_satisfaction_score || 0;
+      });
+
+      aggregatedMetrics.averageResponseTime = totalResponseTime / metrics.length;
+      aggregatedMetrics.averageResolutionTime = totalResolutionTime / metrics.length;
+      aggregatedMetrics.customerSatisfactionScore = totalSatisfactionScore / metrics.length;
     }
 
-    // Get historical metrics for trends
-    const { data: historicalMetrics, error: historyError } = await supabase
-      .from('team_metrics_history')
-      .select('*')
-      .eq('team_id', params.id)
-      .order('timestamp', { ascending: false })
-      .limit(30); // Last 30 data points
-
-    if (historyError) {
-      console.error('Error fetching historical metrics:', historyError);
-      // Don't fail the request, just log the error
-    }
-
-    return NextResponse.json({
-      currentMetrics: metrics,
-      historicalMetrics: historicalMetrics || []
-    });
+    return NextResponse.json(aggregatedMetrics);
   } catch (error) {
     console.error('Error in GET /api/teams/metrics/[id]:', error);
     return NextResponse.json(

@@ -75,6 +75,7 @@ export async function GET(request: Request) {
           status: {
             [TicketStatus.OPEN]: 0,
             [TicketStatus.IN_PROGRESS]: 0,
+            [TicketStatus.AWAITING_RESPONSE]: 0,
             [TicketStatus.RESOLVED]: 0,
             [TicketStatus.CLOSED]: 0
           }
@@ -246,6 +247,7 @@ export async function GET(request: Request) {
             status: {
               [TicketStatus.OPEN]: 0,
               [TicketStatus.IN_PROGRESS]: 0,
+              [TicketStatus.AWAITING_RESPONSE]: 0,
               [TicketStatus.RESOLVED]: 0,
               [TicketStatus.CLOSED]: 0
             }

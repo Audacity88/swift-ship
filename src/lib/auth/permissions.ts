@@ -41,6 +41,11 @@ function cachePermissions(userId: string, permissions: Permission[], role: RoleT
   });
 }
 
+interface AuthUser {
+  role: string;
+  type: 'agent' | 'customer';
+}
+
 export async function getUserPermissions(): Promise<Permission[]> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) {
@@ -53,22 +58,33 @@ export async function getUserPermissions(): Promise<Permission[]> {
     return cachedPermissions;
   }
 
-  const { data: userData } = await supabase
-    .from('users')
-    .select('role')
+  // Check if user is an agent
+  const { data: agent } = await supabase
+    .from('agents')
+    .select('id, role')
     .eq('id', session.user.id)
     .single();
 
-  if (!userData?.role) {
-    return [];
+  if (agent) {
+    const permissions = await roleService.getUserPermissions(agent.role as RoleType);
+    cachePermissions(session.user.id, permissions, agent.role as RoleType);
+    return permissions;
   }
 
-  const permissions = await roleService.getUserPermissions(userData.role as RoleType);
-  
-  // Cache the results
-  cachePermissions(session.user.id, permissions, userData.role as RoleType);
+  // If not an agent, check if user is a customer
+  const { data: customer } = await supabase
+    .from('customers')
+    .select('id')
+    .eq('id', session.user.id)
+    .single();
 
-  return permissions;
+  if (customer) {
+    const permissions = await roleService.getUserPermissions(RoleType.CUSTOMER);
+    cachePermissions(session.user.id, permissions, RoleType.CUSTOMER);
+    return permissions;
+  }
+
+  return [];
 }
 
 export async function hasPermission(requiredPermission: Permission): Promise<boolean> {
@@ -86,7 +102,7 @@ export async function hasAllPermissions(requiredPermissions: Permission[]): Prom
   return requiredPermissions.every(permission => permissions.includes(permission));
 }
 
-export async function getUserRole(): Promise<RoleType | null> {
+export async function getUserRole(): Promise<AuthUser | null> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) {
     return null;
@@ -95,21 +111,45 @@ export async function getUserRole(): Promise<RoleType | null> {
   // Check cache first
   const cached = permissionCache.get(session.user.id);
   if (cached) {
-    return cached.role;
+    return {
+      role: cached.role,
+      type: cached.role === 'customer' ? 'customer' : 'agent'
+    };
   }
 
-  const { data: userData } = await supabase
-    .from('users')
-    .select('role')
+  // Check if user is an agent
+  const { data: agent } = await supabase
+    .from('agents')
+    .select('id, role')
     .eq('id', session.user.id)
     .single();
 
-  if (userData?.role) {
-    // Cache will be updated by getUserPermissions
-    await getUserPermissions();
+  if (agent) {
+    const permissions = await roleService.getUserPermissions(agent.role as RoleType);
+    cachePermissions(session.user.id, permissions, agent.role as RoleType);
+    return {
+      role: agent.role,
+      type: 'agent'
+    };
   }
 
-  return userData?.role as RoleType || null;
+  // If not an agent, check if user is a customer
+  const { data: customer } = await supabase
+    .from('customers')
+    .select('id')
+    .eq('id', session.user.id)
+    .single();
+
+  if (customer) {
+    const permissions = await roleService.getUserPermissions(RoleType.CUSTOMER);
+    cachePermissions(session.user.id, permissions, RoleType.CUSTOMER);
+    return {
+      role: 'customer',
+      type: 'customer'
+    };
+  }
+
+  return null;
 }
 
 // Role hierarchy definition
@@ -134,9 +174,9 @@ export function getAllPermissionsForRole(role: RoleType): Permission[] {
 }
 
 export async function isAuthorizedForRoute(pathname: string): Promise<boolean> {
-  const userRole = await getUserRole();
+  const user = await getUserRole();
   
-  if (!userRole) {
+  if (!user) {
     return false;
   }
 
@@ -164,12 +204,15 @@ export async function isAuthorizedForRoute(pathname: string): Promise<boolean> {
     '/portal/knowledge/articles': [Permission.VIEW_PUBLIC_ARTICLES],
   };
 
+  // Admin has access to everything
+  if (user.role === 'admin') {
+    return true;
+  }
+
   // Check if the route is an admin route
   if (pathname.startsWith('/settings/') || pathname.startsWith('/admin/')) {
     // Only ADMIN role can access admin routes
-    if (userRole !== RoleType.ADMIN) {
-      return false;
-    }
+    return user.role === 'admin';
   }
 
   // Check if the route is an agent route
@@ -190,13 +233,10 @@ export async function isAuthorizedForRoute(pathname: string): Promise<boolean> {
     pathname.startsWith('/knowledge/')
   ) {
     // Only ADMIN, SUPERVISOR, or AGENT roles can access agent routes
-    if (!isAgentRole(userRole)) {
-      return false;
-    }
-    return true;
+    return user.type === 'agent';
   }
 
-  // Check dynamic routes
+  // Handle dynamic routes
   if (pathname === '/settings/teams' || pathname.startsWith('/settings/teams/')) {
     if (pathname.includes('/members')) {
       return hasPermission(Permission.MANAGE_TEAM_MEMBERS);

@@ -1,41 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { Permission } from '@/types/role';
+import { checkUserPermissions } from '@/lib/auth/check-permissions';
+import { z } from 'zod';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-// Helper function to check user permissions
-async function checkUserPermissions(requiredPermission: Permission) {
-  const { data: { session }, error: authError } = await supabase.auth.getSession();
-  if (authError || !session) {
-    return { error: 'Unauthorized', status: 401 };
-  }
-
-  const { data: userData, error: userError } = await supabase
-    .from('users')
-    .select('role, custom_permissions')
-    .eq('id', session.user.id)
-    .single();
-
-  if (userError || !userData) {
-    return { error: 'User not found', status: 404 };
-  }
-
-  const { data: permissions } = await supabase
-    .from('role_permissions')
-    .select('permissions')
-    .eq('role', userData.role)
-    .single();
-
-  if (!permissions?.permissions?.includes(requiredPermission)) {
-    return { error: 'Insufficient permissions', status: 403 };
-  }
-
-  return { session, userData };
-}
+const updateCategorySchema = z.object({
+  name: z.string().min(1).optional(),
+  description: z.string().optional(),
+  parentId: z.string().uuid().optional(),
+  order: z.number().int().min(0).optional()
+});
 
 // GET /api/knowledge/categories/[id] - Get category details
 export async function GET(
@@ -52,52 +31,31 @@ export async function GET(
       );
     }
 
-    // Get category with article count and subcategories
-    const { data: category, error: categoryError } = await supabase
+    // Get category
+    const { data: category, error } = await supabase
       .from('categories')
       .select(`
         *,
-        article_count:articles (count),
-        subcategories:categories (
+        articles (
           id,
-          name,
-          slug,
-          description,
-          order,
-          article_count:articles (count)
+          title,
+          status,
+          created_at,
+          updated_at
         )
       `)
       .eq('id', params.id)
       .single();
 
-    if (categoryError) {
-      console.error('Error fetching category:', categoryError);
-      return NextResponse.json(
-        { error: 'Failed to fetch category' },
-        { status: 500 }
-      );
-    }
-
-    if (!category) {
+    if (error) {
+      console.error('Error fetching category:', error);
       return NextResponse.json(
         { error: 'Category not found' },
         { status: 404 }
       );
     }
 
-    // Process category to include article count
-    const processedCategory = {
-      ...category,
-      articleCount: category.article_count?.[0]?.count || 0,
-      subcategories: category.subcategories?.map((sub: { article_count: { count: number }[] }) => ({
-        ...sub,
-        articleCount: sub.article_count?.[0]?.count || 0
-      }))
-    };
-
-    return NextResponse.json({
-      category: processedCategory
-    });
+    return NextResponse.json(category);
   } catch (error) {
     console.error('Error in GET /api/knowledge/categories/[id]:', error);
     return NextResponse.json(
@@ -216,37 +174,16 @@ export async function DELETE(
       );
     }
 
-    // Check if category has subcategories
-    const { data: subcategories, error: subcategoriesError } = await supabase
-      .from('categories')
-      .select('id')
-      .eq('parentId', params.id);
-
-    if (subcategoriesError) {
-      console.error('Error checking subcategories:', subcategoriesError);
-      return NextResponse.json(
-        { error: 'Failed to check subcategories' },
-        { status: 500 }
-      );
-    }
-
-    if (subcategories && subcategories.length > 0) {
-      return NextResponse.json(
-        { error: 'Cannot delete category with subcategories' },
-        { status: 400 }
-      );
-    }
-
     // Check if category has articles
     const { data: articles, error: articlesError } = await supabase
       .from('articles')
       .select('id')
-      .eq('categoryId', params.id);
+      .eq('category_id', params.id);
 
     if (articlesError) {
-      console.error('Error checking articles:', articlesError);
+      console.error('Error checking category articles:', articlesError);
       return NextResponse.json(
-        { error: 'Failed to check articles' },
+        { error: 'Failed to check category articles' },
         { status: 500 }
       );
     }
@@ -259,22 +196,20 @@ export async function DELETE(
     }
 
     // Delete category
-    const { error: deleteError } = await supabase
+    const { error } = await supabase
       .from('categories')
       .delete()
       .eq('id', params.id);
 
-    if (deleteError) {
-      console.error('Error deleting category:', deleteError);
+    if (error) {
+      console.error('Error deleting category:', error);
       return NextResponse.json(
         { error: 'Failed to delete category' },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({
-      message: 'Category deleted successfully'
-    });
+    return new NextResponse(null, { status: 204 });
   } catch (error) {
     console.error('Error in DELETE /api/knowledge/categories/[id]:', error);
     return NextResponse.json(

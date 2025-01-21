@@ -1,47 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { Permission } from '@/types/role';
+import { checkUserPermissions } from '@/lib/auth/check-permissions';
+import { z } from 'zod';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-// Helper function to check user permissions
-async function checkUserPermissions(requiredPermission: Permission) {
-  const { data: { session }, error: authError } = await supabase.auth.getSession();
-  if (authError || !session) {
-    return { error: 'Unauthorized', status: 401 };
-  }
-
-  const { data: userData, error: userError } = await supabase
-    .from('users')
-    .select('role, custom_permissions')
-    .eq('id', session.user.id)
-    .single();
-
-  if (userError || !userData) {
-    return { error: 'User not found', status: 404 };
-  }
-
-  const { data: permissions } = await supabase
-    .from('role_permissions')
-    .select('permissions')
-    .eq('role', userData.role)
-    .single();
-
-  if (!permissions?.permissions?.includes(requiredPermission)) {
-    return { error: 'Insufficient permissions', status: 403 };
-  }
-
-  return { session, userData };
-}
+const updateProfileSchema = z.object({
+  name: z.string().min(1).optional(),
+  email: z.string().email().optional(),
+  phone: z.string().optional(),
+  company: z.string().optional(),
+  preferences: z.object({
+    notifications: z.object({
+      email: z.boolean(),
+      push: z.boolean()
+    }).optional()
+  }).optional()
+});
 
 // GET /api/portal/profile - Get customer profile
 export async function GET(request: NextRequest) {
   try {
     // Check permissions
-    const permissionCheck = await checkUserPermissions(Permission.VIEW_PORTAL);
+    const permissionCheck = await checkUserPermissions(Permission.VIEW_PROFILE);
     if ('error' in permissionCheck) {
       return NextResponse.json(
         { error: permissionCheck.error },
@@ -49,57 +34,22 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const { session } = permissionCheck;
-
-    // Get customer profile with preferences
-    const { data: profile, error: profileError } = await supabase
-      .from('customer_profiles')
-      .select(`
-        *,
-        preferences:portal_preferences (*),
-        company:companies (
-          id,
-          name,
-          domain
-        )
-      `)
-      .eq('userId', session.user.id)
+    // Get customer profile
+    const { data: customer, error } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('id', permissionCheck.user.id)
       .single();
 
-    if (profileError) {
-      console.error('Error fetching profile:', profileError);
+    if (error) {
+      console.error('Error fetching customer profile:', error);
       return NextResponse.json(
         { error: 'Failed to fetch profile' },
         { status: 500 }
       );
     }
 
-    if (!profile) {
-      return NextResponse.json(
-        { error: 'Profile not found' },
-        { status: 404 }
-      );
-    }
-
-    // Get recent activity
-    const { data: recentActivity, error: activityError } = await supabase
-      .from('portal_activity')
-      .select('*')
-      .eq('userId', session.user.id)
-      .order('createdAt', { ascending: false })
-      .limit(5);
-
-    if (activityError) {
-      console.error('Error fetching activity:', activityError);
-      // Don't fail the request, just log the error
-    }
-
-    return NextResponse.json({
-      profile: {
-        ...profile,
-        recentActivity: recentActivity || []
-      }
-    });
+    return NextResponse.json(customer);
   } catch (error) {
     console.error('Error in GET /api/portal/profile:', error);
     return NextResponse.json(
@@ -113,7 +63,7 @@ export async function GET(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     // Check permissions
-    const permissionCheck = await checkUserPermissions(Permission.VIEW_PORTAL);
+    const permissionCheck = await checkUserPermissions(Permission.UPDATE_PROFILE);
     if ('error' in permissionCheck) {
       return NextResponse.json(
         { error: permissionCheck.error },
@@ -121,73 +71,42 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const { session } = permissionCheck;
-
-    // Get request body
+    // Parse and validate request body
     const body = await request.json();
-    const {
-      jobTitle,
-      timezone,
-      language,
-      preferences = {}
-    } = body;
+    const validatedData = updateProfileSchema.parse(body);
 
-    // Update profile
-    const { data: profile, error: profileError } = await supabase
-      .from('customer_profiles')
+    // Update customer profile
+    const { data: customer, error } = await supabase
+      .from('customers')
       .update({
-        jobTitle,
-        timezone,
-        language,
-        updatedAt: new Date().toISOString()
+        name: validatedData.name,
+        email: validatedData.email,
+        phone: validatedData.phone,
+        company: validatedData.company,
+        preferences: validatedData.preferences,
+        updated_at: new Date().toISOString()
       })
-      .eq('userId', session.user.id)
+      .eq('id', permissionCheck.user.id)
       .select()
       .single();
 
-    if (profileError) {
-      console.error('Error updating profile:', profileError);
+    if (error) {
+      console.error('Error updating customer profile:', error);
       return NextResponse.json(
         { error: 'Failed to update profile' },
         { status: 500 }
       );
     }
 
-    // Update preferences if provided
-    if (Object.keys(preferences).length > 0) {
-      const { error: prefError } = await supabase
-        .from('portal_preferences')
-        .upsert({
-          userId: session.user.id,
-          ...preferences,
-          updatedAt: new Date().toISOString()
-        });
-
-      if (prefError) {
-        console.error('Error updating preferences:', prefError);
-        // Don't fail the request, just log the error
-      }
-    }
-
-    // Track activity
-    const { error: activityError } = await supabase
-      .from('portal_activity')
-      .insert({
-        userId: session.user.id,
-        type: 'PROFILE_UPDATE',
-        createdAt: new Date().toISOString()
-      });
-
-    if (activityError) {
-      console.error('Error tracking activity:', activityError);
-      // Don't fail the request, just log the error
-    }
-
-    return NextResponse.json({
-      message: 'Profile updated successfully',
-      profile
-    });
+    return NextResponse.json(customer);
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Invalid request data', details: error.errors },
+        { status: 400 }
+      );
+    }
+
     console.error('Error in PUT /api/portal/profile:', error);
     return NextResponse.json(
       { error: 'Internal server error' },

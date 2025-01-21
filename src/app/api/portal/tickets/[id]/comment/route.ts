@@ -1,41 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { Permission } from '@/types/role';
+import { checkUserPermissions } from '@/lib/auth/check-permissions';
+import { z } from 'zod';
+import { TicketStatus } from '@/types/ticket';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-// Helper function to check user permissions
-async function checkUserPermissions(requiredPermission: Permission) {
-  const { data: { session }, error: authError } = await supabase.auth.getSession();
-  if (authError || !session) {
-    return { error: 'Unauthorized', status: 401 };
-  }
-
-  const { data: userData, error: userError } = await supabase
-    .from('users')
-    .select('role, custom_permissions')
-    .eq('id', session.user.id)
-    .single();
-
-  if (userError || !userData) {
-    return { error: 'User not found', status: 404 };
-  }
-
-  const { data: permissions } = await supabase
-    .from('role_permissions')
-    .select('permissions')
-    .eq('role', userData.role)
-    .single();
-
-  if (!permissions?.permissions?.includes(requiredPermission)) {
-    return { error: 'Insufficient permissions', status: 403 };
-  }
-
-  return { session, userData };
-}
+const createCommentSchema = z.object({
+  content: z.string().min(1)
+});
 
 // POST /api/portal/tickets/[id]/comment - Add ticket comment
 export async function POST(
@@ -44,22 +21,24 @@ export async function POST(
 ) {
   try {
     // Check permissions
-    const permissionCheck = await checkUserPermissions(Permission.VIEW_PORTAL);
-    if ('error' in permissionCheck) {
+    const permissionCheck = await checkUserPermissions(Permission.CREATE_COMMENTS);
+    if ('error' in permissionCheck || !permissionCheck.user) {
       return NextResponse.json(
-        { error: permissionCheck.error },
-        { status: permissionCheck.status }
+        { error: permissionCheck.error || 'User not found' },
+        { status: permissionCheck.status || 404 }
       );
     }
 
-    const { session } = permissionCheck;
+    // Parse and validate request body
+    const body = await request.json();
+    const validatedData = createCommentSchema.parse(body);
 
     // Verify ticket exists and belongs to user
     const { data: ticket, error: ticketError } = await supabase
       .from('tickets')
       .select('id, status')
       .eq('id', params.id)
-      .eq('customerId', session.user.id)
+      .eq('customer_id', permissionCheck.user.id)
       .single();
 
     if (ticketError || !ticket) {
@@ -70,21 +49,9 @@ export async function POST(
     }
 
     // Check if ticket is closed
-    if (ticket.status === 'CLOSED') {
+    if (ticket.status === TicketStatus.CLOSED) {
       return NextResponse.json(
         { error: 'Cannot comment on closed tickets' },
-        { status: 400 }
-      );
-    }
-
-    // Get request body
-    const body = await request.json();
-    const { content } = body;
-
-    // Validate content
-    if (!content || content.trim().length === 0) {
-      return NextResponse.json(
-        { error: 'Comment content is required' },
         { status: 400 }
       );
     }
@@ -93,18 +60,12 @@ export async function POST(
     const { data: comment, error: commentError } = await supabase
       .from('ticket_comments')
       .insert({
-        ticketId: params.id,
-        content,
-        authorId: session.user.id,
-        createdAt: new Date().toISOString()
+        ticket_id: params.id,
+        content: validatedData.content,
+        created_by: permissionCheck.user.id,
+        created_at: new Date().toISOString()
       })
-      .select(`
-        *,
-        author:users (
-          id,
-          name
-        )
-      `)
+      .select()
       .single();
 
     if (commentError) {
@@ -115,12 +76,13 @@ export async function POST(
       );
     }
 
-    // Update ticket last activity
+    // Update ticket status and last activity
     const { error: updateError } = await supabase
       .from('tickets')
       .update({
-        lastActivityAt: new Date().toISOString(),
-        status: 'AWAITING_RESPONSE' // Change status to indicate customer response
+        status: TicketStatus.AWAITING_RESPONSE,
+        updated_at: new Date().toISOString(),
+        updated_by: permissionCheck.user.id
       })
       .eq('id', params.id);
 
@@ -129,26 +91,15 @@ export async function POST(
       // Don't fail the request, just log the error
     }
 
-    // Track activity
-    const { error: activityError } = await supabase
-      .from('portal_activity')
-      .insert({
-        userId: session.user.id,
-        type: 'TICKET_COMMENT',
-        resourceId: params.id,
-        createdAt: new Date().toISOString()
-      });
-
-    if (activityError) {
-      console.error('Error tracking activity:', activityError);
-      // Don't fail the request, just log the error
+    return NextResponse.json(comment);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Invalid request data', details: error.errors },
+        { status: 400 }
+      );
     }
 
-    return NextResponse.json({
-      message: 'Comment added successfully',
-      comment
-    });
-  } catch (error) {
     console.error('Error in POST /api/portal/tickets/[id]/comment:', error);
     return NextResponse.json(
       { error: 'Internal server error' },

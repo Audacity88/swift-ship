@@ -3,13 +3,14 @@ import { type AuthOptions, type DefaultSession } from 'next-auth';
 import { type JWT } from 'next-auth/jwt';
 import GithubProvider from 'next-auth/providers/github';
 import GoogleProvider from 'next-auth/providers/google';
-import { UserRole } from '@/types/role';
+import { UserRole, RoleType } from '@/types/role';
 
 declare module 'next-auth' {
   interface Session extends DefaultSession {
     user: {
       id: string;
       role: UserRole | null;
+      type: 'agent' | 'customer' | null;
     } & DefaultSession['user'];
   }
 }
@@ -40,13 +41,36 @@ export const authOptions: AuthOptions = {
     async session({ session, token }: { session: any; token: JWT }) {
       if (session?.user) {
         session.user.id = token.id as string;
-        const { data: userData } = await supabase
-          .from('users')
+        
+        // Check if user is an agent
+        const { data: agentData } = await supabase
+          .from('agents')
           .select('role')
           .eq('id', token.sub)
           .single();
 
-        session.user.role = userData?.role as UserRole || null;
+        if (agentData) {
+          session.user.role = agentData.role as UserRole;
+          session.user.type = 'agent';
+          return session;
+        }
+
+        // If not an agent, check if user is a customer
+        const { data: customerData } = await supabase
+          .from('customers')
+          .select('id')
+          .eq('id', token.sub)
+          .single();
+
+        if (customerData) {
+          session.user.role = RoleType.CUSTOMER;
+          session.user.type = 'customer';
+          return session;
+        }
+
+        // If neither agent nor customer, set null values
+        session.user.role = null;
+        session.user.type = null;
       }
       return session;
     },

@@ -2,41 +2,21 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { ArticleStatus } from '@/types/knowledge';
 import { Permission } from '@/types/role';
+import { checkUserPermissions } from '@/lib/auth/check-permissions';
+import { z } from 'zod';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-// Helper function to check user permissions
-async function checkUserPermissions(requiredPermission: Permission) {
-  const { data: { session }, error: authError } = await supabase.auth.getSession();
-  if (authError || !session) {
-    return { error: 'Unauthorized', status: 401 };
-  }
-
-  const { data: userData, error: userError } = await supabase
-    .from('users')
-    .select('role, custom_permissions')
-    .eq('id', session.user.id)
-    .single();
-
-  if (userError || !userData) {
-    return { error: 'User not found', status: 404 };
-  }
-
-  const { data: permissions } = await supabase
-    .from('role_permissions')
-    .select('permissions')
-    .eq('role', userData.role)
-    .single();
-
-  if (!permissions?.permissions?.includes(requiredPermission)) {
-    return { error: 'Insufficient permissions', status: 403 };
-  }
-
-  return { session, userData };
-}
+const updateArticleSchema = z.object({
+  title: z.string().min(1).optional(),
+  content: z.string().min(1).optional(),
+  categoryId: z.string().uuid().optional(),
+  status: z.nativeEnum(ArticleStatus).optional(),
+  tags: z.array(z.string().uuid()).optional()
+});
 
 // GET /api/knowledge/articles/[id] - Get article details
 export async function GET(
@@ -53,50 +33,36 @@ export async function GET(
       );
     }
 
-    // Get article with related data
-    const { data: article, error: articleError } = await supabase
+    // Get article
+    const { data: article, error } = await supabase
       .from('articles')
       .select(`
         *,
-        author:users (
-          id,
-          name,
-          email
-        ),
-        category:categories (
-          id,
-          name,
-          slug
-        ),
-        metadata:article_metadata (*),
-        versions:article_versions (*)
+        category:categories (id, name),
+        tags:article_tags (
+          tag:tags (id, name, color)
+        )
       `)
       .eq('id', params.id)
       .single();
 
-    if (articleError) {
-      console.error('Error fetching article:', articleError);
-      return NextResponse.json(
-        { error: 'Failed to fetch article' },
-        { status: 500 }
-      );
-    }
-
-    if (!article) {
+    if (error) {
+      console.error('Error fetching article:', error);
       return NextResponse.json(
         { error: 'Article not found' },
         { status: 404 }
       );
     }
 
-    // Track view if not author
-    if (permissionCheck.session.user.id !== article.authorId) {
-      await supabase.rpc('increment_article_views', {
-        article_id: params.id
-      });
+    // Check if customer can view article
+    if (permissionCheck.user.type === 'customer' && article.status !== ArticleStatus.PUBLISHED) {
+      return NextResponse.json(
+        { error: 'Article not found' },
+        { status: 404 }
+      );
     }
 
-    return NextResponse.json({ article });
+    return NextResponse.json(article);
   } catch (error) {
     console.error('Error in GET /api/knowledge/articles/[id]:', error);
     return NextResponse.json(
@@ -239,42 +205,118 @@ export async function DELETE(
       );
     }
 
-    // Validate article exists
-    const { data: article, error: articleError } = await supabase
+    // Delete article
+    const { error } = await supabase
       .from('articles')
-      .select('status')
-      .eq('id', params.id)
-      .single();
-
-    if (articleError || !article) {
-      return NextResponse.json(
-        { error: 'Article not found' },
-        { status: 404 }
-      );
-    }
-
-    // Soft delete by archiving
-    const { error: updateError } = await supabase
-      .from('articles')
-      .update({
-        status: ArticleStatus.ARCHIVED,
-        updatedAt: new Date().toISOString()
-      })
+      .delete()
       .eq('id', params.id);
 
-    if (updateError) {
-      console.error('Error archiving article:', updateError);
+    if (error) {
+      console.error('Error deleting article:', error);
       return NextResponse.json(
-        { error: 'Failed to archive article' },
+        { error: 'Failed to delete article' },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({
-      message: 'Article archived successfully'
-    });
+    return new NextResponse(null, { status: 204 });
   } catch (error) {
     console.error('Error in DELETE /api/knowledge/articles/[id]:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    // Check permissions
+    const permissionCheck = await checkUserPermissions(Permission.MANAGE_KNOWLEDGE_BASE);
+    if ('error' in permissionCheck) {
+      return NextResponse.json(
+        { error: permissionCheck.error },
+        { status: permissionCheck.status }
+      );
+    }
+
+    // Parse and validate request body
+    const body = await request.json();
+    const validatedData = updateArticleSchema.parse(body);
+
+    // Update article
+    const { data: article, error: articleError } = await supabase
+      .from('articles')
+      .update({
+        title: validatedData.title,
+        content: validatedData.content,
+        category_id: validatedData.categoryId,
+        status: validatedData.status,
+        updated_at: new Date().toISOString(),
+        updated_by: permissionCheck.user.id
+      })
+      .eq('id', params.id)
+      .select()
+      .single();
+
+    if (articleError) {
+      console.error('Error updating article:', articleError);
+      return NextResponse.json(
+        { error: 'Failed to update article' },
+        { status: 500 }
+      );
+    }
+
+    // Update tags if provided
+    if (validatedData.tags) {
+      // Delete existing tags
+      const { error: deleteError } = await supabase
+        .from('article_tags')
+        .delete()
+        .eq('article_id', params.id);
+
+      if (deleteError) {
+        console.error('Error deleting article tags:', deleteError);
+        return NextResponse.json(
+          { error: 'Failed to update article tags' },
+          { status: 500 }
+        );
+      }
+
+      // Add new tags
+      if (validatedData.tags.length > 0) {
+        const { error: insertError } = await supabase
+          .from('article_tags')
+          .insert(
+            validatedData.tags.map(tagId => ({
+              article_id: params.id,
+              tag_id: tagId
+            }))
+          );
+
+        if (insertError) {
+          console.error('Error adding article tags:', insertError);
+          return NextResponse.json(
+            { error: 'Failed to update article tags' },
+            { status: 500 }
+          );
+        }
+      }
+    }
+
+    return NextResponse.json(article);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Invalid request data', details: error.errors },
+        { status: 400 }
+      );
+    }
+
+    console.error('Error in PATCH /api/knowledge/articles/[id]:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

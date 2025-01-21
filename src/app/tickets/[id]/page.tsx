@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import Image from 'next/image'
 import { 
@@ -8,7 +8,7 @@ import {
   Tag, Link as LinkIcon, Users, ChevronDown, MessageSquare
 } from 'lucide-react'
 import { COLORS } from '@/lib/constants'
-import { TicketStatus, TicketPriority, UserRole } from '@/types/enums'
+import { TicketStatus, TicketPriority } from '@/types/ticket'
 import type { Ticket, TicketComment, TicketType } from '@/types/ticket'
 import type { User } from '@/types/user'
 import { 
@@ -19,84 +19,6 @@ import {
 } from '@/components/features/tickets/PropertyDropdowns'
 import { ReplyComposer } from '@/components/features/tickets/ReplyComposer'
 import { StatusTransition } from '@/components/features/tickets/StatusTransition'
-
-// Mock data - replace with actual API call
-const mockTicket: Ticket = {
-  id: '1',
-  title: 'Unable to access dashboard after recent update',
-  description: 'After the latest update, I am unable to access the dashboard. The page loads indefinitely and eventually times out. This is blocking our team from accessing critical metrics.',
-  status: TicketStatus.OPEN,
-  priority: TicketPriority.HIGH,
-  isArchived: false,
-  metadata: {
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    tags: [
-      { id: '1', name: 'bug', color: '#DE350B' },
-      { id: '2', name: 'dashboard', color: '#00B8D9' },
-    ],
-    customFields: {},
-    company: 'Acme Corp'
-  },
-  customerId: '1',
-  assigneeId: '1',
-  customer: {
-    id: '1',
-    name: 'John Doe',
-    email: 'john@example.com',
-    role: UserRole.CUSTOMER,
-    isActive: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  },
-  assignee: {
-    id: '1',
-    name: 'Support Agent',
-    email: 'agent@example.com',
-    role: UserRole.AGENT,
-    isActive: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  },
-  comments: [
-    {
-      id: '1',
-      ticketId: '1',
-      content: 'Hi, I am experiencing issues accessing the dashboard after the recent update.',
-      user: {
-        id: '1',
-        name: 'John Doe',
-        email: 'john@example.com',
-        role: UserRole.CUSTOMER,
-        isActive: true,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      },
-      isInternal: false,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    },
-    {
-      id: '2',
-      ticketId: '1',
-      content: 'Thank you for reporting this issue. Could you please provide your browser version and any error messages you are seeing?',
-      user: {
-        id: '1',
-        name: 'Support Agent',
-        email: 'agent@example.com',
-        role: UserRole.AGENT,
-        isActive: true,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      },
-      isInternal: false,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    }
-  ],
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString()
-}
 
 interface Tag {
   id: string
@@ -112,14 +34,16 @@ interface ReplyMessage {
 export default function TicketPage() {
   const params = useParams()
   const ticketId = params?.id as string
-  const [ticket, setTicket] = useState<Ticket>(mockTicket)
+  const [ticket, setTicket] = useState<Ticket | null>(null)
   const [selectedType, setSelectedType] = useState<TicketType>('problem')
-  const [selectedPriority, setSelectedPriority] = useState<TicketPriority>(ticket.priority)
-  const [selectedAssignee, setSelectedAssignee] = useState<string | null>(ticket.assigneeId || null)
-  const [tags, setTags] = useState<Tag[]>(ticket.metadata?.tags || [])
+  const [selectedPriority, setSelectedPriority] = useState<TicketPriority>(TicketPriority.MEDIUM)
+  const [selectedAssignee, setSelectedAssignee] = useState<string | null>(null)
+  const [tags, setTags] = useState<Tag[]>([])
   const [linkedProblem, setLinkedProblem] = useState<string | null>(null)
-  const [followers, setFollowers] = useState(['Dan G'])
+  const [followers, setFollowers] = useState<string[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   // Dropdown visibility states
   const [showTypeDropdown, setShowTypeDropdown] = useState(false)
@@ -127,57 +51,180 @@ export default function TicketPage() {
   const [showTagsDropdown, setShowTagsDropdown] = useState(false)
   const [showFollowersDropdown, setShowFollowersDropdown] = useState(false)
 
-  // Tag handlers
-  const handleAddTag = (tagName: string) => {
-    const newTag: Tag = {
-      id: `tag_${Date.now()}`,
-      name: tagName,
-      color: '#' + Math.floor(Math.random()*16777215).toString(16) // Generate random color
+  // Fetch ticket data
+  useEffect(() => {
+    const fetchTicket = async () => {
+      try {
+        const response = await fetch(`/api/tickets/${ticketId}`)
+        if (!response.ok) {
+          throw new Error('Failed to fetch ticket')
+        }
+        const data = await response.json()
+        setTicket(data.data)
+        setSelectedType(data.data.type || 'problem')
+        setSelectedPriority(data.data.priority)
+        setSelectedAssignee(data.data.assigneeId)
+        setTags(data.data.metadata?.tags || [])
+      } catch (error) {
+        console.error('Error fetching ticket:', error)
+        setError(error instanceof Error ? error.message : 'Failed to fetch ticket')
+      } finally {
+        setIsLoading(false)
+      }
     }
-    setTags(prev => [...prev, newTag])
+
+    if (ticketId) {
+      fetchTicket()
+    }
+  }, [ticketId])
+
+  // Tag handlers
+  const handleAddTag = async (tagName: string) => {
+    if (!ticket) return
+    
+    try {
+      const response = await fetch(`/api/tickets/${ticketId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tags: [...tags.map(t => t.id), tagName]
+        })
+      })
+      
+      if (!response.ok) throw new Error('Failed to add tag')
+      
+      const newTag: Tag = {
+        id: `tag_${Date.now()}`,
+        name: tagName,
+        color: '#' + Math.floor(Math.random()*16777215).toString(16)
+      }
+      setTags(prev => [...prev, newTag])
+    } catch (error) {
+      console.error('Failed to add tag:', error)
+    }
   }
 
-  const handleRemoveTag = (tagName: string) => {
-    setTags(prev => prev.filter(t => t.name !== tagName))
+  const handleRemoveTag = async (tagName: string) => {
+    if (!ticket) return
+    
+    try {
+      const response = await fetch(`/api/tickets/${ticketId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tags: tags.filter(t => t.name !== tagName).map(t => t.id)
+        })
+      })
+      
+      if (!response.ok) throw new Error('Failed to remove tag')
+      
+      setTags(prev => prev.filter(t => t.name !== tagName))
+    } catch (error) {
+      console.error('Failed to remove tag:', error)
+    }
   }
 
   // Follower handlers
-  const handleAddFollower = (follower: string) => {
-    setFollowers(prev => [...prev, follower])
+  const handleAddFollower = async (follower: string) => {
+    if (!ticket) return
+    
+    try {
+      const response = await fetch(`/api/tickets/${ticketId}/followers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ follower })
+      })
+      
+      if (!response.ok) throw new Error('Failed to add follower')
+      
+      setFollowers(prev => [...prev, follower])
+    } catch (error) {
+      console.error('Failed to add follower:', error)
+    }
   }
 
-  const handleRemoveFollower = (follower: string) => {
-    setFollowers(prev => prev.filter(f => f !== follower))
+  const handleRemoveFollower = async (follower: string) => {
+    if (!ticket) return
+    
+    try {
+      const response = await fetch(`/api/tickets/${ticketId}/followers/${encodeURIComponent(follower)}`, {
+        method: 'DELETE'
+      })
+      
+      if (!response.ok) throw new Error('Failed to remove follower')
+      
+      setFollowers(prev => prev.filter(f => f !== follower))
+    } catch (error) {
+      console.error('Failed to remove follower:', error)
+    }
   }
 
   // Reply handler
   const handleReply = async (message: ReplyMessage) => {
+    if (!ticket) return
+    
     setIsSubmitting(true)
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000))
+      const response = await fetch(`/api/tickets/${ticketId}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: message.content,
+          isInternal: false
+        })
+      })
 
-      // Add comment to ticket
-      const newComment: TicketComment = {
-        id: String(ticket.comments.length + 1),
-        ticketId: ticket.id,
-        content: message.content,
-        user: message.user,
-        isInternal: false,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      }
+      if (!response.ok) throw new Error('Failed to add comment')
 
-      setTicket(prev => ({
+      const data = await response.json()
+      setTicket(prev => prev ? {
         ...prev,
-        comments: [...prev.comments, newComment],
+        comments: [...prev.comments, data.data],
         updatedAt: new Date().toISOString()
-      }))
+      } : null)
     } catch (error) {
       console.error('Failed to send message:', error)
     } finally {
       setIsSubmitting(false)
     }
+  }
+
+  // Handle status change
+  const handleStatusChange = async (newStatus: TicketStatus, reason?: string) => {
+    if (!ticket) return
+    
+    try {
+      const response = await fetch(`/api/tickets/${ticketId}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: newStatus,
+          reason
+        })
+      })
+
+      if (!response.ok) throw new Error('Failed to update status')
+
+      setTicket(prev => prev ? {
+        ...prev,
+        status: newStatus,
+        updatedAt: new Date().toISOString()
+      } : null)
+    } catch (error) {
+      console.error('Failed to update status:', error)
+    }
+  }
+
+  if (isLoading) {
+    return <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900" />
+    </div>
+  }
+
+  if (error || !ticket) {
+    return <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
+      <div className="text-red-500">{error || 'Ticket not found'}</div>
+    </div>
   }
 
   return (
@@ -198,6 +245,7 @@ export default function TicketPage() {
               <StatusTransition
                 ticketId={ticket.id}
                 currentStatus={ticket.status}
+                onStatusChange={handleStatusChange}
               />
             </div>
           </div>
@@ -205,7 +253,12 @@ export default function TicketPage() {
           {/* Comments */}
           <div className="space-y-6 mb-6">
             {ticket.comments.map((comment) => (
-              <div key={comment.id} className="bg-blue-50 rounded-lg p-4">
+              <div 
+                key={comment.id} 
+                className={`rounded-lg p-4 ${
+                  comment.isInternal ? 'bg-yellow-50' : 'bg-blue-50'
+                }`}
+              >
                 <div className="flex items-center gap-3 mb-2">
                   <div className="relative w-8 h-8 rounded-full overflow-hidden">
                     <Image
@@ -221,6 +274,11 @@ export default function TicketPage() {
                       {new Date(comment.createdAt).toLocaleString()}
                     </p>
                   </div>
+                  {comment.isInternal && (
+                    <span className="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded">
+                      Internal Note
+                    </span>
+                  )}
                 </div>
                 <p className="text-gray-700 whitespace-pre-wrap">
                   {comment.content}
@@ -252,7 +310,6 @@ export default function TicketPage() {
               <p className="text-sm font-medium">{ticket.customer.name}</p>
               <p className="text-xs text-gray-500">{ticket.customer.email}</p>
             </div>
-            <ChevronDown className="w-4 h-4 text-gray-400" />
           </div>
         </div>
 

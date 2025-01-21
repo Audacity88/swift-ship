@@ -1,109 +1,93 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Permission, RoleType } from '@/types/role';
 import { createClient } from '@supabase/supabase-js';
-import { roleService } from '@/lib/services/role-service';
+import { Permission } from '@/types/role';
+import { checkUserPermissions } from '@/lib/auth/check-permissions';
+import { z } from 'zod';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+const assignRoleSchema = z.object({
+  agentId: z.string().uuid(),
+  roleId: z.string().uuid(),
+  customPermissions: z.array(z.nativeEnum(Permission)).optional()
+});
+
 export async function POST(request: NextRequest) {
   try {
-    // Check if user is authenticated
-    const { data: { session }, error: authError } = await supabase.auth.getSession();
-    if (authError || !session) {
+    // Check permissions
+    const permissionCheck = await checkUserPermissions(Permission.MANAGE_ROLES);
+    if ('error' in permissionCheck) {
       return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
+        { error: permissionCheck.error },
+        { status: permissionCheck.status }
       );
     }
 
-    const assignerId = session.user.id;
-
-    // Check if user has permission to manage roles
-    const hasPermission = await roleService.hasPermission(assignerId, Permission.MANAGE_ROLES);
-    if (!hasPermission) {
-      return NextResponse.json(
-        { error: 'Insufficient permissions' },
-        { status: 403 }
-      );
-    }
-
-    // Get request body
+    // Parse and validate request body
     const body = await request.json();
-    const { userId, role, customPermissions } = body as {
-      userId: string;
-      role: RoleType;
-      customPermissions?: Permission[];
-    };
+    const validatedData = assignRoleSchema.parse(body);
 
-    // Validate required fields
-    if (!userId || !role) {
+    // Check if agent exists
+    const { data: agent, error: agentError } = await supabase
+      .from('agents')
+      .select('id')
+      .eq('id', validatedData.agentId)
+      .single();
+
+    if (agentError || !agent) {
+      console.error('Error fetching agent:', agentError);
       return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
+        { error: 'Agent not found' },
+        { status: 404 }
       );
     }
 
-    // Validate role
-    if (!roleService.isValidRole(role)) {
+    // Check if role exists
+    const { data: role, error: roleError } = await supabase
+      .from('roles')
+      .select('id')
+      .eq('id', validatedData.roleId)
+      .single();
+
+    if (roleError || !role) {
+      console.error('Error fetching role:', roleError);
       return NextResponse.json(
-        { error: 'Invalid role' },
-        { status: 400 }
+        { error: 'Role not found' },
+        { status: 404 }
       );
     }
 
-    // Validate custom permissions if provided
-    if (customPermissions) {
-      const invalidPermissions = customPermissions.filter(
-        p => !roleService.isValidPermission(p)
-      );
-      
-      if (invalidPermissions.length > 0) {
-        return NextResponse.json(
-          { error: `Invalid permissions: ${invalidPermissions.join(', ')}` },
-          { status: 400 }
-        );
-      }
-    }
+    // Update agent's role
+    const { error: updateError } = await supabase
+      .from('agents')
+      .update({
+        role_id: validatedData.roleId,
+        custom_permissions: validatedData.customPermissions,
+        updated_at: new Date().toISOString(),
+        updated_by: permissionCheck.user.id
+      })
+      .eq('id', validatedData.agentId);
 
-    // Validate role assignment
-    const validation = await roleService.validateRoleAssignment(assignerId, userId, role);
-    if (!validation.valid) {
+    if (updateError) {
+      console.error('Error updating agent role:', updateError);
       return NextResponse.json(
-        { error: validation.error },
-        { status: 400 }
-      );
-    }
-
-    // Assign role using the service
-    const success = await roleService.assignRole({
-      userId,
-      role,
-      customPermissions,
-      assignedBy: assignerId,
-      assignedAt: new Date()
-    });
-
-    if (!success) {
-      return NextResponse.json(
-        { error: 'Failed to assign role' },
+        { error: 'Failed to update agent role' },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({
-      message: 'Role assigned successfully',
-      data: {
-        userId,
-        role,
-        customPermissions,
-        assignedBy: assignerId,
-        assignedAt: new Date()
-      }
-    });
+    return new NextResponse(null, { status: 204 });
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Invalid request data', details: error.errors },
+        { status: 400 }
+      );
+    }
+
     console.error('Error in POST /api/roles/assign:', error);
     return NextResponse.json(
       { error: 'Internal server error' },

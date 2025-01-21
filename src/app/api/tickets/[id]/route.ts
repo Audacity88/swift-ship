@@ -3,6 +3,14 @@ import { z } from 'zod'
 import { sql, Transaction } from '@/lib/db'
 import { auth } from '@/lib/auth'
 import { TicketPriority, TicketStatus } from '@/types/ticket'
+import { createClient } from '@supabase/supabase-js'
+import { Permission } from '@/types/role'
+import { checkUserPermissions } from '@/lib/auth/check-permissions'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 // Types
 interface TicketResult {
@@ -61,6 +69,7 @@ const updateTicketSchema = z.object({
   status: z.enum([
     TicketStatus.OPEN,
     TicketStatus.IN_PROGRESS,
+    TicketStatus.AWAITING_RESPONSE,
     TicketStatus.RESOLVED,
     TicketStatus.CLOSED
   ]).optional(),
@@ -75,69 +84,45 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
+    // Get current ticket
     const [ticket] = await sql.execute<TicketResult>(sql`
       SELECT 
-        t.*,
-        c.name as "customerName",
-        c.email as "customerEmail",
-        c.avatar as "customerAvatar",
-        c.company as "customerCompany",
-        a.name as "assigneeName",
-        a.email as "assigneeEmail",
-        a.avatar as "assigneeAvatar",
-        a.role as "assigneeRole",
-        COALESCE(
-          json_agg(
-            json_build_object(
-              'id', tag.id,
-              'name', tag.name,
-              'color', tag.color
-            )
-          ) FILTER (WHERE tag.id IS NOT NULL),
-          '[]'
-        ) as tags,
-        (
-          SELECT json_agg(
-            json_build_object(
-              'id', m.id,
-              'content', m.content,
-              'authorType', m.author_type,
-              'authorId', m.author_id,
-              'createdAt', m.created_at,
-              'updatedAt', m.updated_at
-            )
-          )
-          FROM messages m
-          WHERE m.ticket_id = t.id
-          ORDER BY m.created_at DESC
-        ) as messages,
-        (
-          SELECT json_agg(
-            json_build_object(
-              'id', s.id,
-              'snapshotAt', s.snapshot_at,
-              'data', s.data,
-              'reason', s.reason,
-              'triggeredBy', s.triggered_by
-            )
-          )
-          FROM ticket_snapshots s
-          WHERE s.ticket_id = t.id
-          ORDER BY s.snapshot_at DESC
-        ) as snapshots
+        t.id,
+        t.title,
+        t.description,
+        t.status,
+        t.priority,
+        t.customer_id,
+        t.assignee_id,
+        t.created_at,
+        t.updated_at,
+        t.resolved_at,
+        t.metadata
       FROM tickets t
-      LEFT JOIN customers c ON t.customer_id = c.id
-      LEFT JOIN agents a ON t.assignee_id = a.id
-      LEFT JOIN ticket_tags tt ON t.id = tt.ticket_id
-      LEFT JOIN tags tag ON tt.tag_id = tag.id
       WHERE t.id = ${params.id}
-      GROUP BY t.id, c.id, a.id
     `)
 
     if (!ticket) {
       return NextResponse.json(
         { error: 'Ticket not found' },
         { status: 404 }
+      )
+    }
+
+    // Check if user has permission to view this ticket
+    const permissionCheck = await checkUserPermissions(Permission.VIEW_TICKETS)
+    if (permissionCheck.error) {
+      return NextResponse.json(
+        { error: permissionCheck.error },
+        { status: permissionCheck.status || 403 }
+      )
+    }
+
+    // If user is a customer, they can only view their own tickets
+    if (permissionCheck.user?.type === 'customer' && ticket.customer_id !== permissionCheck.user.id) {
+      return NextResponse.json(
+        { error: 'You do not have permission to view this ticket' },
+        { status: 403 }
       )
     }
 

@@ -30,7 +30,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { Textarea } from '@/components/ui/textarea'
-import type { TicketStatus } from '@/types/ticket'
+import { TicketStatus } from '@/types/ticket'
 
 interface StatusTransition {
   status: TicketStatus
@@ -88,6 +88,8 @@ export function StatusTransition({
         return 'bg-blue-500'
       case 'in_progress':
         return 'bg-yellow-500'
+      case 'awaiting_response':
+        return 'bg-purple-500'
       case 'resolved':
         return 'bg-green-500'
       case 'closed':

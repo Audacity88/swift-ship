@@ -42,6 +42,12 @@ const statusTransitions: Record<TicketStatus, StatusTransition[]> = {
           data: { field: 'assignee_id' }
         }
       ]
+    },
+    {
+      fromStatus: TicketStatus.OPEN,
+      toStatus: TicketStatus.AWAITING_RESPONSE,
+      requiredRole: null,
+      conditions: []
     }
   ],
   [TicketStatus.IN_PROGRESS]: [
@@ -59,9 +65,35 @@ const statusTransitions: Record<TicketStatus, StatusTransition[]> = {
     },
     {
       fromStatus: TicketStatus.IN_PROGRESS,
+      toStatus: TicketStatus.AWAITING_RESPONSE,
+      requiredRole: null,
+      conditions: []
+    },
+    {
+      fromStatus: TicketStatus.IN_PROGRESS,
       toStatus: TicketStatus.OPEN,
       requiredRole: null,
       conditions: []
+    }
+  ],
+  [TicketStatus.AWAITING_RESPONSE]: [
+    {
+      fromStatus: TicketStatus.AWAITING_RESPONSE,
+      toStatus: TicketStatus.IN_PROGRESS,
+      requiredRole: null,
+      conditions: []
+    },
+    {
+      fromStatus: TicketStatus.AWAITING_RESPONSE,
+      toStatus: TicketStatus.RESOLVED,
+      requiredRole: null,
+      conditions: [
+        {
+          type: 'required_field',
+          message: 'Resolution comment is required',
+          data: { field: 'resolution_comment' }
+        }
+      ]
     }
   ],
   [TicketStatus.RESOLVED]: [
@@ -104,6 +136,7 @@ const updateStatusSchema = z.object({
   status: z.enum([
     TicketStatus.OPEN,
     TicketStatus.IN_PROGRESS,
+    TicketStatus.AWAITING_RESPONSE,
     TicketStatus.RESOLVED,
     TicketStatus.CLOSED
   ]),

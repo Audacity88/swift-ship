@@ -4,6 +4,7 @@ import { User } from './user'
 export enum TicketStatus {
   OPEN = 'open',
   IN_PROGRESS = 'in_progress',
+  AWAITING_RESPONSE = 'awaiting_response',
   RESOLVED = 'resolved',
   CLOSED = 'closed'
 }

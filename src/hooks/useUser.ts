@@ -17,19 +17,38 @@ export function useUser() {
       try {
         const { data: { user } } = await db.auth.getUser();
         if (user) {
-          // Get additional user data from your database
-          const { data: userData } = await db
-            .from('users')
-            .select('*')
+          // First check if user is an agent
+          const { data: agentData } = await db
+            .from('agents')
+            .select('id, name')
             .eq('id', user.id)
             .single();
 
-          setUser({
-            id: user.id,
-            type: userData.role,
-            email: user.email!,
-            name: userData.name,
-          });
+          if (agentData) {
+            setUser({
+              id: user.id,
+              type: 'agent',
+              email: user.email!,
+              name: agentData.name,
+            });
+            return;
+          }
+
+          // If not an agent, check if user is a customer
+          const { data: customerData } = await db
+            .from('customers')
+            .select('id, name')
+            .eq('id', user.id)
+            .single();
+
+          if (customerData) {
+            setUser({
+              id: user.id,
+              type: 'customer',
+              email: user.email!,
+              name: customerData.name,
+            });
+          }
         }
       } catch (error) {
         console.error('Error fetching user:', error);
