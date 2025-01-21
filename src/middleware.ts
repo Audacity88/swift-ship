@@ -137,7 +137,7 @@ export async function middleware(request: NextRequest) {
   // Allow access to public routes
   if (PUBLIC_ROUTES.includes(request.nextUrl.pathname)) {
     // If user is signed in and trying to access auth pages, redirect to home
-    if (session && request.nextUrl.pathname.startsWith('/auth/')) {
+    if (session && request.nextUrl.pathname.startsWith('/auth/') && request.nextUrl.pathname !== '/auth/signout') {
       return NextResponse.redirect(new URL('/home', request.url))
     }
     return response
@@ -145,6 +145,10 @@ export async function middleware(request: NextRequest) {
 
   // Require authentication for all other routes
   if (!session) {
+    // Don't redirect API routes, just return 401
+    if (request.nextUrl.pathname.startsWith('/api/')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
     return NextResponse.redirect(new URL('/auth/signin', request.url))
   }
 
