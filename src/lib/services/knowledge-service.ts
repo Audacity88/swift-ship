@@ -16,11 +16,11 @@ export class KnowledgeService {
   async getArticles(page = 1, pageSize = 10, filters?: Partial<SearchFilters>) {
     const query = supabase
       .from('articles')
-      .select('*, author:users(*), category:categories(*)')
+      .select('*, author:agents(*), category:categories(*)')
       .order('createdAt', { ascending: false });
 
     if (filters?.categoryId) {
-      query.eq('categoryId', filters.categoryId);
+      query.eq('category_id', filters.categoryId);
     }
     if (filters?.status) {
       query.eq('status', filters.status);
@@ -29,12 +29,12 @@ export class KnowledgeService {
       query.contains('tags', filters.tags);
     }
     if (filters?.authorId) {
-      query.eq('authorId', filters.authorId);
+      query.eq('author_id', filters.authorId);
     }
     if (filters?.dateRange) {
       query
-        .gte('createdAt', filters.dateRange.start)
-        .lte('createdAt', filters.dateRange.end);
+        .gte('created_at', filters.dateRange.start)
+        .lte('created_at', filters.dateRange.end);
     }
 
     const { data: articles, error, count } = await query
@@ -48,7 +48,7 @@ export class KnowledgeService {
   async getArticleById(id: string): Promise<Article> {
     const { data: article, error } = await supabase
       .from('articles')
-      .select('*, author:users(*), category:categories(*), versions:article_versions(*)')
+      .select('*, author:agents(*), category:categories(*), versions:article_versions(*)')
       .eq('id', id)
       .single();
 
@@ -265,7 +265,7 @@ export class KnowledgeService {
   async getPopularArticles(limit = 10): Promise<Article[]> {
     const { data: articles, error } = await supabase
       .from('articles')
-      .select('*, author:users(*), category:categories(*)')
+      .select('*, author:agents(*), category:categories(*)')
       .eq('status', ArticleStatus.PUBLISHED)
       .order('metadata->views', { ascending: false })
       .limit(limit);

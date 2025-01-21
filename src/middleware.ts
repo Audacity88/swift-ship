@@ -28,7 +28,7 @@ const DEFAULT_AUTHENTICATED_ROUTES = [
   '/quote',
   '/portal',
   '/portal/profile',
-  '/portal/tickets',
+  '/portal/tickets/new',
   '/portal/knowledge',
   '/inbox',
   '/search',
@@ -43,12 +43,17 @@ const DEFAULT_AUTHENTICATED_ROUTES = [
   '/pickup',
   '/shipments/[id]',
   '/pickup/[id]',
+  '/tickets',
+  '/tickets/[id]',
+  '/tickets/overview',
+  '/tickets/active',
+  '/tickets/search',
+  '/tickets/queue',
 ]
 
 // Define routes that require customer permissions
 const CUSTOMER_ROUTES = [
   '/portal/tickets/new',
-  '/portal/tickets/[id]',
   '/portal/knowledge/articles/[id]',
 ]
 
@@ -175,6 +180,11 @@ export async function middleware(request: NextRequest) {
 
   const isCustomer = !agent
 
+  // If user is admin, allow access to everything
+  if (agent?.role === 'admin') {
+    return response
+  }
+
   // Redirect customers to home page if trying to access dashboard
   if (isCustomer && request.nextUrl.pathname === '/') {
     return NextResponse.redirect(new URL('/home', request.url))
@@ -211,6 +221,16 @@ export async function middleware(request: NextRequest) {
     const regex = new RegExp(`^${pattern}$`)
     return regex.test(request.nextUrl.pathname)
   })
+
+  // If customer is trying to access agent/admin routes, deny access
+  if (isCustomer && (isAgentRoute || isAdminRoute)) {
+    return NextResponse.redirect(new URL('/403', request.url))
+  }
+
+  // If agent is trying to access admin routes, deny access
+  if (agent?.role === 'agent' && isAdminRoute) {
+    return NextResponse.redirect(new URL('/403', request.url))
+  }
 
   // Check route authorization for protected routes
   const isAuthorized = await isAuthorizedForRoute(request.nextUrl.pathname)

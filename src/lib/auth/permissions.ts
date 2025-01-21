@@ -196,6 +196,20 @@ function getPermissionsForRoute(pathname: string): Permission[] {
     '/portal/knowledge/articles': [Permission.VIEW_PUBLIC_ARTICLES],
   };
 
+  // Handle portal ticket routes (for customers)
+  if (pathname.startsWith('/portal/tickets/')) {
+    if (pathname.endsWith('/new')) {
+      return [Permission.CREATE_OWN_TICKETS];
+    }
+    // No longer allow viewing ticket details
+    return [];
+  }
+
+  // Handle agent ticket routes
+  if (pathname.startsWith('/tickets/')) {
+    return [Permission.VIEW_TICKETS];
+  }
+
   // Handle dynamic routes
   if (pathname.startsWith('/settings/teams/')) {
     if (pathname.includes('/members')) {

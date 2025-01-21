@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { 
   Home, Inbox, Quote, BarChart, Truck, Package, Settings, Ticket, 
   ListChecks, Search, Users, MessageSquare, FileText, Bell, 
-  ShoppingCart, UserCircle, UserCog, UsersRound 
+  ShoppingCart, UserCircle, UserCog, UsersRound, LifeBuoy 
 } from 'lucide-react'
 import { ROUTES } from '@/lib/constants'
 import { useTicketStore } from '@/lib/store/tickets'
@@ -22,12 +22,6 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { icon: Home, label: 'Home', href: ROUTES.dashboard },
-  { 
-    icon: MessageSquare, 
-    label: 'Inbox', 
-    href: ROUTES.inbox,
-    badge: () => useTicketStore.getState().tickets.filter(t => !t.assigneeId).length
-  },
   { 
     icon: Quote, 
     label: 'Quote', 
@@ -51,6 +45,12 @@ const navItems: NavItem[] = [
     label: 'Pickup', 
     href: ROUTES.pickup,
     roles: [RoleType.CUSTOMER, RoleType.AGENT, RoleType.SUPERVISOR]
+  },
+  { 
+    icon: LifeBuoy, 
+    label: 'Customer Support', 
+    href: '/portal',
+    roles: [RoleType.CUSTOMER]
   },
   { 
     icon: UserCog, 
@@ -90,7 +90,12 @@ const ticketItems: NavItem[] = [
 ]
 
 const quickAccessItems: NavItem[] = [
-  { icon: Search, label: 'Search', href: ROUTES.search },
+  { 
+    icon: Inbox, 
+    label: 'Inbox', 
+    href: ROUTES.inbox,
+    badge: () => useTicketStore.getState().tickets.filter(t => !t.assigneeId).length
+  },
   { 
     icon: Bell, 
     label: 'Notifications', 

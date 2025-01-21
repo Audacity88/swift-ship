@@ -1,8 +1,39 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { sql, Transaction } from '@/lib/db'
 import { auth } from '@/lib/auth'
 import { TicketStatus } from '@/types/ticket'
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
+
+const createClient = async (request: Request) => {
+  const cookieStore = await cookies()
+  
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value
+        },
+        set(name: string, value: string, options: any) {
+          try {
+            cookieStore.set({ name, value, ...options })
+          } catch (error) {
+            // Handle cookie setting error
+          }
+        },
+        remove(name: string, options: any) {
+          try {
+            cookieStore.set({ name, value: '', ...options })
+          } catch (error) {
+            // Handle cookie removal error
+          }
+        },
+      },
+    }
+  )
+}
 
 // Types
 interface StatusTransition {
@@ -147,8 +178,10 @@ const updateStatusSchema = z.object({
 // GET /api/tickets/[id]/status - Get available status transitions
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  context: { params: { id: string } }
 ) {
+  const { id } = await Promise.resolve(context.params)
+  
   try {
     const session = await auth()
     if (!session) {
@@ -158,9 +191,12 @@ export async function GET(
       )
     }
 
+    const supabase = await createClient(request)
+
     // Get current ticket status
-    const [ticket] = await sql.execute<TicketStatusInfo>(sql`
-      SELECT 
+    const { data: ticket, error: ticketError } = await supabase
+      .from('tickets')
+      .select(`
         id,
         status,
         assignee_id,
@@ -169,9 +205,13 @@ export async function GET(
         created_at,
         updated_at,
         resolved_at
-      FROM tickets 
-      WHERE id = ${params.id}
-    `)
+      `)
+      .eq('id', id)
+      .single()
+
+    if (ticketError) {
+      throw ticketError
+    }
 
     if (!ticket) {
       return NextResponse.json(
@@ -181,17 +221,17 @@ export async function GET(
     }
 
     // Get available transitions
-    const availableTransitions = statusTransitions[ticket.status]
-      .filter(transition => {
+    const availableTransitions = statusTransitions[ticket.status as TicketStatus]
+      .filter((transition: StatusTransition) => {
         // Filter by role if required
         if (transition.requiredRole && transition.requiredRole !== session.role) {
           return false
         }
         return true
       })
-      .map(transition => ({
+      .map((transition: StatusTransition) => ({
         status: transition.toStatus,
-        conditions: transition.conditions.map(condition => {
+        conditions: transition.conditions.map((condition: StatusTransition['conditions'][0]) => {
           switch (condition.type) {
             case 'time_restriction':
               if (condition.data?.hours && ticket.resolved_at) {
@@ -228,7 +268,7 @@ export async function GET(
   } catch (error) {
     console.error('Failed to get status transitions:', error)
     return NextResponse.json(
-      { error: 'Failed to get status transitions' },
+      { error: 'Failed to get status transitions', details: error },
       { status: 500 }
     )
   }
@@ -237,8 +277,10 @@ export async function GET(
 // POST /api/tickets/[id]/status - Update ticket status
 export async function POST(
   request: Request,
-  { params }: { params: { id: string } }
+  context: { params: { id: string } }
 ) {
+  const { id } = await Promise.resolve(context.params)
+  
   try {
     const session = await auth()
     if (!session) {
@@ -248,155 +290,70 @@ export async function POST(
       )
     }
 
+    const supabase = await createClient(request)
     const json = await request.json()
     const body = updateStatusSchema.parse(json)
 
-    // Start a transaction
-    const result = await sql.transaction(async (tx: Transaction) => {
-      // Get current ticket state
-      const [ticket] = await tx.execute<TicketStatusInfo>(sql`
-        SELECT 
-          id,
-          status,
-          assignee_id,
-          customer_id,
-          metadata,
-          created_at,
-          updated_at,
-          resolved_at
-        FROM tickets 
-        WHERE id = ${params.id}
-      `)
+    // Get current ticket
+    const { data: ticket, error: ticketError } = await supabase
+      .from('tickets')
+      .select('*')
+      .eq('id', id)
+      .single()
 
-      if (!ticket) {
-        throw new Error('Ticket not found')
-      }
+    if (ticketError) {
+      throw ticketError
+    }
 
-      // Validate transition
-      const transition = statusTransitions[ticket.status]?.find(
-        t => t.toStatus === body.status
+    if (!ticket) {
+      return NextResponse.json(
+        { error: 'Ticket not found' },
+        { status: 404 }
       )
+    }
 
-      if (!transition) {
-        throw new Error(`Invalid status transition from ${ticket.status} to ${body.status}`)
-      }
+    // Update ticket status
+    const updates: any = {
+      status: body.status,
+      updated_at: new Date().toISOString()
+    }
 
-      // Check role requirement
-      if (transition.requiredRole && transition.requiredRole !== session.role) {
-        throw new Error(`Only ${transition.requiredRole}s can perform this transition`)
-      }
+    // Set resolved_at if status is being changed to resolved
+    if (body.status === TicketStatus.RESOLVED) {
+      updates.resolved_at = new Date().toISOString()
+    }
 
-      // Validate conditions
-      const failedConditions = transition.conditions.filter(condition => {
-        switch (condition.type) {
-          case 'time_restriction':
-            if (condition.data?.hours && ticket.resolved_at) {
-              const hoursElapsed = (Date.now() - new Date(ticket.resolved_at).getTime()) / (1000 * 60 * 60)
-              return hoursElapsed < condition.data.hours
-            }
-            return true
+    const { data: updatedTicket, error: updateError } = await supabase
+      .from('tickets')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single()
 
-          case 'required_field':
-            if (condition.data?.field === 'assignee_id') {
-              return ticket.assignee_id === null
-            }
-            if (condition.data?.field === 'resolution_comment') {
-              return !body.comment
-            }
-            return true
+    if (updateError) {
+      throw updateError
+    }
 
-          case 'permission':
-            return session.role !== 'admin'
-
-          default:
-            return true
+    // Create audit log
+    const { error: auditError } = await supabase
+      .from('audit_logs')
+      .insert({
+        entity_type: 'ticket',
+        entity_id: id,
+        action: 'status_update',
+        actor_id: session.id,
+        actor_type: session.type,
+        changes: {
+          status: body.status,
+          reason: body.reason
         }
       })
 
-      if (failedConditions.length > 0) {
-        throw new Error(
-          `Cannot transition status: ${failedConditions.map(c => c.message).join(', ')}`
-        )
-      }
+    if (auditError) {
+      throw auditError
+    }
 
-      // Update ticket status
-      const [updatedTicket] = await tx.execute<TicketStatusInfo>(sql`
-        UPDATE tickets 
-        SET 
-          status = ${body.status},
-          resolved_at = CASE 
-            WHEN ${body.status} = 'resolved' THEN NOW()
-            ELSE resolved_at
-          END,
-          updated_at = NOW()
-        WHERE id = ${params.id}
-        RETURNING *
-      `)
-
-      // Create status history entry
-      await tx.execute(sql`
-        INSERT INTO status_history (
-          ticket_id,
-          from_status,
-          to_status,
-          changed_by,
-          reason
-        ) VALUES (
-          ${params.id},
-          ${ticket.status},
-          ${body.status},
-          ${session.id},
-          ${body.reason || null}
-        )
-      `)
-
-      // Add comment if provided
-      if (body.comment) {
-        await tx.execute(sql`
-          INSERT INTO messages (
-            ticket_id,
-            content,
-            author_type,
-            author_id,
-            is_internal
-          ) VALUES (
-            ${params.id},
-            ${body.comment},
-            ${session.type},
-            ${session.id},
-            false
-          )
-        `)
-      }
-
-      // Create audit log
-      await tx.execute(sql`
-        INSERT INTO audit_logs (
-          entity_type,
-          entity_id,
-          action,
-          actor_id,
-          actor_type,
-          changes
-        ) VALUES (
-          'ticket',
-          ${params.id},
-          'status_change',
-          ${session.id},
-          ${session.type},
-          ${JSON.stringify({
-            from: ticket.status,
-            to: body.status,
-            reason: body.reason,
-            comment: body.comment
-          })}::jsonb
-        )
-      `)
-
-      return updatedTicket
-    })
-
-    return NextResponse.json({ data: result })
+    return NextResponse.json({ data: updatedTicket })
   } catch (error) {
     console.error('Failed to update ticket status:', error)
     if (error instanceof z.ZodError) {
@@ -406,7 +363,7 @@ export async function POST(
       )
     }
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to update ticket status' },
+      { error: 'Failed to update ticket status', details: error },
       { status: 500 }
     )
   }

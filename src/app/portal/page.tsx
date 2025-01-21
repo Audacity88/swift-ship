@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Article } from '@/types/knowledge';
 import { SearchBar } from '@/components/features/portal/SearchBar';
 import { Button } from '@/components/ui/button';
+import { KnowledgeService } from '@/lib/services/knowledge-service';
 import {
   Card,
   CardContent,
@@ -26,6 +27,41 @@ export default function PortalHome() {
   const [featuredArticles, setFeaturedArticles] = useState<Article[]>([]);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [popularArticles, setPopularArticles] = useState<Article[]>([]);
+  const [recentArticles, setRecentArticles] = useState<Article[]>([]);
+
+  useEffect(() => {
+    const knowledgeService = new KnowledgeService();
+    
+    const fetchArticles = async () => {
+      try {
+        // Fetch featured articles (published status)
+        const { articles: featured } = await knowledgeService.getArticles(1, 6, { 
+          status: 'published' 
+        });
+        setFeaturedArticles(featured);
+
+        // Fetch popular articles (sort by view count)
+        const { articles: popular } = await knowledgeService.getArticles(1, 6, {
+          status: 'published'
+        });
+        // Sort by view count
+        const sortedPopular = [...popular].sort((a, b) => 
+          (b.metadata?.views || 0) - (a.metadata?.views || 0)
+        );
+        setPopularArticles(sortedPopular);
+
+        // Fetch recent articles
+        const { articles: recent } = await knowledgeService.getArticles(1, 6, {
+          status: 'published'
+        });
+        setRecentArticles(recent);
+      } catch (error) {
+        console.error('Error fetching articles:', error);
+      }
+    };
+
+    fetchArticles();
+  }, []);
 
   // In a real app, these would be fetched from the API
   const quickLinks: QuickLink[] = [
@@ -104,30 +140,72 @@ export default function PortalHome() {
           <TabsTrigger value="popular">Most Popular</TabsTrigger>
           <TabsTrigger value="recent">Recently Updated</TabsTrigger>
         </TabsList>
-        {['featured', 'popular', 'recent'].map((tab) => (
-          <TabsContent key={tab} value={tab}>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {featuredArticles.map((article) => (
-                <Link key={article.id} href={`/portal/articles/${article.id}`}>
-                  <Card className="h-full hover:bg-accent transition-colors cursor-pointer">
-                    <CardHeader>
-                      <CardTitle className="line-clamp-2">{article.title}</CardTitle>
-                      <CardDescription className="line-clamp-2">
-                        {article.excerpt}
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="flex items-center text-sm text-muted-foreground">
-                        <BookOpen className="mr-2 h-4 w-4" />
-                        {article.metadata.views} views
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Link>
-              ))}
-            </div>
-          </TabsContent>
-        ))}
+        <TabsContent value="featured">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {featuredArticles.map((article) => (
+              <Link key={article.id} href={`/portal/articles/${article.id}`}>
+                <Card className="h-full hover:bg-accent transition-colors cursor-pointer">
+                  <CardHeader>
+                    <CardTitle className="line-clamp-2">{article.title}</CardTitle>
+                    <CardDescription className="line-clamp-2">
+                      {article.excerpt}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-center text-sm text-muted-foreground">
+                      <BookOpen className="mr-2 h-4 w-4" />
+                      {article.metadata?.views || 0} views
+                    </div>
+                  </CardContent>
+                </Card>
+              </Link>
+            ))}
+          </div>
+        </TabsContent>
+        <TabsContent value="popular">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {popularArticles.map((article) => (
+              <Link key={article.id} href={`/portal/articles/${article.id}`}>
+                <Card className="h-full hover:bg-accent transition-colors cursor-pointer">
+                  <CardHeader>
+                    <CardTitle className="line-clamp-2">{article.title}</CardTitle>
+                    <CardDescription className="line-clamp-2">
+                      {article.excerpt}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-center text-sm text-muted-foreground">
+                      <BookOpen className="mr-2 h-4 w-4" />
+                      {article.metadata?.views || 0} views
+                    </div>
+                  </CardContent>
+                </Card>
+              </Link>
+            ))}
+          </div>
+        </TabsContent>
+        <TabsContent value="recent">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {recentArticles.map((article) => (
+              <Link key={article.id} href={`/portal/articles/${article.id}`}>
+                <Card className="h-full hover:bg-accent transition-colors cursor-pointer">
+                  <CardHeader>
+                    <CardTitle className="line-clamp-2">{article.title}</CardTitle>
+                    <CardDescription className="line-clamp-2">
+                      {article.excerpt}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-center text-sm text-muted-foreground">
+                      <BookOpen className="mr-2 h-4 w-4" />
+                      {article.metadata?.views || 0} views
+                    </div>
+                  </CardContent>
+                </Card>
+              </Link>
+            ))}
+          </div>
+        </TabsContent>
       </Tabs>
     </div>
   );

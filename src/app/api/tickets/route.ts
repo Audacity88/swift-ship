@@ -120,8 +120,19 @@ export async function GET(request: NextRequest) {
       throw error
     }
 
+    // Transform the response to match our frontend's expected structure
+    const transformedTickets = tickets.map((ticket: any) => ({
+      ...ticket,
+      createdAt: ticket.created_at,
+      updatedAt: ticket.updated_at,
+      resolvedAt: ticket.resolved_at,
+      customer: ticket.customer,
+      assignee: ticket.assignee,
+      tags: ticket.tags || []
+    }))
+
     return NextResponse.json({
-      data: tickets,
+      data: transformedTickets,
       total: count || 0
     })
   } catch (error) {

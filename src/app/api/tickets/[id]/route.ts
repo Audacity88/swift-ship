@@ -200,6 +200,9 @@ export async function GET(
     // Transform the response to match our frontend's expected structure
     const transformedTicket = {
       ...ticket,
+      createdAt: ticket.created_at,
+      updatedAt: ticket.updated_at,
+      resolvedAt: ticket.resolved_at,
       customer: ticket.customer,
       assignee: ticket.assignee,
       comments: ticket.messages?.map((message: { 
@@ -210,9 +213,9 @@ export async function GET(
       }) => ({
         id: message.id,
         content: message.content,
-        isInternal: false, // Add default value
+        isInternal: false,
         user: {
-          name: 'Unknown', // We'll need to fetch this from customers/agents
+          name: 'Unknown',
           email: 'unknown@example.com'
         },
         createdAt: message.created_at,
@@ -340,122 +343,15 @@ export async function PATCH(
             ${session.id}
           )
         `)
-
-        // Create audit log
-        await tx.execute(sql`
-          INSERT INTO audit_logs (
-            entity_type,
-            entity_id,
-            action,
-            actor_id,
-            actor_type,
-            changes
-          ) VALUES (
-            'ticket',
-            ${params.id},
-            'update',
-            ${session.id},
-            ${session.type},
-            ${JSON.stringify(body)}::jsonb
-          )
-        `)
-
-        return ticket
       }
-
-      return currentTicket
     })
 
     return NextResponse.json({ data: result })
   } catch (error) {
-    console.error('Failed to update ticket:', error)
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Invalid request data', details: error.errors },
-        { status: 400 }
-      )
-    }
+    console.error('Server error:', error)
     return NextResponse.json(
-      { error: 'Failed to update ticket' },
+      { error: 'Failed to update ticket: ' + (error instanceof Error ? error.message : 'Unknown error') },
       { status: 500 }
     )
   }
 }
-
-// DELETE /api/tickets/[id] - Archive a ticket
-export async function DELETE(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
-  try {
-    const supabase = await createClient(request)
-    const session = await auth()
-    if (!session) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
-    }
-
-    // Archive the ticket instead of deleting
-    await sql.transaction(async (tx: Transaction) => {
-      const [ticket] = await tx.execute<TicketResult>(sql`
-        UPDATE tickets 
-        SET 
-          is_archived = true,
-          metadata = metadata || jsonb_build_object(
-            'archivedAt', NOW(),
-            'archivedBy', ${session.id}
-          )
-        WHERE id = ${params.id}
-        RETURNING *
-      `)
-
-      if (!ticket) {
-        throw new Error('Ticket not found')
-      }
-
-      // Create snapshot
-      await tx.execute(sql`
-        INSERT INTO ticket_snapshots (
-          ticket_id,
-          data,
-          reason,
-          triggered_by
-        ) VALUES (
-          ${params.id},
-          ${JSON.stringify(ticket)}::jsonb,
-          'Archive',
-          ${session.id}
-        )
-      `)
-
-      // Create audit log
-      await tx.execute(sql`
-        INSERT INTO audit_logs (
-          entity_type,
-          entity_id,
-          action,
-          actor_id,
-          actor_type,
-          changes
-        ) VALUES (
-          'ticket',
-          ${params.id},
-          'archive',
-          ${session.id},
-          ${session.type},
-          jsonb_build_object('archived', true)
-        )
-      `)
-    })
-
-    return NextResponse.json({ success: true })
-  } catch (error) {
-    console.error('Failed to archive ticket:', error)
-    return NextResponse.json(
-      { error: 'Failed to archive ticket' },
-      { status: 500 }
-    )
-  }
-} 
