@@ -3,7 +3,7 @@
 import { useState, useRef } from 'react'
 import { Paperclip, Send, X } from 'lucide-react'
 import type { User } from '@/types/user'
-import { UserRole } from '@/types/enums'
+import { UserRole } from '@/types/role'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Alert, AlertDescription } from '@/components/ui/alert'

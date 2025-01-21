@@ -1,4 +1,4 @@
-import { UserRole } from './enums';
+import { UserRole } from './role';
 
 export interface WorkingHours {
   start: string; // Format: "HH:mm"
@@ -81,4 +81,4 @@ export interface TeamMemberUpdate {
   schedule?: Partial<WeeklySchedule>;
   skills?: string[];
   role?: UserRole;
-} 
+}

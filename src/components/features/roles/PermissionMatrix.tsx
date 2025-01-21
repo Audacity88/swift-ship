@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { UserRole, Permission } from '@/types/role';
+import { RoleType, Permission } from '@/types/role';
 import { roleService } from '@/lib/services/role-service';
 import {
   Table,
@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/tooltip';
 
 interface PermissionMatrixProps {
-  selectedRole?: UserRole;
+  selectedRole?: RoleType;
   readOnly?: boolean;
   onPermissionsChange?: (permissions: Permission[]) => void;
 }
@@ -32,8 +32,8 @@ export const PermissionMatrix = ({
   readOnly = true,
   onPermissionsChange,
 }: PermissionMatrixProps) => {
-  const [matrix, setMatrix] = useState<Record<UserRole, Record<Permission, boolean>>>(() => {
-    const emptyMatrix: Record<UserRole, Record<Permission, boolean>> = Object.values(UserRole).reduce(
+  const [matrix, setMatrix] = useState<Record<RoleType, Record<Permission, boolean>>>(() => {
+    const emptyMatrix: Record<RoleType, Record<Permission, boolean>> = Object.values(RoleType).reduce(
       (acc, role) => ({
         ...acc,
         [role]: Object.values(Permission).reduce(
@@ -41,7 +41,7 @@ export const PermissionMatrix = ({
           {} as Record<Permission, boolean>
         ),
       }),
-      {} as Record<UserRole, Record<Permission, boolean>>
+      {} as Record<RoleType, Record<Permission, boolean>>
     );
     return emptyMatrix;
   });
@@ -56,7 +56,7 @@ export const PermissionMatrix = ({
     loadMatrix();
   }, []);
 
-  const handlePermissionToggle = (role: UserRole, permission: Permission) => {
+  const handlePermissionToggle = (role: RoleType, permission: Permission) => {
     if (readOnly || role !== selectedRole) return;
 
     setMatrix((prev) => {
@@ -124,7 +124,7 @@ export const PermissionMatrix = ({
         <TableHeader>
           <TableRow>
             <TableHead className="w-[200px]">Permission</TableHead>
-            {Object.values(UserRole).map((role) => (
+            {Object.values(RoleType).map((role) => (
               <TableHead key={role} className="text-center">
                 {role}
                 {role === selectedRole && !readOnly && (
@@ -152,7 +152,7 @@ export const PermissionMatrix = ({
                   </Tooltip>
                 </TooltipProvider>
               </TableCell>
-              {Object.values(UserRole).map((role) => (
+              {Object.values(RoleType).map((role) => (
                 <TableCell key={role} className="text-center">
                   <Checkbox
                     checked={matrix[role]?.[permission] || false}

@@ -1,8 +1,27 @@
-export enum UserRole {
-  ADMIN = 'ADMIN',
-  AGENT = 'AGENT',
-  SUPERVISOR = 'SUPERVISOR',
-  CUSTOMER = 'CUSTOMER',
+export enum RoleType {
+  ADMIN = 'admin',
+  AGENT = 'agent',
+  SUPERVISOR = 'supervisor',
+  CUSTOMER = 'customer'
+}
+
+export type UserRole = RoleType
+
+export const USER_ROLE_LABELS: Record<RoleType, string> = {
+  [RoleType.ADMIN]: 'Administrator',
+  [RoleType.AGENT]: 'Support Agent',
+  [RoleType.SUPERVISOR]: 'Team Supervisor',
+  [RoleType.CUSTOMER]: 'Customer'
+}
+
+export const AGENT_ROLES: RoleType[] = [RoleType.ADMIN, RoleType.AGENT, RoleType.SUPERVISOR]
+
+export function isAgentRole(role: RoleType): boolean {
+  return AGENT_ROLES.includes(role)
+}
+
+export function getRoleLabel(role: RoleType): string {
+  return USER_ROLE_LABELS[role] || role
 }
 
 export enum Permission {
@@ -55,13 +74,13 @@ export enum Permission {
 }
 
 export interface RolePermissions {
-  role: UserRole;
+  role: RoleType;
   permissions: Permission[];
 }
 
-export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
-  [UserRole.ADMIN]: Object.values(Permission),
-  [UserRole.SUPERVISOR]: [
+export const DEFAULT_ROLE_PERMISSIONS: Record<RoleType, Permission[]> = {
+  [RoleType.ADMIN]: Object.values(Permission),
+  [RoleType.SUPERVISOR]: [
     Permission.VIEW_ROLES,
     Permission.VIEW_TICKETS,
     Permission.CREATE_TICKETS,
@@ -73,14 +92,14 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     Permission.VIEW_ANALYTICS,
     Permission.EXPORT_REPORTS,
   ],
-  [UserRole.AGENT]: [
+  [RoleType.AGENT]: [
     Permission.VIEW_TICKETS,
     Permission.CREATE_TICKETS,
     Permission.EDIT_TICKETS,
     Permission.VIEW_TEAMS,
     Permission.VIEW_ANALYTICS,
   ],
-  [UserRole.CUSTOMER]: [
+  [RoleType.CUSTOMER]: [
     Permission.VIEW_OWN_TICKETS,
     Permission.CREATE_OWN_TICKETS,
     Permission.COMMENT_OWN_TICKETS,
@@ -88,11 +107,11 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     Permission.RATE_ARTICLES,
     Permission.MANAGE_OWN_PROFILE,
   ],
-};
+}
 
 export interface UserRoleData {
   userId: string;
-  role: UserRole;
+  role: RoleType;
   customPermissions?: Permission[]; // Optional override of default permissions
   assignedBy: string;
   assignedAt: Date;

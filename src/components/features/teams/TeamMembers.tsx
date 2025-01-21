@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import type { TeamMember, TeamMemberUpdate, WeeklySchedule, DaySchedule } from '@/types/team';
 import { teamService } from '@/lib/services/team-service';
-import { UserRole } from '@/types/enums';
+import { UserRole } from '@/types/role';
 import {
   Table,
   TableBody,

@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { Permission, UserRole, UserRoleData, RolePermissions, DEFAULT_ROLE_PERMISSIONS } from '@/types/role';
+import { Permission, RoleType, UserRoleData, RolePermissions, DEFAULT_ROLE_PERMISSIONS } from '@/types/role';
 import { getAllPermissionsForRole } from '@/lib/auth/permissions';
 
 const supabase = createClient(
@@ -7,48 +7,50 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-const rolePermissions: Record<UserRole, Permission[]> = {
-  [UserRole.ADMIN]: Object.values(Permission),
-  [UserRole.SUPERVISOR]: [
+const ROLES: RoleType[] = [RoleType.ADMIN, RoleType.AGENT, RoleType.SUPERVISOR, RoleType.CUSTOMER];
+
+const rolePermissions: Record<RoleType, Permission[]> = {
+  [RoleType.ADMIN]: Object.values(Permission),
+  [RoleType.SUPERVISOR]: [
     Permission.VIEW_TEAMS,
     Permission.MANAGE_TEAMS,
     Permission.MANAGE_TEAM_MEMBERS,
     Permission.MANAGE_TEAM_SCHEDULE,
     Permission.VIEW_TEAM_METRICS,
   ],
-  [UserRole.AGENT]: [
+  [RoleType.AGENT]: [
     Permission.VIEW_TEAMS,
     Permission.VIEW_TEAM_METRICS,
   ],
-  [UserRole.CUSTOMER]: [],
+  [RoleType.CUSTOMER]: [],
 };
 
-export function getUserPermissions(role: UserRole): Permission[] {
+export function getUserPermissions(role: RoleType): Permission[] {
   return rolePermissions[role] || [];
 }
 
-export function hasPermission(role: UserRole, permission: Permission): boolean {
+export function hasPermission(role: RoleType, permission: Permission): boolean {
   const permissions = getUserPermissions(role);
   return permissions.includes(permission);
 }
 
-export function hasAnyPermission(role: UserRole, permissions: Permission[]): boolean {
+export function hasAnyPermission(role: RoleType, permissions: Permission[]): boolean {
   const userPermissions = getUserPermissions(role);
   return permissions.some(permission => userPermissions.includes(permission));
 }
 
-export function hasAllPermissions(role: UserRole, permissions: Permission[]): boolean {
+export function hasAllPermissions(role: RoleType, permissions: Permission[]): boolean {
   const userPermissions = getUserPermissions(role);
   return permissions.every(permission => userPermissions.includes(permission));
 }
 
 export class RoleService {
   // Role CRUD Operations
-  async getAllRoles(): Promise<UserRole[]> {
-    return Object.values(UserRole);
+  async getAllRoles(): Promise<RoleType[]> {
+    return ROLES;
   }
 
-  async getUserRole(userId: string): Promise<UserRole | null> {
+  async getUserRole(userId: string): Promise<RoleType | null> {
     const { data, error } = await supabase
       .from('users')
       .select('role')
@@ -56,7 +58,7 @@ export class RoleService {
       .single();
 
     if (error || !data) return null;
-    return data.role as UserRole;
+    return data.role as RoleType;
   }
 
   async assignRole(roleData: UserRoleData): Promise<boolean> {
@@ -85,7 +87,7 @@ export class RoleService {
 
     // Return custom permissions if set, otherwise return default permissions for the role
     return (data.custom_permissions as Permission[]) || 
-           DEFAULT_ROLE_PERMISSIONS[data.role as UserRole];
+           DEFAULT_ROLE_PERMISSIONS[data.role as RoleType];
   }
 
   async hasPermission(userId: string, permission: Permission): Promise<boolean> {
@@ -105,7 +107,7 @@ export class RoleService {
 
   // Role Validation
   isValidRole(role: string): boolean {
-    return Object.values(UserRole).includes(role as UserRole);
+    return ROLES.includes(role as RoleType);
   }
 
   isValidPermission(permission: string): boolean {
@@ -113,33 +115,33 @@ export class RoleService {
   }
 
   // Role Hierarchy Helpers
-  canManageRole(managerRole: UserRole, targetRole: UserRole): boolean {
-    const roleHierarchy: Record<UserRole, UserRole[]> = {
-      [UserRole.ADMIN]: [UserRole.SUPERVISOR, UserRole.AGENT, UserRole.CUSTOMER],
-      [UserRole.SUPERVISOR]: [UserRole.AGENT, UserRole.CUSTOMER],
-      [UserRole.AGENT]: [UserRole.CUSTOMER],
-      [UserRole.CUSTOMER]: [],
+  canManageRole(managerRole: RoleType, targetRole: RoleType): boolean {
+    const roleHierarchy: Record<RoleType, RoleType[]> = {
+      [RoleType.ADMIN]: [RoleType.SUPERVISOR, RoleType.AGENT, RoleType.CUSTOMER],
+      [RoleType.SUPERVISOR]: [RoleType.AGENT, RoleType.CUSTOMER],
+      [RoleType.AGENT]: [RoleType.CUSTOMER],
+      [RoleType.CUSTOMER]: [],
     };
 
     return roleHierarchy[managerRole]?.includes(targetRole) || false;
   }
 
   // Permission Set Helpers
-  getDefaultPermissions(role: UserRole): Permission[] {
+  getDefaultPermissions(role: RoleType): Permission[] {
     return DEFAULT_ROLE_PERMISSIONS[role];
   }
 
-  getRolesByPermission(permission: Permission): UserRole[] {
+  getRolesByPermission(permission: Permission): RoleType[] {
     return Object.entries(DEFAULT_ROLE_PERMISSIONS)
       .filter(([_, permissions]) => permissions.includes(permission))
-      .map(([role]) => role as UserRole);
+      .map(([role]) => role as RoleType);
   }
 
   // Role Assignment Validation
   async validateRoleAssignment(
     assignerId: string,
     targetUserId: string,
-    newRole: UserRole
+    newRole: RoleType
   ): Promise<{ valid: boolean; error?: string }> {
     // Get assigner's role
     const assignerRole = await this.getUserRole(assignerId);
@@ -166,10 +168,10 @@ export class RoleService {
   }
 
   // Permission Matrix Generation
-  generatePermissionMatrix(): Record<UserRole, Record<Permission, boolean>> {
-    const matrix: Record<UserRole, Record<Permission, boolean>> = {} as any;
+  generatePermissionMatrix(): Record<RoleType, Record<Permission, boolean>> {
+    const matrix: Record<RoleType, Record<Permission, boolean>> = {} as any;
 
-    Object.values(UserRole).forEach(role => {
+    ROLES.forEach(role => {
       matrix[role] = {} as Record<Permission, boolean>;
       Object.values(Permission).forEach(permission => {
         matrix[role][permission] = DEFAULT_ROLE_PERMISSIONS[role].includes(permission);

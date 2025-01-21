@@ -77,6 +77,7 @@ export const CustomerProfile = ({
   className,
 }: CustomerProfileProps) => {
   const [isUpdating, setIsUpdating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const profileForm = useForm({
     resolver: zodResolver(profileFormSchema),
@@ -99,19 +100,28 @@ export const CustomerProfile = ({
     },
   });
 
-  const onProfileSubmit = async (values: z.infer<typeof profileFormSchema>) => {
-    setIsUpdating(true);
+  const handleProfileSubmit = async (values: z.infer<typeof profileFormSchema>) => {
     try {
-      await onUpdateProfile(values);
+      setError(null);
+      setIsUpdating(true);
+      await onUpdateProfile({
+        ...profile,
+        ...values,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update profile');
     } finally {
       setIsUpdating(false);
     }
   };
 
-  const onPreferencesSubmit = async (values: z.infer<typeof preferencesFormSchema>) => {
-    setIsUpdating(true);
+  const handlePreferencesSubmit = async (values: z.infer<typeof preferencesFormSchema>) => {
     try {
+      setError(null);
+      setIsUpdating(true);
       await onUpdatePreferences(values);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update preferences');
     } finally {
       setIsUpdating(false);
     }
@@ -119,6 +129,11 @@ export const CustomerProfile = ({
 
   return (
     <div className={cn('space-y-6', className)}>
+      {error && (
+        <div role="alert" className="p-4 mb-4 text-sm text-red-800 rounded-lg bg-red-50">
+          {error}
+        </div>
+      )}
       <Card>
         <CardHeader>
           <CardTitle>Profile Information</CardTitle>
@@ -128,7 +143,7 @@ export const CustomerProfile = ({
         </CardHeader>
         <CardContent>
           <Form {...profileForm}>
-            <form onSubmit={profileForm.handleSubmit(onProfileSubmit)} className="space-y-4">
+            <form onSubmit={profileForm.handleSubmit(handleProfileSubmit)} className="space-y-4">
               <FormField
                 control={profileForm.control}
                 name="name"
@@ -256,7 +271,7 @@ export const CustomerProfile = ({
         </CardHeader>
         <CardContent>
           <Form {...preferencesForm}>
-            <form onSubmit={preferencesForm.handleSubmit(onPreferencesSubmit)} className="space-y-6">
+            <form onSubmit={preferencesForm.handleSubmit(handlePreferencesSubmit)} className="space-y-6">
               <div className="space-y-4">
                 <h3 className="text-lg font-medium">Email Notifications</h3>
                 <div className="space-y-4">

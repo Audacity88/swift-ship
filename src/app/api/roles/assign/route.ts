@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Permission, UserRole } from '@/types/role';
+import { Permission, RoleType } from '@/types/role';
 import { createClient } from '@supabase/supabase-js';
 import { roleService } from '@/lib/services/role-service';
 
@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { userId, role, customPermissions } = body as {
       userId: string;
-      role: UserRole;
+      role: RoleType;
       customPermissions?: Permission[];
     };
 

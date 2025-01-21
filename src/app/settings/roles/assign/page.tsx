@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { UserRole } from '@/types/role';
+import { RoleType } from '@/types/role';
 import { RoleAssignment } from '@/components/features/roles/RoleAssignment';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,7 +11,7 @@ export default function AssignRolePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const roleParam = searchParams?.get('role');
-  const initialRole = roleParam as UserRole | undefined;
+  const initialRole = roleParam as RoleType | undefined;
 
   const handleAssignmentComplete = (success: boolean) => {
     if (success) {

@@ -1,9 +1,4 @@
-export enum UserRole {
-  ADMIN = 'admin',
-  AGENT = 'agent',
-  CUSTOMER = 'customer',
-  MANAGER = 'manager'
-}
+import { UserRole } from './role';
 
 export interface User {
   id: string;
@@ -34,4 +29,4 @@ export interface UserPreferences {
   };
   timezone: string;
   language: string;
-} 
+}

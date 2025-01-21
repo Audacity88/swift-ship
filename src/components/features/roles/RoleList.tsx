@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { UserRole } from '@/types/role';
+import { RoleType } from '@/types/role';
 import { roleService } from '@/lib/services/role-service';
 import {
   Table,
@@ -23,12 +23,12 @@ import { MoreHorizontal, Search } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 
 interface RoleListProps {
-  onAssignRole?: (role: UserRole) => void;
-  onViewPermissions?: (role: UserRole) => void;
+  onAssignRole?: (role: RoleType) => void;
+  onViewPermissions?: (role: RoleType) => void;
 }
 
 export const RoleList = ({ onAssignRole, onViewPermissions }: RoleListProps) => {
-  const [roles, setRoles] = useState<UserRole[]>([]);
+  const [roles, setRoles] = useState<RoleType[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
@@ -92,7 +92,7 @@ export const RoleList = ({ onAssignRole, onViewPermissions }: RoleListProps) => 
             <TableRow key={role}>
               <TableCell className="font-medium">{role}</TableCell>
               <TableCell>
-                {roleService.getDefaultPermissions(role as UserRole).length}
+                {roleService.getDefaultPermissions(role as RoleType).length}
               </TableCell>
               <TableCell>
                 <Badge variant={role === 'ADMIN' ? 'default' : 'secondary'}>
@@ -109,12 +109,12 @@ export const RoleList = ({ onAssignRole, onViewPermissions }: RoleListProps) => 
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem
-                      onClick={() => onAssignRole?.(role as UserRole)}
+                      onClick={() => onAssignRole?.(role as RoleType)}
                     >
                       Assign Role
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      onClick={() => onViewPermissions?.(role as UserRole)}
+                      onClick={() => onViewPermissions?.(role as RoleType)}
                     >
                       View Permissions
                     </DropdownMenuItem>

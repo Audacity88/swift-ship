@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { UserRole } from '@/types/role';
+import { RoleType } from '@/types/role';
 import { roleService } from '@/lib/services/role-service';
 import {
   Select,
@@ -18,7 +18,7 @@ import { Loader2 } from 'lucide-react';
 
 interface RoleAssignmentProps {
   userId?: string;
-  initialRole?: UserRole;
+  initialRole?: RoleType;
   onAssign?: (success: boolean) => void;
 }
 
@@ -27,11 +27,11 @@ export const RoleAssignment = ({
   initialRole,
   onAssign,
 }: RoleAssignmentProps) => {
-  const [selectedRole, setSelectedRole] = useState<UserRole | null>(initialRole || null);
+  const [selectedRole, setSelectedRole] = useState<RoleType | null>(initialRole || null);
   const [targetUserId, setTargetUserId] = useState(userId || '');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [availableRoles, setAvailableRoles] = useState<UserRole[]>([]);
+  const [availableRoles, setAvailableRoles] = useState<RoleType[]>([]);
 
   // Load available roles on mount
   useEffect(() => {
@@ -91,7 +91,7 @@ export const RoleAssignment = ({
         <Label htmlFor="role">Role</Label>
         <Select
           value={selectedRole || undefined}
-          onValueChange={(value) => setSelectedRole(value as UserRole)}
+          onValueChange={(value) => setSelectedRole(value as RoleType)}
           disabled={isLoading}
         >
           <SelectTrigger id="role">

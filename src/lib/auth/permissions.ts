@@ -1,4 +1,4 @@
-import { UserRole, Permission } from '@/types/role';
+import { Permission, RoleType } from '@/types/role';
 import { createClient } from '@supabase/supabase-js';
 import { roleService } from '@/lib/services/role-service';
 
@@ -10,7 +10,7 @@ const supabase = createClient(
 // Cache interface
 interface PermissionCache {
   permissions: Permission[];
-  role: UserRole;
+  role: RoleType;
   timestamp: number;
 }
 
@@ -33,7 +33,7 @@ function getCachedPermissions(userId: string): Permission[] | null {
   return cached.permissions;
 }
 
-function cachePermissions(userId: string, permissions: Permission[], role: UserRole) {
+function cachePermissions(userId: string, permissions: Permission[], role: RoleType) {
   permissionCache.set(userId, {
     permissions,
     role,
@@ -63,10 +63,10 @@ export async function getUserPermissions(): Promise<Permission[]> {
     return [];
   }
 
-  const permissions = await roleService.getUserPermissions(userData.role as UserRole);
+  const permissions = await roleService.getUserPermissions(userData.role as RoleType);
   
   // Cache the results
-  cachePermissions(session.user.id, permissions, userData.role as UserRole);
+  cachePermissions(session.user.id, permissions, userData.role as RoleType);
 
   return permissions;
 }
@@ -86,7 +86,7 @@ export async function hasAllPermissions(requiredPermissions: Permission[]): Prom
   return requiredPermissions.every(permission => permissions.includes(permission));
 }
 
-export async function getUserRole(): Promise<UserRole | null> {
+export async function getUserRole(): Promise<RoleType | null> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) {
     return null;
@@ -109,19 +109,19 @@ export async function getUserRole(): Promise<UserRole | null> {
     await getUserPermissions();
   }
 
-  return userData?.role as UserRole || null;
+  return userData?.role as RoleType || null;
 }
 
 // Role hierarchy definition
-const ROLE_HIERARCHY: Record<UserRole, UserRole[]> = {
-  [UserRole.ADMIN]: [UserRole.SUPERVISOR, UserRole.AGENT],
-  [UserRole.SUPERVISOR]: [UserRole.AGENT],
-  [UserRole.AGENT]: [],
-  [UserRole.CUSTOMER]: [],
+const ROLE_HIERARCHY: Record<RoleType, RoleType[]> = {
+  [RoleType.ADMIN]: [RoleType.SUPERVISOR, RoleType.AGENT],
+  [RoleType.SUPERVISOR]: [RoleType.AGENT],
+  [RoleType.AGENT]: [],
+  [RoleType.CUSTOMER]: [],
 };
 
 // Get all permissions for a role including inherited ones
-export function getAllPermissionsForRole(role: UserRole): Permission[] {
+export function getAllPermissionsForRole(role: RoleType): Permission[] {
   const basePermissions = roleService.getDefaultPermissions(role);
   const inheritedRoles = ROLE_HIERARCHY[role] || [];
   

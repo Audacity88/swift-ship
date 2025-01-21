@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { UserRole } from '@/types/role';
+import { RoleType } from '@/types/role';
 import { RoleList } from '@/components/features/roles/RoleList';
 import { PermissionMatrix } from '@/components/features/roles/PermissionMatrix';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,13 +11,13 @@ import { X } from 'lucide-react';
 
 export default function RolesPage() {
   const router = useRouter();
-  const [selectedRole, setSelectedRole] = useState<UserRole | undefined>(undefined);
+  const [selectedRole, setSelectedRole] = useState<RoleType | undefined>(undefined);
 
-  const handleAssignRole = (role: UserRole) => {
+  const handleAssignRole = (role: RoleType) => {
     router.push(`/settings/roles/assign?role=${role}`);
   };
 
-  const handleViewPermissions = (role: UserRole) => {
+  const handleViewPermissions = (role: RoleType) => {
     setSelectedRole(role);
   };
 

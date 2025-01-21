@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { Permission, UserRole } from '@/types/role';
+import { Permission, RoleType } from '@/types/role';
 import { createClient } from '@supabase/supabase-js';
 import { roleService } from '@/lib/services/role-service';
 

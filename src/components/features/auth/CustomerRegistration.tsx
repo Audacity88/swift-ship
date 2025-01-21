@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Icons } from '@/components/ui/icons';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { db } from '@/lib/db';
-import { UserRole } from '@/types/enums';
+import { UserRole } from '@/types/role';
 import type { AuthError } from '@supabase/supabase-js';
 
 interface RegistrationData {

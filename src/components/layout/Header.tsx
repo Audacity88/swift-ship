@@ -8,17 +8,31 @@ import { useEffect, useState, useRef } from 'react'
 import { COLORS } from '@/lib/constants'
 import { useNotificationStore } from '@/lib/store/notifications'
 import { createBrowserClient } from '@supabase/ssr'
+import { useDebounce } from '@/lib/hooks/useDebounce'
+import { useSearch } from '@/lib/hooks/useSearch'
+import { useTicketStore } from '@/lib/store/tickets'
+import { useViewMode } from '@/lib/store/viewMode'
+import { SearchResult } from '@/types/search'
+import { Ticket, TicketStatus, TicketPriority } from '@/types/ticket'
+import { useAuth } from '@/lib/hooks/useAuth'
 
 export function Header() {
   const { getUnreadCount } = useNotificationStore()
+  const { searchTickets, results } = useSearch()
+  const { createTicket } = useTicketStore()
+  const { viewMode, setViewMode } = useViewMode()
+  const [searchQuery, setSearchQuery] = useState('')
   const [mounted, setMounted] = useState(false)
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list')
   const [showProfileMenu, setShowProfileMenu] = useState(false)
+  const [isSearching, setIsSearching] = useState(false)
   const profileMenuRef = useRef<HTMLDivElement>(null)
+  const searchRef = useRef<HTMLDivElement>(null)
+  const debouncedSearch = useDebounce(searchQuery, 300)
   const unreadCount = getUnreadCount()
   const pathname = usePathname() || ''
   const router = useRouter()
   const isTicketRoute = pathname.startsWith('/tickets')
+  const { user } = useAuth()
   const [supabase] = useState(() => 
     createBrowserClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -29,10 +43,13 @@ export function Header() {
   useEffect(() => {
     setMounted(true)
 
-    // Close menu when clicking outside
+    // Close menus when clicking outside
     const handleClickOutside = (event: MouseEvent) => {
       if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
         setShowProfileMenu(false)
+      }
+      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+        setIsSearching(false)
       }
     }
 
@@ -40,27 +57,97 @@ export function Header() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  useEffect(() => {
+    if (debouncedSearch) {
+      handleSearch()
+    }
+  }, [debouncedSearch])
+
+  const handleSearch = async () => {
+    if (!debouncedSearch) return
+    setIsSearching(true)
+    await searchTickets(debouncedSearch)
+    setIsSearching(false)
+  }
+
+  const handleCreateTicket = async () => {
+    const ticket = await createTicket({
+      title: '',
+      status: TicketStatus.OPEN,
+      priority: TicketPriority.MEDIUM,
+    })
+    if (ticket) {
+      router.push(`/tickets/${ticket.id}`)
+    }
+  }
+
   const handleSignOut = async () => {
-    const { error } = await supabase.auth.signOut()
-    if (!error) {
+    try {
+      const { error } = await supabase.auth.signOut()
+      if (error) {
+        console.error('Error signing out:', error)
+        return
+      }
       router.push('/auth/signin')
+    } catch (error) {
+      console.error('Error signing out:', error)
     }
   }
 
   return (
     <header className="h-16 border-b border-gray-200 bg-white px-6 flex items-center justify-between">
-      <div className="flex-1 max-w-lg">
+      <div className="flex-1 max-w-lg" ref={searchRef}>
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 ${isSearching ? 'text-primary' : 'text-gray-400'}`} />
           {mounted ? (
             <input
               type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={isTicketRoute ? "Search tickets..." : "Search..."}
               className="w-full pl-10 pr-4 py-2 text-sm border border-gray-200 rounded-lg \
                 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
             />
           ) : (
             <div className="w-full pl-10 pr-4 py-2 text-sm border border-gray-200 rounded-lg bg-gray-50" />
+          )}
+          {isSearching && searchQuery && (
+            <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 max-h-96 overflow-y-auto">
+              {results.length > 0 ? (
+                <div className="py-2">
+                  {results.map((result) => (
+                    <Link
+                      key={result.items[0].id}
+                      href={`/tickets/${result.items[0].id}`}
+                      className="flex items-start gap-3 px-4 py-2 hover:bg-gray-50"
+                      onClick={() => setIsSearching(false)}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">
+                          {result.items[0].title}
+                        </p>
+                        <p className="text-sm text-gray-500 truncate">
+                          {result.items[0].status} • {result.items[0].priority}
+                        </p>
+                      </div>
+                      {result.metadata.executionTimeMs < 100 && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                          Fast match
+                        </span>
+                      )}
+                    </Link>
+                  ))}
+                </div>
+              ) : isSearching ? (
+                <div className="p-4 text-sm text-gray-500 text-center">
+                  Searching...
+                </div>
+              ) : (
+                <div className="p-4 text-sm text-gray-500 text-center">
+                  No results found
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -69,6 +156,7 @@ export function Header() {
         {isTicketRoute && (
           <>
             <button
+              onClick={handleCreateTicket}
               className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-lg \
                 hover:bg-primary/90 transition-colors flex items-center gap-2"
               style={{ backgroundColor: COLORS.primary }}
@@ -99,13 +187,14 @@ export function Header() {
         )}
         
         {!isTicketRoute && (
-          <button
+          <Link
+            href="/settings/subscription"
             className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-lg \
               hover:bg-primary/90 transition-colors"
             style={{ backgroundColor: COLORS.primary }}
           >
             Upgrade Now
-          </button>
+          </Link>
         )}
         
         <Link 
@@ -129,8 +218,8 @@ export function Header() {
           >
             <div className="relative w-8 h-8 rounded-full overflow-hidden">
               <Image
-                src="https://picsum.photos/200"
-                alt="Profile"
+                src="/default-avatar.png"
+                alt={user?.name || "Profile"}
                 fill
                 className="object-cover"
               />
@@ -141,7 +230,7 @@ export function Header() {
           {showProfileMenu && (
             <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
               <Link
-                href="/settings"
+                href="/settings/profile"
                 className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
                 onClick={() => setShowProfileMenu(false)}
               >

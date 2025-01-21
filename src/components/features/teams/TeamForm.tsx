@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2 } from 'lucide-react';
-import { UserRole } from '@/types/enums';
+import { UserRole } from '@/types/role';
 import {
   Select,
   SelectContent,
