@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { Search, Filter, X } from 'lucide-react'
-import { TicketList } from '@/components/features/tickets/TicketList'
+import TicketList from '@/components/features/tickets/TicketList'
 import { TicketStatus, TicketPriority } from '@/types/enums'
 import type { TicketListItem } from '@/types/ticket'
 

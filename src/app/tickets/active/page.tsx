@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Filter, SortAsc, SortDesc } from 'lucide-react'
-import { TicketList } from '@/components/features/tickets/TicketList'
+import TicketList from '@/components/features/tickets/TicketList'
 import { TicketStatus, TicketPriority, UserRole } from '@/types/enums'
 import type { TicketListItem } from '@/types/ticket'
 

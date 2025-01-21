@@ -43,25 +43,19 @@ import {
 } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 
-interface Ticket {
-  id: string
-  title: string
-  status: string
-  priority: string
-  created_at: string
-  customer: {
-    name: string
-    email: string
-  }
-  assignee: {
-    name: string
-    email: string
-  }
+interface TicketListProps {
+  tickets: TicketListItem[]
+  viewMode?: 'list' | 'grid'
+  onTicketClick?: (ticketId: string) => void
 }
 
-const TicketList = () => {
-  const [tickets, setTickets] = useState<Ticket[]>([])
-  const [loading, setLoading] = useState(true)
+const TicketList: React.FC<TicketListProps> = ({ 
+  tickets: initialTickets,
+  viewMode = 'list',
+  onTicketClick
+}) => {
+  const [tickets, setTickets] = useState<TicketListItem[]>(initialTickets)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [filters, setFilters] = useState({
     status: '',
@@ -167,10 +161,14 @@ const TicketList = () => {
           </TableHeader>
           <TableBody>
             {tickets.map((ticket) => (
-              <TableRow key={ticket.id}>
+              <TableRow 
+                key={ticket.id}
+                onClick={() => onTicketClick?.(ticket.id)}
+                className={onTicketClick ? 'cursor-pointer hover:bg-gray-50' : ''}
+              >
                 <TableCell>{ticket.title}</TableCell>
                 <TableCell>{ticket.customer.name}</TableCell>
-                <TableCell>{ticket.assignee.name}</TableCell>
+                <TableCell>{ticket.assignee?.name || 'Unassigned'}</TableCell>
                 <TableCell>
                   <Badge variant={ticket.priority === 'high' ? 'destructive' : 'secondary'}>
                     {ticket.priority}
@@ -181,7 +179,7 @@ const TicketList = () => {
                     {ticket.status}
                   </Badge>
                 </TableCell>
-                <TableCell>{format(new Date(ticket.created_at), 'MMM d, yyyy')}</TableCell>
+                <TableCell>{format(new Date(ticket.createdAt), 'MMM d, yyyy')}</TableCell>
               </TableRow>
             ))}
           </TableBody>

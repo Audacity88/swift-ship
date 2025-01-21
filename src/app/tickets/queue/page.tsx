@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Image from 'next/image'
 import { Users, BarChart3, Clock, AlertTriangle } from 'lucide-react'
-import { TicketList } from '@/components/features/tickets/TicketList'
+import TicketList from '@/components/features/tickets/TicketList'
 import { TicketStatus, TicketPriority } from '@/types/enums'
 import type { TicketListItem, Agent } from '@/types/ticket'
 

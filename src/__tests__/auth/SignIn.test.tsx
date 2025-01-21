@@ -2,10 +2,24 @@ import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import SignIn from '@/pages/auth/signin'
 import { createBrowserClient } from '@supabase/ssr'
+import { useRouter } from 'next/router'
 
 jest.mock('@supabase/ssr')
+jest.mock('next/router', () => ({
+  useRouter: jest.fn()
+}))
 
 describe('SignIn Component', () => {
+  const mockRouter = {
+    push: jest.fn(),
+    prefetch: jest.fn(),
+    pathname: '/',
+    route: '/',
+    asPath: '/',
+    query: {},
+    replace: jest.fn()
+  }
+
   const mockSupabase = {
     auth: {
       signInWithPassword: jest.fn(),
@@ -14,6 +28,7 @@ describe('SignIn Component', () => {
 
   beforeEach(() => {
     ;(createBrowserClient as jest.Mock).mockReturnValue(mockSupabase)
+    ;(useRouter as jest.Mock).mockReturnValue(mockRouter)
   })
 
   afterEach(() => {

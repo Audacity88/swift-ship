@@ -38,9 +38,16 @@ interface Author {
 interface ArticleEditorProps {
   article: Article
   categories?: Category[]
+  onChange?: (content: string) => void
+  className?: string
 }
 
-const ArticleEditor: React.FC<ArticleEditorProps> = ({ article: initialArticle, categories = [] }) => {
+const ArticleEditor: React.FC<ArticleEditorProps> = ({ 
+  article: initialArticle, 
+  categories = [],
+  onChange,
+  className
+}) => {
   const [article, setArticle] = useState(initialArticle)
   const [isPreview, setIsPreview] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -51,7 +58,9 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({ article: initialArticle, 
   }
 
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setArticle(prev => ({ ...prev, content: e.target.value }))
+    const newContent = e.target.value
+    setArticle(prev => ({ ...prev, content: newContent }))
+    onChange?.(newContent)
   }
 
   const handleCategoryChange = (value: string) => {

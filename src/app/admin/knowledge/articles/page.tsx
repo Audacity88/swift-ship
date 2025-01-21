@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Article, ArticleStatus, Category } from '@/types/knowledge';
-import { ArticleEditor } from '@/components/features/knowledge/ArticleEditor';
+import ArticleEditor from '@/components/features/knowledge/ArticleEditor';
 import { ArticleList } from '@/components/features/knowledge/ArticleList';
 import { Button } from '@/components/ui/button';
 import {
@@ -46,6 +46,30 @@ const articleFormSchema = z.object({
 });
 
 type ArticleFormValues = z.infer<typeof articleFormSchema>;
+
+const defaultArticle: Article = {
+  id: '',
+  title: '',
+  content: '',
+  excerpt: '',
+  slug: '',
+  categoryId: '',
+  status: ArticleStatus.DRAFT,
+  tags: [],
+  author: {
+    id: '',
+    name: '',
+    email: ''
+  },
+  metadata: {
+    views: 0,
+    helpfulCount: 0,
+    notHelpfulCount: 0,
+    lastUpdated: new Date().toISOString()
+  },
+  createdAt: new Date(),
+  updatedAt: new Date()
+}
 
 export default function ArticlesPage() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -229,8 +253,12 @@ export default function ArticlesPage() {
                     <FormItem>
                       <FormLabel>Content</FormLabel>
                       <FormControl>
-                        <ArticleEditor
-                          content={field.value}
+                        <ArticleEditor 
+                          article={{
+                            ...defaultArticle,
+                            content: field.value
+                          }}
+                          categories={categories}
                           onChange={field.onChange}
                           className="min-h-[400px]"
                         />

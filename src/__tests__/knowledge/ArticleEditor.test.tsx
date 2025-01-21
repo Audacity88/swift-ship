@@ -2,27 +2,50 @@ import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ArticleEditor from '@/components/features/knowledge/ArticleEditor'
-import { Article, ArticleStatus } from '@/types/knowledge'
+import { Article, ArticleStatus, Category } from '@/types/knowledge'
 
 // Mock data
 const mockArticle: Article = {
   id: '1',
   title: 'Test Article',
   content: '# Test Content\n\nThis is a test article.',
+  excerpt: 'This is a test article.',
+  slug: 'test-article',
   categoryId: 'cat1',
   status: ArticleStatus.DRAFT,
+  tags: [],
   author: {
     id: 'auth1',
     name: 'Test Author',
     email: 'test@example.com'
   },
-  created_at: '2024-01-21T08:00:00Z',
-  updated_at: '2024-01-21T08:00:00Z',
+  metadata: {
+    views: 0,
+    helpfulCount: 0,
+    notHelpfulCount: 0,
+    lastUpdated: new Date().toISOString()
+  },
+  createdAt: new Date('2024-01-21T08:00:00Z'),
+  updatedAt: new Date('2024-01-21T08:00:00Z'),
 }
 
-const mockCategories = [
-  { id: 'cat1', name: 'Category 1' },
-  { id: 'cat2', name: 'Category 2' },
+const mockCategories: Category[] = [
+  { 
+    id: 'cat1', 
+    name: 'Category 1', 
+    order: 1, 
+    description: 'Test Category 1',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  },
+  { 
+    id: 'cat2', 
+    name: 'Category 2', 
+    order: 2,
+    description: 'Test Category 2',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  },
 ]
 
 // Mock service functions

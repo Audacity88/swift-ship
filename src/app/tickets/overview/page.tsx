@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { BarChart3, Clock, MessageSquare, Users } from 'lucide-react'
-import { TicketList } from '@/components/features/tickets/TicketList'
+import TicketList from '@/components/features/tickets/TicketList'
 import { TicketStatus, TicketPriority } from '@/types/enums'
 import type { TicketListItem } from '@/types/ticket'
 

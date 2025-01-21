@@ -3,41 +3,53 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import TicketList from '@/components/features/tickets/TicketList'
 import { fetchTickets } from '@/lib/services/ticket-service'
+import { TicketStatus, TicketPriority } from '@/types/enums'
+import type { TicketListItem } from '@/types/ticket'
 
 jest.mock('@/lib/services/ticket-service')
 
 // Mock data
-const mockTickets = [
+const mockTickets: TicketListItem[] = [
   {
     id: '1',
     title: 'Test Ticket 1',
-    status: 'open',
-    priority: 'high',
-    created_at: '2024-01-21T08:00:00Z',
+    status: TicketStatus.OPEN,
+    priority: TicketPriority.HIGH,
     customer: {
+      id: '1',
       name: 'John Doe',
-      email: 'john@example.com',
+      email: 'john@example.com'
     },
     assignee: {
+      id: '1',
       name: 'Agent Smith',
       email: 'agent@example.com',
+      role: 'agent'
     },
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    tags: []
   },
   {
     id: '2',
     title: 'Test Ticket 2',
-    status: 'in_progress',
-    priority: 'medium',
-    created_at: '2024-01-21T09:00:00Z',
+    status: TicketStatus.IN_PROGRESS,
+    priority: TicketPriority.MEDIUM,
     customer: {
+      id: '2',
       name: 'Jane Smith',
-      email: 'jane@example.com',
+      email: 'jane@example.com'
     },
     assignee: {
+      id: '2',
       name: 'Agent Johnson',
       email: 'johnson@example.com',
+      role: 'agent'
     },
-  },
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    tags: []
+  }
 ]
 
 describe('TicketList Component', () => {
@@ -52,7 +64,7 @@ describe('TicketList Component', () => {
   })
 
   it('renders ticket list with data', async () => {
-    render(<TicketList />)
+    render(<TicketList tickets={mockTickets} />)
 
     await waitFor(() => {
       expect(screen.getByText('Test Ticket 1')).toBeInTheDocument()
@@ -65,7 +77,7 @@ describe('TicketList Component', () => {
   })
 
   it('handles filtering by status', async () => {
-    render(<TicketList />)
+    render(<TicketList tickets={mockTickets} />)
 
     // Wait for loading to finish
     await waitFor(() => {
@@ -85,7 +97,7 @@ describe('TicketList Component', () => {
   })
 
   it('handles filtering by priority', async () => {
-    render(<TicketList />)
+    render(<TicketList tickets={mockTickets} />)
 
     // Wait for loading to finish
     await waitFor(() => {
@@ -105,7 +117,7 @@ describe('TicketList Component', () => {
   })
 
   it('handles search input', async () => {
-    render(<TicketList />)
+    render(<TicketList tickets={mockTickets} />)
 
     // Wait for loading to finish
     await waitFor(() => {
@@ -125,7 +137,7 @@ describe('TicketList Component', () => {
   })
 
   it('handles pagination', async () => {
-    render(<TicketList />)
+    render(<TicketList tickets={mockTickets} />)
 
     // Wait for loading to finish
     await waitFor(() => {
@@ -148,14 +160,22 @@ describe('TicketList Component', () => {
     (fetchTickets as jest.Mock).mockImplementation(
       () => new Promise((resolve) => setTimeout(resolve, 1000))
     )
-    render(<TicketList />)
-
-    expect(screen.getByText(/loading/i)).toBeInTheDocument()
+    
+    // Set loading to true initially
+    const { rerender } = render(<TicketList tickets={[]} />)
+    
+    // Trigger a filter change to cause loading state
+    const { handleStatusChange } = (window as any).__TEST_HANDLERS__
+    handleStatusChange('open')
+    
+    await waitFor(() => {
+      expect(screen.getByText(/loading/i)).toBeInTheDocument()
+    })
   })
 
   it('handles error state', async () => {
     (fetchTickets as jest.Mock).mockRejectedValue(new Error('Failed to fetch tickets'))
-    render(<TicketList />)
+    render(<TicketList tickets={mockTickets} />)
 
     await waitFor(() => {
       expect(screen.getByText(/error loading tickets/i)).toBeInTheDocument()
