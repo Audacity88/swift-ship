@@ -108,73 +108,125 @@ const updateTicketSchema = z.object({
 // GET /api/tickets/[id] - Get a single ticket
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  context: { params: { id: string } }
 ) {
+  const { id } = await Promise.resolve(context.params)
+  
+  console.log('API route hit:', { 
+    url: request.url,
+    method: request.method,
+    id
+  })
+  
   try {
+    const authHeader = request.headers.get('Authorization')
+    if (!authHeader?.startsWith('Bearer ')) {
+      console.error('No Bearer token found')
+      return NextResponse.json(
+        { error: 'Not authenticated' },
+        { status: 401 }
+      )
+    }
+
+    const token = authHeader.split(' ')[1]
     const supabase = await createClient(request)
-    // Get current ticket
-    const [ticket] = await sql.execute<TicketResult>(sql`
-      SELECT 
-        t.id,
-        t.title,
-        t.description,
-        t.status,
-        t.priority,
-        t.customer_id,
-        t.assignee_id,
-        t.created_at,
-        t.updated_at,
-        t.resolved_at,
-        t.metadata
-      FROM tickets t
-      WHERE t.id = ${params.id}
-    `)
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+
+    if (authError || !user) {
+      console.error('Auth error:', authError)
+      return NextResponse.json(
+        { error: 'Invalid token' },
+        { status: 401 }
+      )
+    }
+
+    console.log('Authenticated as:', user.id)
+
+    // Get current ticket using Supabase query builder
+    console.log('Fetching ticket:', id)
+    const { data: ticket, error: ticketError } = await supabase
+      .from('tickets')
+      .select(`
+        *,
+        customer:customers(
+          id,
+          name,
+          email,
+          avatar,
+          company
+        ),
+        assignee:agents!tickets_assignee_id_fkey(
+          id,
+          name,
+          email,
+          avatar,
+          role
+        ),
+        tags:ticket_tags(
+          tag:tags(
+            id,
+            name,
+            color
+          )
+        ),
+        messages(
+          id,
+          content,
+          author_type,
+          author_id,
+          created_at,
+          updated_at
+        )
+      `)
+      .eq('id', id)
+      .single()
+
+    if (ticketError) {
+      console.error('Error fetching ticket:', ticketError)
+      return NextResponse.json(
+        { error: 'Failed to fetch ticket: ' + ticketError.message },
+        { status: 500 }
+      )
+    }
 
     if (!ticket) {
+      console.error('Ticket not found:', id)
       return NextResponse.json(
         { error: 'Ticket not found' },
         { status: 404 }
       )
     }
 
-    // Get user role and session first
-    const userRole = await getUserRole()
-    const { data: { session } } = await supabase.auth.getSession()
-    
-    if (!userRole || !session?.user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
+    // Transform the response to match our frontend's expected structure
+    const transformedTicket = {
+      ...ticket,
+      customer: ticket.customer,
+      assignee: ticket.assignee,
+      comments: ticket.messages?.map((message: { 
+        id: string; 
+        content: string; 
+        created_at: string; 
+        updated_at: string;
+      }) => ({
+        id: message.id,
+        content: message.content,
+        isInternal: false, // Add default value
+        user: {
+          name: 'Unknown', // We'll need to fetch this from customers/agents
+          email: 'unknown@example.com'
+        },
+        createdAt: message.created_at,
+        updatedAt: message.updated_at
+      })) || [],
+      tags: ticket.tags?.map((t: { tag: { id: string; name: string; color: string } }) => t.tag) || []
     }
 
-    // Admin bypass - admins can view all tickets
-    if (userRole.role === RoleType.ADMIN) {
-      return NextResponse.json({ data: ticket })
-    }
-
-    // For non-admins, check permissions
-    const permissionCheck = await hasAnyPermission([Permission.VIEW_TICKETS, Permission.VIEW_OWN_TICKETS])
-    if (!permissionCheck) {
-      return NextResponse.json(
-        { error: 'You do not have permission to view this ticket' },
-        { status: 403 }
-      )
-    }
-
-    // If user is a customer, they can only view their own tickets
-    if (userRole.type === 'customer' && ticket.customer_id !== session.user.id) {
-      return NextResponse.json(
-        { error: 'You do not have permission to view this ticket' },
-        { status: 403 }
-      )
-    }
-
-    return NextResponse.json({ data: ticket })
+    console.log('Ticket found, returning transformed data')
+    return NextResponse.json({ data: transformedTicket })
   } catch (error) {
-    console.error('Failed to fetch ticket:', error)
+    console.error('Server error:', error)
     return NextResponse.json(
-      { error: 'Failed to fetch ticket' },
+      { error: 'Failed to fetch ticket: ' + (error instanceof Error ? error.message : 'Unknown error') },
       { status: 500 }
     )
   }
@@ -253,10 +305,7 @@ export async function PATCH(
         // Convert to parameterized query for sql template literal
         const updateQuery = sql`
           UPDATE tickets 
-          SET ${sql.join(
-            updates.map((update, i) => sql`${sql.__dangerous__rawValue(update)} = ${values[i]}`),
-            ', '
-          )}, updated_at = NOW()
+          SET ${sql.__dangerous__rawValue(updates.join(', '))}, updated_at = NOW()
           WHERE id = ${params.id}
           RETURNING *
         `
@@ -272,7 +321,7 @@ export async function PATCH(
             await tx.execute(sql`
               INSERT INTO ticket_tags (ticket_id, tag_id)
               SELECT ${params.id}, tag_id
-              FROM unnest(${body.tags}::uuid[]) AS tag_id
+              FROM unnest(${sql.__dangerous__rawValue('{' + body.tags.join(',') + '}')}::uuid[]) AS tag_id
             `)
           }
         }

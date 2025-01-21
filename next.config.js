@@ -10,15 +10,11 @@ const nextConfig = {
       },
     ],
   },
-  webpack(config) {
-    config.module.rules.push({
-      test: /\.(png|jpg|gif|svg)$/i,
-      type: 'asset/resource'
-    })
-    return config
-  },
   experimental: {
-    serverActions: true,
+    serverActions: {
+      allowedOrigins: ['localhost:3000'],
+      bodySizeLimit: '2mb'
+    },
   },
 }
 

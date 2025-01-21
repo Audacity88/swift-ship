@@ -9,6 +9,7 @@ export interface User {
   email: string
   role: RoleType
   isAgent: boolean
+  avatar?: string | null
 }
 
 export function useAuth() {

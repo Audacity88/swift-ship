@@ -15,7 +15,6 @@ import { useViewMode } from '@/lib/store/viewMode'
 import { SearchResult } from '@/types/search'
 import { Ticket, TicketStatus, TicketPriority } from '@/types/ticket'
 import { useAuth } from '@/lib/hooks/useAuth'
-import defaultAvatar from '@/assets/default-avatar.png'
 
 export function Header() {
   const { getUnreadCount } = useNotificationStore()
@@ -207,12 +206,13 @@ export function Header() {
           >
             <div className="relative w-8 h-8 rounded-full overflow-hidden bg-gray-100">
               <Image
-                src={defaultAvatar}
+                src={user?.avatar || "/default-avatar.png"}
                 alt={user?.name || "Profile"}
                 width={32}
                 height={32}
                 className="object-cover"
                 priority
+                unoptimized
               />
             </div>
             <ChevronDown className={`w-4 h-4 text-gray-600 transition-transform ${showProfileMenu ? 'rotate-180' : ''}`} />

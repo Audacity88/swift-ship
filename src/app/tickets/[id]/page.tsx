@@ -19,6 +19,9 @@ import {
 } from '@/components/features/tickets/PropertyDropdowns'
 import { ReplyComposer } from '@/components/features/tickets/ReplyComposer'
 import { StatusTransition } from '@/components/features/tickets/StatusTransition'
+import { useSupabase } from '@/app/providers'
+import { getTicket, updateTicket, addComment, updateTicketStatus } from '@/lib/services/ticket-service'
+import type { Ticket as TicketData } from '@/lib/services/ticket-service'
 
 interface Tag {
   id: string
@@ -33,8 +36,9 @@ interface ReplyMessage {
 
 export default function TicketPage() {
   const params = useParams()
+  const supabase = useSupabase()
   const ticketId = params?.id as string
-  const [ticket, setTicket] = useState<Ticket | null>(null)
+  const [ticket, setTicket] = useState<TicketData | null>(null)
   const [selectedType, setSelectedType] = useState<TicketType>('problem')
   const [selectedPriority, setSelectedPriority] = useState<TicketPriority>(TicketPriority.MEDIUM)
   const [selectedAssignee, setSelectedAssignee] = useState<string | null>(null)
@@ -44,6 +48,7 @@ export default function TicketPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null)
 
   // Dropdown visibility states
   const [showTypeDropdown, setShowTypeDropdown] = useState(false)
@@ -51,20 +56,35 @@ export default function TicketPage() {
   const [showTagsDropdown, setShowTagsDropdown] = useState(false)
   const [showFollowersDropdown, setShowFollowersDropdown] = useState(false)
 
-  // Fetch ticket data
+  // Check auth status first
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession()
+        console.log('Auth status:', { session: session?.user?.id, error })
+        if (error) throw error
+        setIsAuthenticated(!!session?.user)
+      } catch (error) {
+        console.error('Auth error:', error)
+        setError('Authentication failed')
+        setIsAuthenticated(false)
+      }
+    }
+    void checkAuth()
+  }, [supabase])
+
+  // Only fetch ticket data after authentication is confirmed
   useEffect(() => {
     const fetchTicket = async () => {
+      if (!isAuthenticated || !ticketId) return
+      
       try {
-        const response = await fetch(`/api/tickets/${ticketId}`)
-        if (!response.ok) {
-          throw new Error('Failed to fetch ticket')
-        }
-        const data = await response.json()
-        setTicket(data.data)
-        setSelectedType(data.data.type || 'problem')
-        setSelectedPriority(data.data.priority)
-        setSelectedAssignee(data.data.assigneeId)
-        setTags(data.data.metadata?.tags || [])
+        const ticketData = await getTicket(ticketId)
+        setTicket(ticketData)
+        setSelectedType((ticketData.metadata?.type as TicketType) || 'problem')
+        setSelectedPriority(ticketData.priority)
+        setSelectedAssignee(ticketData.assignee?.id || null)
+        setTags((ticketData.metadata?.tags as Tag[]) || [])
       } catch (error) {
         console.error('Error fetching ticket:', error)
         setError(error instanceof Error ? error.message : 'Failed to fetch ticket')
@@ -73,31 +93,57 @@ export default function TicketPage() {
       }
     }
 
-    if (ticketId) {
-      fetchTicket()
+    if (isAuthenticated === true) {
+      void fetchTicket()
     }
-  }, [ticketId])
+  }, [ticketId, isAuthenticated])
+
+  // Show loading state while checking auth
+  if (isAuthenticated === null) {
+    return <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900" />
+    </div>
+  }
+
+  // Show auth error if not authenticated
+  if (!isAuthenticated) {
+    return <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
+      <div className="text-red-500">Please log in to view this ticket</div>
+    </div>
+  }
+
+  // Show loading state while fetching ticket
+  if (isLoading) {
+    return <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900" />
+    </div>
+  }
+
+  // Show error state
+  if (error || !ticket) {
+    return <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
+      <div className="text-red-500">{error || 'Ticket not found'}</div>
+    </div>
+  }
 
   // Tag handlers
   const handleAddTag = async (tagName: string) => {
     if (!ticket) return
     
     try {
-      const response = await fetch(`/api/tickets/${ticketId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tags: [...tags.map(t => t.id), tagName]
-        })
-      })
-      
-      if (!response.ok) throw new Error('Failed to add tag')
-      
       const newTag: Tag = {
         id: `tag_${Date.now()}`,
         name: tagName,
         color: '#' + Math.floor(Math.random()*16777215).toString(16)
       }
+
+      const updatedTicket = await updateTicket(ticketId, {
+        metadata: {
+          ...ticket.metadata,
+          tags: [...tags, newTag]
+        }
+      })
+      
       setTags(prev => [...prev, newTag])
     } catch (error) {
       console.error('Failed to add tag:', error)
@@ -108,15 +154,12 @@ export default function TicketPage() {
     if (!ticket) return
     
     try {
-      const response = await fetch(`/api/tickets/${ticketId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tags: tags.filter(t => t.name !== tagName).map(t => t.id)
-        })
+      const updatedTicket = await updateTicket(ticketId, {
+        metadata: {
+          ...ticket.metadata,
+          tags: tags.filter(t => t.name !== tagName)
+        }
       })
-      
-      if (!response.ok) throw new Error('Failed to remove tag')
       
       setTags(prev => prev.filter(t => t.name !== tagName))
     } catch (error) {
@@ -132,6 +175,7 @@ export default function TicketPage() {
       const response = await fetch(`/api/tickets/${ticketId}/followers`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ follower })
       })
       
@@ -148,7 +192,8 @@ export default function TicketPage() {
     
     try {
       const response = await fetch(`/api/tickets/${ticketId}/followers/${encodeURIComponent(follower)}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        credentials: 'include'
       })
       
       if (!response.ok) throw new Error('Failed to remove follower')
@@ -165,21 +210,14 @@ export default function TicketPage() {
     
     setIsSubmitting(true)
     try {
-      const response = await fetch(`/api/tickets/${ticketId}/comments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content: message.content,
-          isInternal: false
-        })
+      const comment = await addComment(ticketId, {
+        content: message.content,
+        isInternal: false
       })
 
-      if (!response.ok) throw new Error('Failed to add comment')
-
-      const data = await response.json()
       setTicket(prev => prev ? {
         ...prev,
-        comments: [...prev.comments, data.data],
+        comments: [...prev.comments, comment],
         updatedAt: new Date().toISOString()
       } : null)
     } catch (error) {
@@ -194,16 +232,7 @@ export default function TicketPage() {
     if (!ticket) return
     
     try {
-      const response = await fetch(`/api/tickets/${ticketId}/status`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          status: newStatus,
-          reason
-        })
-      })
-
-      if (!response.ok) throw new Error('Failed to update status')
+      const updatedTicket = await updateTicketStatus(ticketId, newStatus, reason)
 
       setTicket(prev => prev ? {
         ...prev,
@@ -213,18 +242,6 @@ export default function TicketPage() {
     } catch (error) {
       console.error('Failed to update status:', error)
     }
-  }
-
-  if (isLoading) {
-    return <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
-      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900" />
-    </div>
-  }
-
-  if (error || !ticket) {
-    return <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
-      <div className="text-red-500">{error || 'Ticket not found'}</div>
-    </div>
   }
 
   return (

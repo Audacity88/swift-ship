@@ -30,6 +30,7 @@ const DEFAULT_AUTHENTICATED_ROUTES = [
   '/tickets/active',
   '/tickets/search',
   '/tickets/queue',
+  '/tickets/[id]',
   '/shipments',
   '/pickup',
   '/search',
@@ -51,7 +52,6 @@ const CUSTOMER_ROUTES = [
 // Define routes that require agent permissions
 const AGENT_ROUTES = [
   '/inbox/[id]',
-  '/tickets/[id]',
   '/analytics/[id]',
   '/shipments/[id]',
   '/pickup/[id]',
@@ -73,7 +73,7 @@ export async function middleware(request: NextRequest) {
   // Skip middleware for API routes and public assets
   if (
     request.nextUrl.pathname.startsWith('/_next') ||
-    request.nextUrl.pathname.startsWith('/api/auth') ||
+    request.nextUrl.pathname.startsWith('/api/') ||
     request.nextUrl.pathname.startsWith('/public') ||
     request.nextUrl.pathname === '/403' ||
     request.nextUrl.pathname === '/404' ||
@@ -121,7 +121,17 @@ export async function middleware(request: NextRequest) {
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    return response
+    
+    // Clone the request headers and add the session token
+    const requestHeaders = new Headers(request.headers)
+    requestHeaders.set('Authorization', `Bearer ${session.access_token}`)
+
+    // Return a new response with the modified headers
+    return NextResponse.next({
+      request: {
+        headers: requestHeaders,
+      },
+    })
   }
 
   // Allow access to public routes
@@ -139,7 +149,12 @@ export async function middleware(request: NextRequest) {
   }
 
   // Allow access to default authenticated routes without permission check
-  if (DEFAULT_AUTHENTICATED_ROUTES.includes(request.nextUrl.pathname)) {
+  if (DEFAULT_AUTHENTICATED_ROUTES.some(route => {
+    // Convert route pattern to regex to handle dynamic segments
+    const pattern = route.replace(/\[.*?\]/g, '[^/]+')
+    const regex = new RegExp(`^${pattern}$`)
+    return regex.test(request.nextUrl.pathname)
+  })) {
     return response
   }
 
@@ -168,11 +183,14 @@ export async function middleware(request: NextRequest) {
   // Check route authorization for protected routes
   const isAuthorized = await isAuthorizedForRoute(request.nextUrl.pathname)
   if (!isAuthorized) {
+    console.log(`Access denied to path: ${request.nextUrl.pathname}`)
     // Add the 403 page to public routes to prevent redirect loop
     if (!PUBLIC_ROUTES.includes('/403')) {
       PUBLIC_ROUTES.push('/403')
     }
-    return NextResponse.redirect(new URL('/403', request.url))
+    return NextResponse.redirect(
+      new URL(`/403?path=${encodeURIComponent(request.nextUrl.pathname)}`, request.url)
+    )
   }
 
   return response

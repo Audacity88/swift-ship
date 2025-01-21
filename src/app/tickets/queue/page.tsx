@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Image from 'next/image'
+import { useRouter } from 'next/navigation'
 import { Users, BarChart3, Clock, AlertTriangle } from 'lucide-react'
 import TicketList from '@/components/features/tickets/TicketList'
 import { TicketStatus, TicketPriority } from '@/types/enums'
@@ -86,6 +87,7 @@ const mockStats = [
 ]
 
 export default function TeamQueuePage() {
+  const router = useRouter()
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null)
 
   // Filter tickets based on selected agent
@@ -93,6 +95,10 @@ export default function TeamQueuePage() {
     if (!selectedAgent) return true
     return ticket.assignee?.id === selectedAgent
   })
+
+  const handleTicketClick = (ticketId: string) => {
+    router.push(`/tickets/${ticketId}`)
+  }
 
   return (
     <div className="space-y-6">
@@ -186,7 +192,10 @@ export default function TeamQueuePage() {
             <option>Sort by SLA</option>
           </select>
         </div>
-        <TicketList tickets={filteredTickets} />
+        <TicketList 
+          tickets={filteredTickets} 
+          onTicketClick={handleTicketClick}
+        />
       </div>
     </div>
   )

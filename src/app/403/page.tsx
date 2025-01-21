@@ -1,37 +1,36 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
-import { AlertCircle } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { COLORS } from '@/lib/constants'
+import { useSearchParams } from 'next/navigation'
+import { AlertTriangle } from 'lucide-react'
 
-export default function UnauthorizedPage() {
-  const router = useRouter()
+export default function ForbiddenPage() {
+  const searchParams = useSearchParams()
+  const path = searchParams.get('path')
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-4">
-      <div className="text-center space-y-6 max-w-md">
-        <div className="flex justify-center">
-          <AlertCircle className="w-16 h-16" style={{ color: COLORS.negative }} />
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 px-4">
+      <div className="text-center">
+        <div className="flex justify-center mb-4">
+          <AlertTriangle className="h-12 w-12 text-yellow-500" />
         </div>
-        <h1 className="text-3xl font-bold">Access Denied</h1>
-        <p className="text-gray-600">
-          Sorry, you don&apos;t have permission to access this page. Please contact your administrator
-          if you believe this is a mistake.
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">Access Denied</h1>
+        <p className="text-gray-600 mb-4">
+          You don't have permission to access this page.
         </p>
-        <div className="flex gap-4 justify-center">
-          <Button
-            onClick={() => router.back()}
-            variant="outline"
+        {path && (
+          <div className="mt-2 p-2 bg-gray-100 rounded-md">
+            <p className="text-sm text-gray-700">
+              Attempted to access: <code className="bg-gray-200 px-1 py-0.5 rounded">{path}</code>
+            </p>
+          </div>
+        )}
+        <div className="mt-6">
+          <a
+            href="/"
+            className="text-sm font-medium text-blue-600 hover:text-blue-500"
           >
-            Go Back
-          </Button>
-          <Button
-            onClick={() => router.push('/')}
-            style={{ backgroundColor: COLORS.primary }}
-          >
-            Go Home
-          </Button>
+            Return to Home
+          </a>
         </div>
       </div>
     </div>
