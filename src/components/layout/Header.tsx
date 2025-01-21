@@ -32,7 +32,7 @@ export function Header() {
   const pathname = usePathname() || ''
   const router = useRouter()
   const isTicketRoute = pathname.startsWith('/tickets')
-  const { user } = useAuth()
+  const { user, signOut } = useAuth()
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -84,15 +84,11 @@ export function Header() {
       // First clear any UI state
       setShowProfileMenu(false)
       
-      // Sign out from Supabase
-      const { error } = await supabase.auth.signOut()
-      if (error) {
-        console.error('Error signing out:', error)
-        return
+      // Sign out using the auth hook
+      const success = await signOut()
+      if (!success) {
+        console.error('Failed to sign out')
       }
-      
-      // The auth state change listener in useAuth will handle the redirect
-      // and clearing of user state
     } catch (error) {
       console.error('Error signing out:', error)
     }
@@ -158,36 +154,24 @@ export function Header() {
       
       <div className="flex items-center gap-6">
         {isTicketRoute && (
-          <>
+          <div className="flex items-center gap-2 border border-gray-200 rounded-lg p-1">
             <button
-              onClick={handleCreateTicket}
-              className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-lg \
-                hover:bg-primary/90 transition-colors flex items-center gap-2"
-              style={{ backgroundColor: COLORS.primary }}
+              onClick={() => setViewMode('list')}
+              className={`p-1.5 rounded ${
+                viewMode === 'list' ? 'bg-gray-100' : 'hover:bg-gray-50'
+              }`}
             >
-              <Plus className="w-4 h-4" />
-              New Ticket
+              <LayoutList className="w-4 h-4 text-gray-600" />
             </button>
-            
-            <div className="flex items-center gap-2 border border-gray-200 rounded-lg p-1">
-              <button
-                onClick={() => setViewMode('list')}
-                className={`p-1.5 rounded ${
-                  viewMode === 'list' ? 'bg-gray-100' : 'hover:bg-gray-50'
-                }`}
-              >
-                <LayoutList className="w-4 h-4 text-gray-600" />
-              </button>
-              <button
-                onClick={() => setViewMode('grid')}
-                className={`p-1.5 rounded ${
-                  viewMode === 'grid' ? 'bg-gray-100' : 'hover:bg-gray-50'
-                }`}
-              >
-                <LayoutGrid className="w-4 h-4 text-gray-600" />
-              </button>
-            </div>
-          </>
+            <button
+              onClick={() => setViewMode('grid')}
+              className={`p-1.5 rounded ${
+                viewMode === 'grid' ? 'bg-gray-100' : 'hover:bg-gray-50'
+              }`}
+            >
+              <LayoutGrid className="w-4 h-4 text-gray-600" />
+            </button>
+          </div>
         )}
         
         {!isTicketRoute && (

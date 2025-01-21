@@ -44,12 +44,14 @@ interface StatusTransition {
 interface StatusTransitionProps {
   ticketId: string
   currentStatus: TicketStatus
+  onStatusChange: (newStatus: TicketStatus, reason?: string) => Promise<void>
   className?: string
 }
 
 export function StatusTransition({
   ticketId,
   currentStatus,
+  onStatusChange,
   className = ''
 }: StatusTransitionProps) {
   // State
@@ -86,8 +88,6 @@ export function StatusTransition({
         return 'bg-blue-500'
       case 'in_progress':
         return 'bg-yellow-500'
-      case 'waiting':
-        return 'bg-purple-500'
       case 'resolved':
         return 'bg-green-500'
       case 'closed':
@@ -105,23 +105,7 @@ export function StatusTransition({
     setError(null)
 
     try {
-      const response = await fetch(`/api/tickets/${ticketId}/status`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          status: selectedStatus,
-          reason: reason.trim() || undefined
-        })
-      })
-
-      if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || 'Failed to update status')
-      }
-
-      // Close dialog and reset state
+      await onStatusChange(selectedStatus, reason.trim() || undefined)
       setIsDialogOpen(false)
       setSelectedStatus(null)
       setReason('')

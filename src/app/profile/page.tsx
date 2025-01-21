@@ -1,16 +1,14 @@
 'use client'
 
-import { useAuth } from '@/lib/hooks/useAuth'
-import { Card } from '@/components/ui/card'
-import { Avatar } from '@/components/ui/avatar'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { useState } from 'react'
+import { User } from 'lucide-react'
+import Image from 'next/image'
+import { useAuth } from '@/lib/hooks/useAuth'
 import { USER_ROLE_LABELS } from '@/types/role'
+import { COLORS } from '@/lib/constants'
 
 export default function ProfilePage() {
   const { user } = useAuth()
-  const [isEditing, setIsEditing] = useState(false)
   
   if (!user) {
     return null
@@ -20,85 +18,126 @@ export default function ProfilePage() {
     <div className="container mx-auto py-8 px-4">
       <h1 className="text-2xl font-bold mb-8">Profile Settings</h1>
       
-      <div className="grid gap-8 md:grid-cols-3">
-        {/* Profile Overview */}
-        <Card className="p-6 col-span-2">
-          <div className="flex items-start gap-6">
-            <Avatar className="w-20 h-20">
-              <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center">
-                <span className="text-2xl font-semibold text-primary">
-                  {user.name?.charAt(0).toUpperCase()}
-                </span>
+      <div className="max-w-3xl mx-auto">
+        <div className="space-y-6">
+          <h2 className="text-lg font-semibold">Profile Information</h2>
+          
+          <div className="flex items-center gap-6 pb-6 border-b border-gray-200">
+            <div className="relative w-24 h-24">
+              <Image
+                src="https://picsum.photos/200"
+                alt="Profile"
+                fill
+                className="rounded-full object-cover"
+              />
+              <button 
+                className="absolute bottom-0 right-0 p-1.5 bg-primary text-white rounded-full text-sm"
+                style={{ backgroundColor: COLORS.primary }}
+              >
+                <User className="w-4 h-4" />
+              </button>
+            </div>
+            <div>
+              <h3 className="font-medium">Profile Photo</h3>
+              <p className="text-sm text-gray-500 mb-4">
+                This will be displayed on your profile
+              </p>
+              <div className="flex gap-3">
+                <button className="px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium">
+                  Change Photo
+                </button>
+                <button className="px-4 py-2 text-red-600 bg-white border border-gray-200 rounded-lg text-sm font-medium">
+                  Remove
+                </button>
               </div>
-            </Avatar>
-            
-            <div className="flex-1">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold">{user.name}</h2>
-                <Button
-                  variant="outline"
-                  onClick={() => setIsEditing(!isEditing)}
-                >
-                  {isEditing ? 'Cancel' : 'Edit Profile'}
-                </Button>
-              </div>
-              
-              {isEditing ? (
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Name
-                    </label>
-                    <Input
-                      defaultValue={user.name}
-                      className="max-w-md"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Email
-                    </label>
-                    <Input
-                      defaultValue={user.email}
-                      type="email"
-                      className="max-w-md"
-                      disabled
-                    />
-                  </div>
-                  <Button type="submit">
-                    Save Changes
-                  </Button>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <p className="text-gray-600">{user.email}</p>
-                  <p className="text-sm text-gray-500">
-                    Role: {USER_ROLE_LABELS[user.role]}
-                  </p>
-                </div>
-              )}
             </div>
           </div>
-        </Card>
-        
-        {/* Quick Stats */}
-        <Card className="p-6">
-          <h3 className="font-semibold mb-4">Account Overview</h3>
+
           <div className="space-y-4">
-            <div>
-              <p className="text-sm text-gray-500">Member Since</p>
-              <p className="font-medium">
-                {new Date(user.createdAt).toLocaleDateString()}
-              </p>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  First Name
+                </label>
+                <input
+                  type="text"
+                  className="w-full p-2 border border-gray-200 rounded-lg"
+                  placeholder="John"
+                  defaultValue={user.name?.split(' ')[0]}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Last Name
+                </label>
+                <input
+                  type="text"
+                  className="w-full p-2 border border-gray-200 rounded-lg"
+                  placeholder="Doe"
+                  defaultValue={user.name?.split(' ')[1]}
+                />
+              </div>
             </div>
+
             <div>
-              <p className="text-sm text-gray-500">Last Login</p>
-              <p className="font-medium">
-                {new Date(user.lastSignInAt).toLocaleDateString()}
-              </p>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Email Address
+              </label>
+              <input
+                type="email"
+                className="w-full p-2 border border-gray-200 rounded-lg"
+                placeholder="john@example.com"
+                defaultValue={user.email}
+                disabled
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Phone Number
+              </label>
+              <input
+                type="tel"
+                className="w-full p-2 border border-gray-200 rounded-lg"
+                placeholder="+1 (555) 000-0000"
+                defaultValue={user.phone}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Company
+              </label>
+              <input
+                type="text"
+                className="w-full p-2 border border-gray-200 rounded-lg"
+                placeholder="Company Name"
+                defaultValue={user.company}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Role
+              </label>
+              <input
+                type="text"
+                className="w-full p-2 border border-gray-200 rounded-lg"
+                value={USER_ROLE_LABELS[user.role]}
+                disabled
+              />
             </div>
           </div>
-        </Card>
+
+          <div className="flex justify-end">
+            <button
+              className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium"
+              style={{ backgroundColor: COLORS.primary }}
+            >
+              Save Changes
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   )

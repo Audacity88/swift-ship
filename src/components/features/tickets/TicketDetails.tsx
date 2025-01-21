@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { format } from 'date-fns'
 import {
   User as UserIcon,
@@ -16,7 +16,9 @@ import {
   XCircle,
   Edit,
   Archive,
-  MoreHorizontal
+  MoreHorizontal,
+  Plus,
+  Send
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -28,8 +30,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Textarea } from '@/components/ui/textarea'
+import { Switch } from '@/components/ui/switch'
+import { Label } from '@/components/ui/label'
+import { Editor } from '@/components/ui/editor'
 import { SLAIndicator } from '@/components/features/tickets/SLAIndicator'
-import { TagList } from '@/components/features/tags/TagList'
+import { TagSelect } from '@/components/features/tags/TagSelect'
 import { CustomFieldsSection } from '@/components/features/custom-fields/CustomFieldsSection'
 import { StatusTransition } from '@/components/features/tickets/StatusTransition'
 import { AuditLogViewer } from '@/components/features/audit/AuditLogViewer'
@@ -37,6 +43,7 @@ import type { Ticket, Tag, TicketComment, Customer, Agent } from '@/types/ticket
 import type { User } from '@/types/user'
 import { TicketStatus, TicketPriority } from '@/types/enums'
 import type { CustomFieldValueWithId } from '@/types/custom-field'
+import { cn } from '@/lib/utils'
 
 interface TicketDetailsProps {
   ticketId: string
@@ -71,15 +78,20 @@ export function TicketDetails({
   const [ticket, setTicket] = useState<Ticket | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<'details' | 'history'>('details')
+  const [newComment, setNewComment] = useState('')
+  const [isInternalNote, setIsInternalNote] = useState(false)
+  const [isSubmittingComment, setIsSubmittingComment] = useState(false)
+  const commentsEndRef = useRef<HTMLDivElement>(null)
 
   // Load ticket data
   useEffect(() => {
     const loadTicket = async () => {
       setIsLoading(true)
       try {
-        // TODO: Replace with actual API call
-        const response = await fetch(`/api/tickets/${ticketId}`).then(res => res.json())
-        setTicket(response.data)
+        const response = await fetch(`/api/tickets/${ticketId}`)
+        if (!response.ok) throw new Error('Failed to load ticket')
+        const data = await response.json()
+        setTicket(data)
       } catch (error) {
         console.error('Failed to load ticket:', error)
         // TODO: Show error toast
@@ -91,10 +103,79 @@ export function TicketDetails({
     loadTicket()
   }, [ticketId])
 
-  // Handle tag click
-  const handleTagClick = (tag: Tag) => {
-    // TODO: Implement tag filtering/navigation
-    console.log('Tag clicked:', tag)
+  // Scroll to bottom of comments when new ones are added
+  useEffect(() => {
+    if (activeTab === 'details') {
+      commentsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [ticket?.comments?.length, activeTab])
+
+  const handleTagsChange = async (tagIds: string[]) => {
+    if (!ticket) return
+
+    try {
+      const response = await fetch(`/api/tickets/${ticket.id}/tags`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tagIds })
+      })
+
+      if (!response.ok) throw new Error('Failed to update tags')
+
+      const updatedTicket = await response.json()
+      setTicket(updatedTicket)
+    } catch (error) {
+      console.error('Failed to update tags:', error)
+      // TODO: Show error toast
+    }
+  }
+
+  const handleStatusChange = async (newStatus: TicketStatus, reason?: string) => {
+    if (!ticket) return
+
+    try {
+      const response = await fetch(`/api/tickets/${ticket.id}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus, reason })
+      })
+
+      if (!response.ok) throw new Error('Failed to update status')
+
+      const updatedTicket = await response.json()
+      setTicket(updatedTicket)
+    } catch (error) {
+      console.error('Failed to update status:', error)
+      // TODO: Show error toast
+    }
+  }
+
+  const handleSubmitComment = async () => {
+    if (!ticket || !newComment.trim()) return
+
+    try {
+      setIsSubmittingComment(true)
+      const response = await fetch(`/api/tickets/${ticket.id}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: newComment,
+          isInternal: isInternalNote
+        })
+      })
+
+      if (!response.ok) throw new Error('Failed to add comment')
+
+      const updatedTicket = await response.json()
+      setTicket(updatedTicket)
+      setNewComment('')
+      setIsInternalNote(false)
+    } catch (error) {
+      console.error('Failed to add comment:', error)
+      // TODO: Show error toast
+    } finally {
+      setIsSubmittingComment(false)
+    }
   }
 
   if (isLoading || !ticket) {
@@ -119,7 +200,7 @@ export function TicketDetails({
       <div className="flex items-start justify-between p-4 border-b">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-lg font-semibold">{ticket.subject}</h2>
+            <h2 className="text-lg font-semibold">{ticket.title}</h2>
             <Badge variant="outline">#{ticket.id}</Badge>
             {isArchived && (
               <Badge variant="secondary">Archived</Badge>
@@ -197,11 +278,12 @@ export function TicketDetails({
                 <StatusTransition
                   ticketId={ticket.id}
                   currentStatus={ticket.status}
+                  onStatusChange={handleStatusChange}
                 />
                 <SLAIndicator 
                   ticket={{
                     id: ticket.id,
-                    title: ticket.subject,
+                    title: ticket.title,
                     status: ticket.status,
                     priority: ticket.priority,
                     customer: {
@@ -249,68 +331,92 @@ export function TicketDetails({
               {/* Tags */}
               <div className="space-y-2">
                 <h3 className="font-medium">Tags</h3>
-                <TagList
-                  tags={tags}
-                  onTagClick={handleTagClick}
-                  limit={10}
+                <TagSelect
+                  value={tags.map(tag => tag.id)}
+                  onChange={handleTagsChange}
                 />
               </div>
 
-              {/* Custom Fields */}
-              <CustomFieldsSection
-                ticketId={ticket.id}
-                fields={customFields.map((value: any, index: number) => ({
-                  field_id: `field_${index}`,
-                  value
-                }))}
-              />
-
-              {/* Messages */}
+              {/* Description */}
               <div className="space-y-2">
-                <h3 className="font-medium">Messages</h3>
+                <h3 className="font-medium">Description</h3>
+                <div className="p-4 rounded-lg bg-gray-50">
+                  {ticket.description}
+                </div>
+              </div>
+
+              {/* Comments */}
+              <div className="space-y-4">
+                <h3 className="font-medium">Comments</h3>
                 <div className="space-y-4">
-                  {ticket.comments?.map((comment) => {
-                    const commentUser = comment.user;
-                    return (
-                      <div
-                        key={comment.id}
-                        className="p-3 bg-gray-50 rounded-lg space-y-2"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            {commentUser?.avatar && (
-                              <img
-                                src={commentUser.avatar}
-                                alt={commentUser.name}
-                                className="w-6 h-6 rounded-full"
-                              />
-                            )}
-                            <span className="font-medium">
-                              {commentUser?.name}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2 text-sm text-gray-500">
-                            <Clock className="w-4 h-4" />
-                            <span>
-                              {format(comment.createdAt, 'MMM d, yyyy HH:mm')}
-                            </span>
-                          </div>
+                  {ticket.comments.map((comment) => (
+                    <div
+                      key={comment.id}
+                      className={cn(
+                        "p-4 rounded-lg",
+                        comment.isInternal ? "bg-yellow-50" : "bg-gray-50"
+                      )}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          {comment.user.avatar ? (
+                            <img
+                              src={comment.user.avatar}
+                              alt={comment.user.name}
+                              className="w-6 h-6 rounded-full"
+                            />
+                          ) : (
+                            <UserIcon className="w-6 h-6" />
+                          )}
+                          <span className="font-medium">{comment.user.name}</span>
+                          {comment.isInternal && (
+                            <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">
+                              Internal Note
+                            </Badge>
+                          )}
                         </div>
-                        <div className="text-sm whitespace-pre-wrap">
-                          {comment.content}
-                        </div>
+                        <span className="text-sm text-gray-500">
+                          {format(new Date(comment.createdAt), 'MMM d, yyyy HH:mm')}
+                        </span>
                       </div>
-                    );
-                  })}
+                      <div className="text-sm whitespace-pre-wrap">
+                        {comment.content}
+                      </div>
+                    </div>
+                  ))}
+                  <div ref={commentsEndRef} />
+                </div>
+
+                {/* New Comment */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      id="internal-note"
+                      checked={isInternalNote}
+                      onCheckedChange={setIsInternalNote}
+                    />
+                    <Label htmlFor="internal-note">Internal Note</Label>
+                  </div>
+                  <div className="flex gap-2">
+                    <Editor
+                      value={newComment}
+                      onChange={setNewComment}
+                      placeholder={isInternalNote ? "Add an internal note..." : "Add a comment..."}
+                      className="flex-1"
+                    />
+                    <Button
+                      onClick={handleSubmitComment}
+                      disabled={isSubmittingComment || !newComment.trim()}
+                    >
+                      <Send className="w-4 h-4" />
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>
           ) : (
             <div className="p-4">
-              <AuditLogViewer
-                entityType="ticket"
-                entityId={ticket.id}
-              />
+              <AuditLogViewer ticketId={ticket.id} />
             </div>
           )}
         </ScrollArea>

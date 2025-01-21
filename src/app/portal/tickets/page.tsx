@@ -57,7 +57,7 @@ export default function TicketsPage() {
     fetchTickets();
   }, []);
 
-  const handleCreateTicket = async (data: { subject: string; description: string }) => {
+  const handleCreateTicket = async (data: { title: string; description: string }) => {
     setState(prev => ({ ...prev, isLoading: true }));
     try {
       await customerTicketService.createTicket(data);

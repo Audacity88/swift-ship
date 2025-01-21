@@ -1,114 +1,145 @@
 import { NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+import { z } from 'zod'
+import { sql, Transaction } from '@/lib/db'
+import { auth } from '@/lib/auth'
 import { TicketStatus } from '@/types/ticket'
-import { DEFAULT_STATUS_WORKFLOW } from '@/types/status-workflow'
 
-interface StatusTransitionRequest {
-  status: TicketStatus
-  reason?: string
-}
-
+// Types
 interface StatusTransition {
-  status: TicketStatus
-  requiredRole?: string
-  conditions?: {
-    type: string
+  fromStatus: TicketStatus
+  toStatus: TicketStatus
+  requiredRole: 'agent' | 'admin' | null
+  conditions: Array<{
+    type: 'required_field' | 'time_restriction' | 'permission'
     message: string
-  }[]
+    data?: Record<string, any>
+  }>
+  metadata?: Record<string, any>
 }
 
-const createClient = () => {
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        async get(name: string) {
-          const cookieStore = await cookies()
-          return cookieStore.get(name)?.value
-        },
-      },
-    }
-  )
+interface TicketStatusInfo {
+  id: string
+  status: TicketStatus
+  assignee_id: string | null
+  customer_id: string
+  metadata: Record<string, any>
+  created_at: string
+  updated_at: string
+  resolved_at: string | null
 }
 
-const mockTransitions: Record<TicketStatus, StatusTransition[]> = {
+// Status transition rules
+const statusTransitions: Record<TicketStatus, StatusTransition[]> = {
   [TicketStatus.OPEN]: [
     {
-      status: TicketStatus.IN_PROGRESS,
+      fromStatus: TicketStatus.OPEN,
+      toStatus: TicketStatus.IN_PROGRESS,
+      requiredRole: null,
       conditions: [
         {
-          type: 'required_fields',
-          message: 'Ticket must be assigned to an agent'
-        }
-      ]
-    },
-    {
-      status: TicketStatus.CLOSED,
-      conditions: [
-        {
-          type: 'resolution',
-          message: 'Resolution must be provided'
+          type: 'required_field',
+          message: 'Ticket must be assigned to an agent',
+          data: { field: 'assignee_id' }
         }
       ]
     }
   ],
   [TicketStatus.IN_PROGRESS]: [
     {
-      status: TicketStatus.RESOLVED,
+      fromStatus: TicketStatus.IN_PROGRESS,
+      toStatus: TicketStatus.RESOLVED,
+      requiredRole: null,
       conditions: [
         {
-          type: 'resolution',
-          message: 'Resolution must be provided'
+          type: 'required_field',
+          message: 'Resolution comment is required',
+          data: { field: 'resolution_comment' }
         }
       ]
+    },
+    {
+      fromStatus: TicketStatus.IN_PROGRESS,
+      toStatus: TicketStatus.OPEN,
+      requiredRole: null,
+      conditions: []
     }
   ],
   [TicketStatus.RESOLVED]: [
     {
-      status: TicketStatus.CLOSED
-    },
-    {
-      status: TicketStatus.IN_PROGRESS,
+      fromStatus: TicketStatus.RESOLVED,
+      toStatus: TicketStatus.CLOSED,
+      requiredRole: null,
       conditions: [
         {
-          type: 'comment',
-          message: 'A comment must be added explaining why the ticket is being reopened'
+          type: 'time_restriction',
+          message: 'Must be resolved for at least 24 hours',
+          data: { hours: 24 }
         }
       ]
+    },
+    {
+      fromStatus: TicketStatus.RESOLVED,
+      toStatus: TicketStatus.IN_PROGRESS,
+      requiredRole: null,
+      conditions: []
     }
   ],
   [TicketStatus.CLOSED]: [
     {
-      status: TicketStatus.IN_PROGRESS,
+      fromStatus: TicketStatus.CLOSED,
+      toStatus: TicketStatus.IN_PROGRESS,
       requiredRole: 'admin',
       conditions: [
         {
-          type: 'comment',
-          message: 'A comment must be added explaining why the ticket is being reopened'
+          type: 'permission',
+          message: 'Only admins can reopen closed tickets'
         }
       ]
     }
   ]
 }
 
-export async function POST(
+// Validation schema for status update
+const updateStatusSchema = z.object({
+  status: z.enum([
+    TicketStatus.OPEN,
+    TicketStatus.IN_PROGRESS,
+    TicketStatus.RESOLVED,
+    TicketStatus.CLOSED
+  ]),
+  reason: z.string().optional(),
+  comment: z.string().optional()
+})
+
+// GET /api/tickets/[id]/status - Get available status transitions
+export async function GET(
   request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
-    const supabase = await createClient()
-    const { status, reason }: StatusTransitionRequest = await request.json()
+    const session = await auth()
+    if (!session) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
 
     // Get current ticket status
-    const { data: ticket, error: ticketError } = await supabase
-      .from('tickets')
-      .select('status, assignee_id')
-      .eq('id', params.id)
-      .single()
+    const [ticket] = await sql.execute<TicketStatusInfo>(sql`
+      SELECT 
+        id,
+        status,
+        assignee_id,
+        customer_id,
+        metadata,
+        created_at,
+        updated_at,
+        resolved_at
+      FROM tickets 
+      WHERE id = ${params.id}
+    `)
 
-    if (ticketError) throw ticketError
     if (!ticket) {
       return NextResponse.json(
         { error: 'Ticket not found' },
@@ -116,177 +147,234 @@ export async function POST(
       )
     }
 
-    // Validate status transition
-    const transition = DEFAULT_STATUS_WORKFLOW.find(t => 
-      t.from === ticket.status && t.to === status
-    )
-
-    if (!transition) {
-      return NextResponse.json(
-        { error: 'Invalid status transition' },
-        { status: 400 }
-      )
-    }
-
-    // Get current user
-    const {
-      data: { user },
-      error: userError
-    } = await supabase.auth.getUser()
-
-    if (userError) throw userError
-    if (!user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
-    }
-
-    // Get agent details
-    const { data: agent, error: agentError } = await supabase
-      .from('agents')
-      .select('role')
-      .eq('id', user.id)
-      .single()
-
-    if (agentError) throw agentError
-    if (!agent) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
-    }
-
-    // Check role requirements
-    if (transition.requiredRole && agent.role !== transition.requiredRole) {
-      return NextResponse.json(
-        { error: 'Insufficient permissions for this transition' },
-        { status: 403 }
-      )
-    }
-
-    // Check conditions
-    if (transition.conditions) {
-      for (const condition of transition.conditions) {
-        switch (condition.type) {
-          case 'required_fields':
-            if (condition.params.fieldIds?.includes('assignee') && !ticket.assignee_id) {
-              return NextResponse.json(
-                { error: 'Assignee is required for this transition' },
-                { status: 400 }
-              )
-            }
-            // Add other field validations as needed
-            break
-
-          case 'time_elapsed':
-            if (condition.params.minTimeInStatus) {
-              const { data: history } = await supabase
-                .from('status_history')
-                .select('created_at')
-                .eq('ticket_id', params.id)
-                .eq('to_status', ticket.status)
-                .order('created_at', { ascending: false })
-                .limit(1)
-                .single()
-
-              if (history) {
-                const elapsedMinutes = (Date.now() - new Date(history.created_at).getTime()) / (1000 * 60)
-                if (elapsedMinutes < condition.params.minTimeInStatus) {
-                  return NextResponse.json(
-                    { error: 'Minimum time in current status not met' },
-                    { status: 400 }
-                  )
+    // Get available transitions
+    const availableTransitions = statusTransitions[ticket.status]
+      .filter(transition => {
+        // Filter by role if required
+        if (transition.requiredRole && transition.requiredRole !== session.role) {
+          return false
+        }
+        return true
+      })
+      .map(transition => ({
+        status: transition.toStatus,
+        conditions: transition.conditions.map(condition => {
+          switch (condition.type) {
+            case 'time_restriction':
+              if (condition.data?.hours && ticket.resolved_at) {
+                const hoursElapsed = (Date.now() - new Date(ticket.resolved_at).getTime()) / (1000 * 60 * 60)
+                return {
+                  ...condition,
+                  isSatisfied: hoursElapsed >= condition.data.hours
                 }
               }
-            }
-            break
+              return { ...condition, isSatisfied: false }
+            
+            case 'required_field':
+              if (condition.data?.field === 'assignee_id') {
+                return {
+                  ...condition,
+                  isSatisfied: ticket.assignee_id !== null
+                }
+              }
+              return { ...condition, isSatisfied: false }
+            
+            case 'permission':
+              return {
+                ...condition,
+                isSatisfied: session.role === 'admin'
+              }
+            
+            default:
+              return { ...condition, isSatisfied: false }
+          }
+        })
+      }))
 
-          // Add other condition types as needed
-        }
-      }
-    }
-
-    // Begin transaction
-    const { error: transactionError } = await supabase.rpc('change_ticket_status', {
-      p_ticket_id: params.id,
-      p_new_status: status,
-      p_changed_by: user.id,
-      p_reason: reason || null,
-      p_automation_triggered: false
-    })
-
-    if (transactionError) throw transactionError
-
-    // Execute automation hooks
-    if (transition.automationHooks) {
-      for (const hook of transition.automationHooks) {
-        switch (hook.type) {
-          case 'notification':
-            // TODO: Implement notification sending
-            break
-
-          case 'field_update':
-            if (hook.params.fieldUpdates?.length) {
-              const { error: updateError } = await supabase
-                .from('ticket_custom_fields')
-                .upsert(
-                  hook.params.fieldUpdates.map(update => ({
-                    ticket_id: params.id,
-                    field_id: update.fieldId,
-                    value: update.value
-                  }))
-                )
-
-              if (updateError) throw updateError
-            }
-            break
-
-          case 'sla_update':
-            if (hook.params.slaAction) {
-              const { error: slaError } = await supabase.rpc(
-                `${hook.params.slaAction}_ticket_sla`,
-                { p_ticket_id: params.id }
-              )
-
-              if (slaError) throw slaError
-            }
-            break
-
-          case 'custom':
-            if (hook.params.customAction) {
-              await hook.params.customAction(params.id)
-            }
-            break
-        }
-      }
-    }
-
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: availableTransitions })
   } catch (error) {
-    console.error('Failed to change ticket status:', error)
+    console.error('Failed to get status transitions:', error)
     return NextResponse.json(
-      { error: 'Failed to change ticket status' },
+      { error: 'Failed to get status transitions' },
       { status: 500 }
     )
   }
 }
 
-export async function GET(
+// POST /api/tickets/[id]/status - Update ticket status
+export async function POST(
   request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
-    // Get current ticket status
-    // For now, just use mock data
-    const currentStatus: TicketStatus = TicketStatus.OPEN
+    const session = await auth()
+    if (!session) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
 
-    // Get available transitions
-    const availableTransitions = mockTransitions[currentStatus] || []
+    const json = await request.json()
+    const body = updateStatusSchema.parse(json)
 
-    return NextResponse.json({ data: availableTransitions })
+    // Start a transaction
+    const result = await sql.transaction(async (tx: Transaction) => {
+      // Get current ticket state
+      const [ticket] = await tx.execute<TicketStatusInfo>(sql`
+        SELECT 
+          id,
+          status,
+          assignee_id,
+          customer_id,
+          metadata,
+          created_at,
+          updated_at,
+          resolved_at
+        FROM tickets 
+        WHERE id = ${params.id}
+      `)
+
+      if (!ticket) {
+        throw new Error('Ticket not found')
+      }
+
+      // Validate transition
+      const transition = statusTransitions[ticket.status]?.find(
+        t => t.toStatus === body.status
+      )
+
+      if (!transition) {
+        throw new Error(`Invalid status transition from ${ticket.status} to ${body.status}`)
+      }
+
+      // Check role requirement
+      if (transition.requiredRole && transition.requiredRole !== session.role) {
+        throw new Error(`Only ${transition.requiredRole}s can perform this transition`)
+      }
+
+      // Validate conditions
+      const failedConditions = transition.conditions.filter(condition => {
+        switch (condition.type) {
+          case 'time_restriction':
+            if (condition.data?.hours && ticket.resolved_at) {
+              const hoursElapsed = (Date.now() - new Date(ticket.resolved_at).getTime()) / (1000 * 60 * 60)
+              return hoursElapsed < condition.data.hours
+            }
+            return true
+
+          case 'required_field':
+            if (condition.data?.field === 'assignee_id') {
+              return ticket.assignee_id === null
+            }
+            if (condition.data?.field === 'resolution_comment') {
+              return !body.comment
+            }
+            return true
+
+          case 'permission':
+            return session.role !== 'admin'
+
+          default:
+            return true
+        }
+      })
+
+      if (failedConditions.length > 0) {
+        throw new Error(
+          `Cannot transition status: ${failedConditions.map(c => c.message).join(', ')}`
+        )
+      }
+
+      // Update ticket status
+      const [updatedTicket] = await tx.execute<TicketStatusInfo>(sql`
+        UPDATE tickets 
+        SET 
+          status = ${body.status},
+          resolved_at = CASE 
+            WHEN ${body.status} = 'resolved' THEN NOW()
+            ELSE resolved_at
+          END,
+          updated_at = NOW()
+        WHERE id = ${params.id}
+        RETURNING *
+      `)
+
+      // Create status history entry
+      await tx.execute(sql`
+        INSERT INTO status_history (
+          ticket_id,
+          from_status,
+          to_status,
+          changed_by,
+          reason
+        ) VALUES (
+          ${params.id},
+          ${ticket.status},
+          ${body.status},
+          ${session.id},
+          ${body.reason || null}
+        )
+      `)
+
+      // Add comment if provided
+      if (body.comment) {
+        await tx.execute(sql`
+          INSERT INTO messages (
+            ticket_id,
+            content,
+            author_type,
+            author_id,
+            is_internal
+          ) VALUES (
+            ${params.id},
+            ${body.comment},
+            ${session.type},
+            ${session.id},
+            false
+          )
+        `)
+      }
+
+      // Create audit log
+      await tx.execute(sql`
+        INSERT INTO audit_logs (
+          entity_type,
+          entity_id,
+          action,
+          actor_id,
+          actor_type,
+          changes
+        ) VALUES (
+          'ticket',
+          ${params.id},
+          'status_change',
+          ${session.id},
+          ${session.type},
+          ${JSON.stringify({
+            from: ticket.status,
+            to: body.status,
+            reason: body.reason,
+            comment: body.comment
+          })}::jsonb
+        )
+      `)
+
+      return updatedTicket
+    })
+
+    return NextResponse.json({ data: result })
   } catch (error) {
-    console.error('Failed to get available status transitions:', error)
-    return new NextResponse('Internal Server Error', { status: 500 })
+    console.error('Failed to update ticket status:', error)
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Invalid request data', details: error.errors },
+        { status: 400 }
+      )
+    }
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed to update ticket status' },
+      { status: 500 }
+    )
   }
 } 

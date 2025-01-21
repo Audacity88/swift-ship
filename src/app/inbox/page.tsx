@@ -9,7 +9,7 @@ const messages = [
   {
     id: 1,
     sender: 'John Smith',
-    subject: 'Shipping Delay Query',
+    title: 'Shipping Delay Query',
     preview: 'Hi, I wanted to check on the status of my shipment...',
     time: '10:30 AM',
     unread: true,
@@ -18,7 +18,7 @@ const messages = [
   {
     id: 2,
     sender: 'Sarah Johnson',
-    subject: 'Package Insurance',
+    title: 'Package Insurance',
     preview: 'Could you provide more information about your insurance options?',
     time: 'Yesterday',
     unread: false,
@@ -27,7 +27,7 @@ const messages = [
   {
     id: 3,
     sender: 'Mike Wilson',
-    subject: 'Bulk Shipping Rates',
+    title: 'Bulk Shipping Rates',
     preview: 'We are interested in your bulk shipping rates for our company...',
     time: 'Jan 18',
     unread: true,
@@ -86,7 +86,7 @@ export default function InboxPage() {
                     <span className="font-medium truncate">{message.sender}</span>
                     <span className="text-xs text-gray-500 whitespace-nowrap ml-2">{message.time}</span>
                   </div>
-                  <p className="text-sm font-medium text-gray-900 truncate">{message.subject}</p>
+                  <p className="text-sm font-medium text-gray-900 truncate">{message.title}</p>
                   <p className="text-sm text-gray-500 truncate">{message.preview}</p>
                 </div>
               </div>
@@ -112,7 +112,7 @@ export default function InboxPage() {
                   </div>
                   <div>
                     <h2 className="text-xl font-semibold">{selectedMessage.sender}</h2>
-                    <p className="text-sm text-gray-500">{selectedMessage.subject}</p>
+                    <p className="text-sm text-gray-500">{selectedMessage.title}</p>
                   </div>
                 </div>
                 <div className="flex gap-2">

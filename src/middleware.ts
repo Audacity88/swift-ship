@@ -34,6 +34,11 @@ const DEFAULT_AUTHENTICATED_ROUTES = [
   '/pickup',
   '/search',
   '/upgrade',
+  '/analytics',
+  '/settings',
+  '/settings/roles',
+  '/settings/teams',
+  '/settings/users',
 ]
 
 // Define routes that require customer permissions
@@ -45,17 +50,11 @@ const CUSTOMER_ROUTES = [
 
 // Define routes that require agent permissions
 const AGENT_ROUTES = [
-  '/inbox',
   '/inbox/[id]',
-  '/tickets',
   '/tickets/[id]',
-  '/analytics',
   '/analytics/[id]',
-  '/shipments',
   '/shipments/[id]',
-  '/pickup',
   '/pickup/[id]',
-  '/teams',
   '/teams/[id]',
   '/knowledge',
   '/knowledge/[id]',
@@ -63,12 +62,8 @@ const AGENT_ROUTES = [
 
 // Define routes that require admin permissions
 const ADMIN_ROUTES = [
-  '/settings',
-  '/settings/roles',
   '/settings/roles/[id]',
-  '/settings/teams',
   '/settings/teams/[id]',
-  '/settings/users',
   '/settings/users/[id]',
   '/admin',
   '/admin/[id]',
@@ -80,7 +75,6 @@ export async function middleware(request: NextRequest) {
     request.nextUrl.pathname.startsWith('/_next') ||
     request.nextUrl.pathname.startsWith('/api/auth') ||
     request.nextUrl.pathname.startsWith('/public') ||
-    request.nextUrl.pathname.startsWith('/api/users') ||
     request.nextUrl.pathname === '/403' ||
     request.nextUrl.pathname === '/404' ||
     request.nextUrl.pathname === '/500'
@@ -121,6 +115,14 @@ export async function middleware(request: NextRequest) {
   )
 
   const { data: { session } } = await supabase.auth.getSession()
+
+  // Require authentication for API routes except auth
+  if (request.nextUrl.pathname.startsWith('/api/') && !request.nextUrl.pathname.startsWith('/api/auth')) {
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    return response
+  }
 
   // Allow access to public routes
   if (PUBLIC_ROUTES.includes(request.nextUrl.pathname)) {

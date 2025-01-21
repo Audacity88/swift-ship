@@ -12,6 +12,7 @@ function Calendar({
   className,
   classNames,
   showOutsideDays = true,
+  components,
   ...props
 }: CalendarProps) {
   return (
@@ -24,12 +25,12 @@ function Calendar({
         caption: "flex justify-center pt-1 relative items-center",
         caption_label: "text-sm font-medium",
         nav: "space-x-1 flex items-center",
-        nav_button: cn(
-          buttonVariants({ variant: "outline" }),
-          "h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100"
+        nav_button_previous: cn(
+          "absolute left-1 h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100 inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
         ),
-        nav_button_previous: "absolute left-1",
-        nav_button_next: "absolute right-1",
+        nav_button_next: cn(
+          "absolute right-1 h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100 inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+        ),
         table: "w-full border-collapse space-y-1",
         head_row: "flex",
         head_cell:
@@ -56,6 +57,19 @@ function Calendar({
           "aria-selected:bg-accent aria-selected:text-accent-foreground",
         day_hidden: "invisible",
         ...classNames,
+      }}
+      components={{
+        IconLeft: ({ ...props }) => (
+          <div {...props} role="button" tabIndex={0}>
+            <ChevronLeftIcon className="h-4 w-4" />
+          </div>
+        ),
+        IconRight: ({ ...props }) => (
+          <div {...props} role="button" tabIndex={0}>
+            <ChevronRightIcon className="h-4 w-4" />
+          </div>
+        ),
+        ...components,
       }}
       {...props}
     />

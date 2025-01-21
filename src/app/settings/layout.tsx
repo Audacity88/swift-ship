@@ -5,13 +5,13 @@ import { usePathname } from 'next/navigation'
 import { Settings, Users, Building, Bell, Shield } from 'lucide-react'
 import { ROUTES } from '@/lib/constants'
 import { useAuth } from '@/lib/hooks/useAuth'
-import { UserRole } from '@/types/role'
+import { RoleType } from '@/types/role'
 
 interface SettingsNavItem {
   icon: React.ElementType
   label: string
   href: string
-  roles?: UserRole[]
+  roles?: RoleType[]
 }
 
 const navItems: SettingsNavItem[] = [
@@ -24,13 +24,13 @@ const navItems: SettingsNavItem[] = [
     icon: Users, 
     label: 'Agents', 
     href: '/settings/agents',
-    roles: [UserRole.ADMIN]
+    roles: [RoleType.ADMIN]
   },
   { 
     icon: Building, 
     label: 'Teams', 
     href: ROUTES.settings.teams,
-    roles: [UserRole.ADMIN, UserRole.SUPERVISOR]
+    roles: [RoleType.ADMIN, RoleType.SUPERVISOR]
   },
   { 
     icon: Bell, 
@@ -50,7 +50,8 @@ export default function SettingsLayout({
   children: React.ReactNode
 }) {
   const pathname = usePathname()
-  const { role } = useAuth()
+  const { user } = useAuth()
+  const role = user?.role || RoleType.CUSTOMER
 
   const isAllowed = (item: SettingsNavItem) => {
     if (!item.roles) return true

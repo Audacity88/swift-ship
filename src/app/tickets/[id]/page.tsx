@@ -24,7 +24,6 @@ import { StatusTransition } from '@/components/features/tickets/StatusTransition
 const mockTicket: Ticket = {
   id: '1',
   title: 'Unable to access dashboard after recent update',
-  subject: 'Unable to access dashboard after recent update',
   description: 'After the latest update, I am unable to access the dashboard. The page loads indefinitely and eventually times out. This is blocking our team from accessing critical metrics.',
   status: TicketStatus.OPEN,
   priority: TicketPriority.HIGH,
@@ -189,7 +188,7 @@ export default function TicketPage() {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-2xl font-semibold text-gray-900">
-                {ticket.subject}
+                {ticket.title}
               </h1>
               <div className="mt-1 text-sm text-gray-500">
                 Created {new Date(ticket.createdAt).toLocaleString()}

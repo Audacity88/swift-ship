@@ -88,7 +88,6 @@ export interface TicketComment {
 export interface Ticket {
   id: string
   title: string
-  subject: string
   description: string
   status: TicketStatus
   priority: TicketPriority

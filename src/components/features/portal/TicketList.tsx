@@ -44,7 +44,7 @@ import {
 
 interface TicketListProps {
   tickets: Ticket[];
-  onCreateTicket: (ticket: { subject: string; description: string }) => Promise<void>;
+  onCreateTicket: (ticket: { title: string; description: string }) => Promise<void>;
   onAddComment: (ticketId: string, comment: string) => Promise<void>;
   onUpdateStatus: (ticketId: string, status: string) => Promise<void>;
   isLoading: boolean;
@@ -72,13 +72,13 @@ export const TicketList = ({
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'date' | 'status'>('date');
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const [newTicket, setNewTicket] = useState({ subject: '', description: '' });
+  const [newTicket, setNewTicket] = useState({ title: '', description: '' });
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [newComment, setNewComment] = useState('');
 
   const filteredTickets = tickets
     .filter((ticket) => {
-      const matchesSearch = ticket.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      const matchesSearch = ticket.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
         ticket.description.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesStatus = selectedStatus === 'all' || ticket.status === selectedStatus;
       return matchesSearch && matchesStatus;
@@ -93,7 +93,7 @@ export const TicketList = ({
   const handleCreateTicket = async () => {
     try {
       await onCreateTicket(newTicket);
-      setNewTicket({ subject: '', description: '' });
+      setNewTicket({ title: '', description: '' });
       setIsCreateDialogOpen(false);
     } catch (error) {
       console.error('Error creating ticket:', error);
@@ -181,11 +181,11 @@ export const TicketList = ({
             </DialogHeader>
             <div className="space-y-4">
               <div>
-                <Label htmlFor="subject">Subject</Label>
+                <Label htmlFor="title">Title</Label>
                 <Input
-                  id="subject"
-                  value={newTicket.subject}
-                  onChange={(e) => setNewTicket({ ...newTicket, subject: e.target.value })}
+                  id="title"
+                  value={newTicket.title}
+                  onChange={(e) => setNewTicket({ ...newTicket, title: e.target.value })}
                 />
               </div>
               <div>
@@ -223,7 +223,7 @@ export const TicketList = ({
             <CardHeader>
               <div className="flex items-start justify-between">
                 <div>
-                  <CardTitle>{ticket.subject}</CardTitle>
+                  <CardTitle>{ticket.title}</CardTitle>
                   <CardDescription>
                     Ticket #{ticket.id.slice(0, 8)} •{' '}
                     {format(new Date(ticket.createdAt), 'MMM d, yyyy')}

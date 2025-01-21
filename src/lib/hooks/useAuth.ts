@@ -112,7 +112,8 @@ export function useAuth() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_OUT') {
         setUser(null)
-        router.push('/auth/signin')
+        // Use replace instead of push to prevent back navigation to protected pages
+        router.replace('/auth/signin')
       } else if (event === 'SIGNED_IN' && session) {
         await getUser()
       }
@@ -123,5 +124,16 @@ export function useAuth() {
     }
   }, [supabase, router])
 
-  return { user, loading }
+  return { 
+    user, 
+    loading,
+    signOut: async () => {
+      const { error } = await supabase.auth.signOut()
+      if (error) {
+        console.error('Error signing out:', error)
+        return false
+      }
+      return true
+    }
+  }
 } 

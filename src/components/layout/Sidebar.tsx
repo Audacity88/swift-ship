@@ -208,9 +208,14 @@ export function Sidebar() {
       {user && (
         <div className="mt-auto p-4 border-t border-gray-200">
           <div className="flex flex-col gap-1">
-            <p className="text-sm font-medium text-gray-900 truncate">
-              {user.name}
-            </p>
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-medium text-gray-900 truncate">
+                {user.name}
+              </p>
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                Online
+              </span>
+            </div>
             <p className="text-sm text-gray-500 truncate">
               {user.email}
             </p>
