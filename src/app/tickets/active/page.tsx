@@ -4,7 +4,8 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Filter, SortAsc, SortDesc } from 'lucide-react'
 import TicketList from '@/components/features/tickets/TicketList'
-import { TicketStatus, TicketPriority, UserRole } from '@/types/enums'
+import { TicketStatus, TicketPriority } from '@/types/enums'
+import { UserRole } from '@/types/role'
 import type { TicketListItem } from '@/types/ticket'
 
 // Mock data - replace with actual API calls

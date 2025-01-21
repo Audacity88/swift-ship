@@ -67,6 +67,7 @@ const ADMIN_ROUTES = [
   '/settings/users/[id]',
   '/admin',
   '/admin/[id]',
+  '/admin/setup',
 ]
 
 export async function middleware(request: NextRequest) {

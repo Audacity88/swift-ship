@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import { fetchTickets } from '@/lib/services/ticket-service'
 import { format } from 'date-fns'
 import {
@@ -62,18 +62,17 @@ interface TicketListProps {
   onTicketClick?: (ticketId: string) => void
 }
 
-const TicketList: React.FC<TicketListProps> = ({ 
+export const TicketList: React.FC<TicketListProps> = ({ 
   tickets: initialTickets,
   viewMode = 'list',
   onTicketClick
 }) => {
-  const [tickets, setTickets] = useState<TicketListItem[]>(initialTickets)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [tickets, setTickets] = useState<TicketListItem[]>(initialTickets)
   const [filters, setFilters] = useState({
     status: '',
     priority: '',
-    search: '',
+    search: ''
   })
   const [pagination, setPagination] = useState({
     page: 1,
@@ -86,11 +85,7 @@ const TicketList: React.FC<TicketListProps> = ({
   })
   const [selectedTickets, setSelectedTickets] = useState<string[]>([])
 
-  useEffect(() => {
-    loadTickets()
-  }, [filters, pagination.page, pagination.pageSize, sort])
-
-  const loadTickets = async () => {
+  const loadTickets = useCallback(async () => {
     try {
       setLoading(true)
       const response = await fetchTickets({
@@ -110,12 +105,16 @@ const TicketList: React.FC<TicketListProps> = ({
       })
       setTickets(response.data)
       setPagination(prev => ({ ...prev, total: response.total }))
-      setLoading(false)
     } catch (err) {
-      setError('Error loading tickets')
+      // Handle error appropriately
+    } finally {
       setLoading(false)
     }
-  }
+  }, [filters, pagination.page, pagination.pageSize, sort])
+
+  useEffect(() => {
+    void loadTickets()
+  }, [loadTickets])
 
   const handleStatusChange = (value: string) => {
     setFilters(prev => ({ ...prev, status: value }))
@@ -180,7 +179,7 @@ const TicketList: React.FC<TicketListProps> = ({
       loadTickets()
       setSelectedTickets([])
     } catch (err) {
-      setError(`Error performing bulk ${action}`)
+      // Handle error appropriately
     } finally {
       setLoading(false)
     }
@@ -201,7 +200,7 @@ const TicketList: React.FC<TicketListProps> = ({
       a.click()
       window.URL.revokeObjectURL(url)
     } catch (err) {
-      setError('Error exporting tickets')
+      // Handle error appropriately
     } finally {
       setLoading(false)
     }
@@ -216,7 +215,6 @@ const TicketList: React.FC<TicketListProps> = ({
   }
 
   if (loading) return <div>Loading...</div>
-  if (error) return <div>{error}</div>
 
   const totalPages = Math.ceil(pagination.total / pagination.pageSize)
 

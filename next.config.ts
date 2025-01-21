@@ -10,6 +10,8 @@ const config = {
       },
     ],
     domains: ['picsum.photos', 'avatars.githubusercontent.com'],
+    unoptimized: true,
+    dangerouslyAllowSVG: true,
   },
 }
 

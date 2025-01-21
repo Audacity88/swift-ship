@@ -74,8 +74,8 @@ const defaultArticle: Article = {
 export default function ArticlesPage() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
-  const [articles, setArticles] = useState<Article[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [articles] = useState<Article[]>([]);
+  const [categories] = useState<Category[]>([]);
 
   const form = useForm<ArticleFormValues>({
     resolver: zodResolver(articleFormSchema),

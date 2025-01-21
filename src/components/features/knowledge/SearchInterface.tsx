@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Article, Category, SearchFilters, SearchResult } from '@/types/knowledge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -60,19 +60,7 @@ export const SearchInterface = ({
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
 
-  useEffect(() => {
-    if (searchQuery) {
-      const delayDebounceFn = setTimeout(() => {
-        handleSearch();
-      }, 300);
-
-      return () => clearTimeout(delayDebounceFn);
-    } else {
-      setResults([]);
-    }
-  }, [searchQuery, filters]);
-
-  const handleSearch = async () => {
+  const handleSearch = useCallback(async () => {
     if (!searchQuery.trim()) return;
 
     setIsLoading(true);
@@ -90,7 +78,19 @@ export const SearchInterface = ({
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [searchQuery, filters, dateRange, onSearch]);
+
+  useEffect(() => {
+    if (searchQuery) {
+      const delayDebounceFn = setTimeout(() => {
+        void handleSearch();
+      }, 300);
+
+      return () => clearTimeout(delayDebounceFn);
+    } else {
+      setResults([]);
+    }
+  }, [searchQuery, handleSearch]);
 
   const handleFilterChange = (key: keyof SearchFilters, value: any) => {
     setFilters(prev => ({
@@ -127,7 +127,7 @@ export const SearchInterface = ({
                       }}
                     >
                       <Search className="mr-2 h-4 w-4" />
-                      Search for "{searchQuery}"
+                      Search for &quot;{searchQuery}&quot;
                     </CommandItem>
                   </CommandGroup>
                 )}
@@ -262,30 +262,27 @@ export const SearchInterface = ({
             </Card>
           ))}
         </div>
-      ) : searchQuery ? (
-        <div className="text-center py-8 text-muted-foreground">
-          No results found for "{searchQuery}"
+      ) : results.length === 0 && !isLoading && searchQuery && (
+        <div className="text-center py-8">
+          <p className="text-gray-500">
+            No results found for &quot;{searchQuery}&quot;
+          </p>
         </div>
-      ) : popularArticles.length > 0 ? (
+      ) : popularArticles.length > 0 && !searchQuery && (
         <div className="space-y-4">
-          <h3 className="font-medium">Popular Articles</h3>
-          {popularArticles.map((article) => (
-            <Card key={article.id}>
-              <CardHeader>
-                <CardTitle>{article.title}</CardTitle>
-                <CardDescription>
-                  {categories.find(c => c.id === article.categoryId)?.name}
-                  <span className="mx-2">•</span>
-                  {article.metadata.views} views
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  {article.excerpt}
-                </p>
-              </CardContent>
-            </Card>
-          ))}
+          <h3 className="text-sm font-medium text-gray-500">
+            Popular Articles
+          </h3>
+          <div className="space-y-2">
+            {popularArticles.map((article) => (
+              <div key={article.id} className="p-4 bg-white rounded-lg border hover:border-primary">
+                <h4 className="font-medium">
+                  &quot;{article.title}&quot;
+                </h4>
+                <p className="text-sm text-gray-500">{article.excerpt}</p>
+              </div>
+            ))}
+          </div>
         </div>
       ) : null}
     </div>

@@ -5,10 +5,39 @@ import { format } from 'date-fns'
 import { Clock, User } from 'lucide-react'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
-import type { TicketSnapshot } from '@/types/ticket'
+import type { TicketStatus, TicketPriority, Tag } from '@/types/ticket'
+
+interface TicketSnapshotData {
+  status: TicketStatus;
+  priority: TicketPriority;
+  assigneeId?: string;
+  title: string;
+  description: string;
+  metadata: {
+    tags?: Tag[];
+  };
+}
+
+interface TicketSnapshot {
+  id: string;
+  ticketId: string;
+  snapshotAt: string;
+  data: TicketSnapshotData;
+  reason?: string;
+  triggeredBy: {
+    name: string;
+    avatar?: string;
+  };
+}
+
+interface Change {
+  field: string;
+  from?: string;
+  to: string;
+}
 
 interface AuditLogViewerProps {
-  ticketId: string
+  ticketId: string;
 }
 
 export const AuditLogViewer = ({ ticketId }: AuditLogViewerProps) => {
@@ -45,7 +74,7 @@ export const AuditLogViewer = ({ ticketId }: AuditLogViewerProps) => {
       <div className="space-y-4">
         {snapshots.map((snapshot, index) => {
           const prevSnapshot = snapshots[index + 1]
-          const changes = getChanges(prevSnapshot?.data, snapshot.data)
+          const changes = getChanges(prevSnapshot?.data ?? null, snapshot.data)
 
           return (
             <div
@@ -107,38 +136,32 @@ export const AuditLogViewer = ({ ticketId }: AuditLogViewerProps) => {
   )
 }
 
-interface Change {
-  field: string
-  from?: string
-  to: string
-}
-
-function getChanges(prev: any, current: any): Change[] {
+function getChanges(prev: TicketSnapshotData | null, current: TicketSnapshotData): Change[] {
   if (!prev) return []
 
   const changes: Change[] = []
-  const fields = ['status', 'priority', 'assigneeId', 'title', 'description']
+  const fields = ['status', 'priority', 'assigneeId', 'title', 'description'] as const
 
   for (const field of fields) {
     if (prev[field] !== current[field]) {
       changes.push({
         field: field.charAt(0).toUpperCase() + field.slice(1),
-        from: prev[field],
-        to: current[field]
+        from: prev[field]?.toString() ?? '',
+        to: current[field]?.toString() ?? ''
       })
     }
   }
 
   // Check for tag changes
-  const prevTags = new Set(prev.metadata?.tags?.map((t: any) => t.id))
-  const currentTags = new Set(current.metadata?.tags?.map((t: any) => t.id))
+  const prevTags = new Set(prev.metadata?.tags?.map(t => t.id) ?? [])
+  const currentTags = new Set(current.metadata?.tags?.map(t => t.id) ?? [])
 
   if (prevTags.size !== currentTags.size || 
       [...prevTags].some(id => !currentTags.has(id))) {
     changes.push({
       field: 'Tags',
-      from: prev.metadata?.tags?.map((t: any) => t.name).join(', '),
-      to: current.metadata?.tags?.map((t: any) => t.name).join(', ')
+      from: prev.metadata?.tags?.map(t => t.name).join(', ') ?? '',
+      to: current.metadata?.tags?.map(t => t.name).join(', ') ?? ''
     })
   }
 

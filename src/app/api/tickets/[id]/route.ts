@@ -3,14 +3,41 @@ import { z } from 'zod'
 import { sql, Transaction } from '@/lib/db'
 import { auth } from '@/lib/auth'
 import { TicketPriority, TicketStatus } from '@/types/ticket'
-import { createClient } from '@supabase/supabase-js'
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
 import { Permission } from '@/types/role'
-import { checkUserPermissions } from '@/lib/auth/check-permissions'
+import { hasAnyPermission, getUserRole } from '@/lib/auth/permissions'
+import { RoleType } from '@/types/role'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+const createClient = async (request: Request) => {
+  const cookieStore = await cookies()
+  
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value
+        },
+        set(name: string, value: string, options: any) {
+          try {
+            cookieStore.set({ name, value, ...options })
+          } catch (error) {
+            // Handle cookie setting error
+          }
+        },
+        remove(name: string, options: any) {
+          try {
+            cookieStore.set({ name, value: '', ...options })
+          } catch (error) {
+            // Handle cookie removal error
+          }
+        },
+      },
+    }
+  )
+}
 
 // Types
 interface TicketResult {
@@ -84,6 +111,7 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
+    const supabase = await createClient(request)
     // Get current ticket
     const [ticket] = await sql.execute<TicketResult>(sql`
       SELECT 
@@ -109,17 +137,33 @@ export async function GET(
       )
     }
 
-    // Check if user has permission to view this ticket
-    const permissionCheck = await checkUserPermissions(Permission.VIEW_TICKETS)
-    if (permissionCheck.error) {
+    // Get user role and session first
+    const userRole = await getUserRole()
+    const { data: { session } } = await supabase.auth.getSession()
+    
+    if (!userRole || !session?.user) {
       return NextResponse.json(
-        { error: permissionCheck.error },
-        { status: permissionCheck.status || 403 }
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
+    // Admin bypass - admins can view all tickets
+    if (userRole.role === RoleType.ADMIN) {
+      return NextResponse.json({ data: ticket })
+    }
+
+    // For non-admins, check permissions
+    const permissionCheck = await hasAnyPermission([Permission.VIEW_TICKETS, Permission.VIEW_OWN_TICKETS])
+    if (!permissionCheck) {
+      return NextResponse.json(
+        { error: 'You do not have permission to view this ticket' },
+        { status: 403 }
       )
     }
 
     // If user is a customer, they can only view their own tickets
-    if (permissionCheck.user?.type === 'customer' && ticket.customer_id !== permissionCheck.user.id) {
+    if (userRole.type === 'customer' && ticket.customer_id !== session.user.id) {
       return NextResponse.json(
         { error: 'You do not have permission to view this ticket' },
         { status: 403 }
@@ -142,6 +186,7 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   try {
+    const supabase = await createClient(request)
     const session = await auth()
     if (!session) {
       return NextResponse.json(
@@ -208,10 +253,7 @@ export async function PATCH(
         // Convert to parameterized query for sql template literal
         const updateQuery = sql`
           UPDATE tickets 
-          SET ${sql.join(
-            updates.map((update, i) => sql`${sql.__dangerous__rawValue(update)} = ${values[i]}`),
-            ', '
-          )}, updated_at = NOW()
+          SET ${sql.__dangerous__rawValue(updates.map((update, i) => `${update} = $${i + 1}`).join(', '))}, updated_at = NOW()
           WHERE id = ${params.id}
           RETURNING *
         `
@@ -224,10 +266,11 @@ export async function PATCH(
             DELETE FROM ticket_tags WHERE ticket_id = ${params.id}
           `)
           if (body.tags.length > 0) {
+            const tagsJson = JSON.stringify(body.tags);
             await tx.execute(sql`
               INSERT INTO ticket_tags (ticket_id, tag_id)
-              SELECT ${params.id}, tag_id
-              FROM unnest(${body.tags}::uuid[]) AS tag_id
+              SELECT ${params.id}, CAST(tag_id AS uuid)
+              FROM json_array_elements_text(${tagsJson}::json) AS tag_id
             `)
           }
         }
@@ -294,6 +337,7 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
+    const supabase = await createClient(request)
     const session = await auth()
     if (!session) {
       return NextResponse.json(

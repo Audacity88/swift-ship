@@ -3,27 +3,14 @@
 import { useState, useEffect, useRef } from 'react'
 import { format } from 'date-fns'
 import {
-  User as UserIcon,
-  Mail,
-  Phone,
-  Building,
-  Clock,
-  MessageSquare,
-  Paperclip,
-  History,
-  AlertCircle,
-  CheckCircle,
-  XCircle,
   Edit,
   Archive,
   MoreHorizontal,
-  Plus,
+  XCircle,
   Send
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -32,18 +19,65 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
-import { Label } from '@/components/ui/label'
-import { Editor } from '@/components/ui/editor'
-import { SLAIndicator } from '@/components/features/tickets/SLAIndicator'
-import { TagSelect } from '@/components/features/tags/TagSelect'
-import { CustomFieldsSection } from '@/components/features/custom-fields/CustomFieldsSection'
-import { StatusTransition } from '@/components/features/tickets/StatusTransition'
-import { AuditLogViewer } from '@/components/features/audit/AuditLogViewer'
-import type { Ticket, Tag, TicketComment, Customer, Agent } from '@/types/ticket'
-import type { User } from '@/types/user'
+import type { Ticket, Tag, Customer, Agent } from '@/types/ticket'
 import { TicketStatus, TicketPriority } from '@/types/enums'
+import {
+  Separator
+} from '@/components/ui/separator'
+import {
+  ScrollArea
+} from '@/components/ui/scroll-area'
+import {
+  User as UserIcon
+} from 'lucide-react'
+import {
+  Mail,
+  Building
+} from 'lucide-react'
+import {
+  Badge as UIBadge
+} from '@/components/ui/badge'
+import {
+  Button as UIButton
+} from '@/components/ui/button'
+import {
+  DropdownMenu as UIDropdownMenu,
+  DropdownMenuContent as UIDropdownMenuContent,
+  DropdownMenuItem as UIDropdownMenuItem,
+  DropdownMenuTrigger as UIDropdownMenuTrigger
+} from '@/components/ui/dropdown-menu'
+import {
+  Textarea as UITextarea
+} from '@/components/ui/textarea'
+import {
+  Switch as UISwitch
+} from '@/components/ui/switch'
+import {
+  Label
+} from '@/components/ui/label'
+import {
+  Editor
+} from '@/components/ui/editor'
+import {
+  SLAIndicator
+} from '@/components/features/tickets/SLAIndicator'
+import {
+  TagSelect
+} from '@/components/features/tags/TagSelect'
+import {
+  CustomFieldsSection
+} from '@/components/features/custom-fields/CustomFieldsSection'
+import {
+  StatusTransition
+} from '@/components/features/tickets/StatusTransition'
+import {
+  AuditLogViewer
+} from '@/components/features/audit/AuditLogViewer'
+import type { User } from '@/types/user'
 import type { CustomFieldValueWithId } from '@/types/custom-field'
-import { cn } from '@/lib/utils'
+import {
+  cn
+} from '@/lib/utils'
 
 interface TicketDetailsProps {
   ticketId: string

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import type { Team, TeamCreationData, TeamUpdateData, WeeklySchedule, DaySchedule } from '@/types/team';
+import type { Team, TeamCreationData, TeamUpdateData } from '@/types/team';
 import { teamService } from '@/lib/services/team-service';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2 } from 'lucide-react';
-import { UserRole } from '@/types/role';
+import { RoleType } from '@/types/role';
 import {
   Select,
   SelectContent,

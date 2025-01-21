@@ -40,13 +40,11 @@ export function useAuth() {
           .single()
 
         if (agent) {
-          // Ensure role is uppercase to match RoleType enum
-          const role = agent.role.toUpperCase() as keyof typeof RoleType
           setUser({
             id: agent.id,
             name: agent.name || authUser.email?.split('@')[0] || 'Agent',
             email: agent.email || authUser.email || '',
-            role: RoleType[role],
+            role: agent.role as RoleType,
             isAgent: true
           })
           setLoading(false)

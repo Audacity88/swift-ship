@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Icons } from '@/components/ui/icons';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { db } from '@/lib/db';
-import { UserRole } from '@/types/role';
+import { RoleType } from '@/types/role';
 import type { AuthError } from '@supabase/supabase-js';
 
 interface RegistrationData {
@@ -27,7 +27,7 @@ interface CustomerProfile {
 
 interface UserRoleData {
   user_id: string;
-  role: UserRole;
+  role: RoleType;
   assigned_by: string;
   assigned_at: string;
 }
@@ -56,7 +56,7 @@ export function CustomerRegistration() {
         options: {
           data: {
             name: formData.name,
-            role: UserRole.CUSTOMER,
+            role: RoleType.CUSTOMER,
           },
         },
       });
@@ -81,7 +81,7 @@ export function CustomerRegistration() {
         // Set default role and permissions
         const userRole: UserRoleData = {
           user_id: authData.user.id,
-          role: UserRole.CUSTOMER,
+          role: RoleType.CUSTOMER,
           assigned_by: 'SYSTEM',
           assigned_at: new Date().toISOString(),
         };

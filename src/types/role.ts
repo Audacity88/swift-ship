@@ -5,7 +5,8 @@ export enum RoleType {
   CUSTOMER = 'customer'
 }
 
-export type UserRole = RoleType
+export type UserRole = RoleType;
+export { UserRole as default };
 
 export const USER_ROLE_LABELS: Record<RoleType, string> = {
   [RoleType.ADMIN]: 'Administrator',

@@ -3,7 +3,7 @@
 import { useState, useRef } from 'react'
 import { Paperclip, Send, X } from 'lucide-react'
 import type { User } from '@/types/user'
-import { UserRole } from '@/types/role'
+import { RoleType } from '@/types/role'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -33,7 +33,7 @@ export function ReplyComposer({ onSubmit, isSubmitting }: ReplyComposerProps) {
       id: '1',
       name: 'Support Agent',
       email: 'agent@example.com',
-      role: UserRole.AGENT,
+      role: RoleType.AGENT,
       isActive: true,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()

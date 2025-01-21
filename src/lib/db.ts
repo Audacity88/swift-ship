@@ -11,8 +11,11 @@ export type DbResult<T> = T extends PromiseLike<infer U> ? U : never
 export type DbResultOk<T> = T extends PromiseLike<{ data: infer U }> ? Exclude<U, null> : never
 export type DbResultErr = PostgrestError
 
+// SQL value types
+export type SqlValue = string | number | boolean | Date | null | { __dangerous__rawValue: string }
+
 // SQL template literal tag
-export function sql(strings: TemplateStringsArray, ...values: any[]) {
+export function sql(strings: TemplateStringsArray, ...values: SqlValue[]) {
   return {
     strings,
     values,
@@ -28,13 +31,13 @@ sql.__dangerous__rawValue = (value: string) => ({
 
 // Transaction helper
 export interface Transaction {
-  execute: <T = any>(query: ReturnType<typeof sql>) => Promise<T[]>
+  execute: <T>(query: ReturnType<typeof sql>) => Promise<T[]>
 }
 
 sql.join = (queries: ReturnType<typeof sql>[], separator: string) => {
   const result = {
     strings: [] as string[],
-    values: [] as any[],
+    values: [] as SqlValue[],
     text: ''
   }
 

@@ -2,12 +2,12 @@ import { ComponentType, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createBrowserClient } from '@supabase/ssr'
 
-export const withRoleProtection = (
-  Component: ComponentType,
+export const withRoleProtection = <P extends object>(
+  Component: ComponentType<P>,
   allowedRoles: string[],
   requiredPermissions?: string[]
 ) => {
-  const WrappedComponent = (props: any) => {
+  const WrappedComponent = (props: P) => {
     const router = useRouter()
     const [loading, setLoading] = useState(true)
     const supabase = createBrowserClient(

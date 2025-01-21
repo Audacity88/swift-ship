@@ -81,6 +81,11 @@ export interface Ticket extends TicketListItem {
   metadata: Record<string, unknown>
 }
 
+interface ValidationError {
+  path: string[];
+  message: string;
+}
+
 export async function createTicket(data: CreateTicketData): Promise<Ticket> {
   const response = await fetch('/api/tickets', {
     method: 'POST',
@@ -95,7 +100,7 @@ export async function createTicket(data: CreateTicketData): Promise<Ticket> {
     const error = await response.json()
     if (response.status === 400 && error.details) {
       // Format validation errors
-      const messages = error.details.map((err: any) => 
+      const messages = error.details.map((err: ValidationError) => 
         `${err.path.join('.')}: ${err.message}`
       ).join(', ')
       throw new Error(`Validation failed: ${messages}`)

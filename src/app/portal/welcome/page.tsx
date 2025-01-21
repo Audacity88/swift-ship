@@ -81,7 +81,7 @@ export default function WelcomePage() {
             Welcome, {user.name}! 👋
           </h1>
           <p className="text-lg text-gray-500">
-            We're excited to have you here. Let's get you started with our customer
+            We&apos;re excited to have you here. Let&apos;s get you started with our customer
             portal.
           </p>
         </div>

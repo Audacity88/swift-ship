@@ -30,7 +30,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { Textarea } from '@/components/ui/textarea'
-import { TicketStatus } from '@/types/ticket'
+import { TicketStatus } from '@/types/enums'
 
 interface StatusTransition {
   status: TicketStatus
@@ -84,15 +84,15 @@ export function StatusTransition({
   // Get status badge color
   const getStatusColor = (status: TicketStatus) => {
     switch (status) {
-      case 'open':
+      case TicketStatus.OPEN:
         return 'bg-blue-500'
-      case 'in_progress':
+      case TicketStatus.IN_PROGRESS:
         return 'bg-yellow-500'
-      case 'awaiting_response':
+      case TicketStatus.AWAITING_RESPONSE:
         return 'bg-purple-500'
-      case 'resolved':
+      case TicketStatus.RESOLVED:
         return 'bg-green-500'
-      case 'closed':
+      case TicketStatus.CLOSED:
         return 'bg-gray-500'
       default:
         return 'bg-gray-500'

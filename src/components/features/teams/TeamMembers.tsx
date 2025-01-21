@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import type { TeamMember, TeamMemberUpdate, WeeklySchedule, DaySchedule } from '@/types/team';
 import { teamService } from '@/lib/services/team-service';
-import { UserRole } from '@/types/role';
+import { RoleType } from '@/types/role';
 import {
   Table,
   TableBody,
@@ -61,7 +61,7 @@ export const TeamMembers = ({ teamId, onUpdate }: TeamMembersProps) => {
   const [error, setError] = useState<string | null>(null);
   const [isAddingMember, setIsAddingMember] = useState(false);
   const [newMemberId, setNewMemberId] = useState('');
-  const [newMemberRole, setNewMemberRole] = useState<UserRole>(UserRole.AGENT);
+  const [newMemberRole, setNewMemberRole] = useState<RoleType>(RoleType.AGENT);
   const [addingMemberLoading, setAddingMemberLoading] = useState(false);
 
   // Load team members
@@ -110,7 +110,7 @@ export const TeamMembers = ({ teamId, onUpdate }: TeamMembersProps) => {
         setMembers(updatedMembers);
         setIsAddingMember(false);
         setNewMemberId('');
-        setNewMemberRole(UserRole.AGENT);
+        setNewMemberRole(RoleType.AGENT);
         onUpdate?.();
       } else {
         setError('Failed to add team member');
@@ -138,7 +138,7 @@ export const TeamMembers = ({ teamId, onUpdate }: TeamMembersProps) => {
     }
   };
 
-  const handleRoleChange = async (userId: string, newRole: UserRole) => {
+  const handleRoleChange = async (userId: string, newRole: RoleType) => {
     try {
       const update: TeamMemberUpdate = {
         teamId,
@@ -194,14 +194,14 @@ export const TeamMembers = ({ teamId, onUpdate }: TeamMembersProps) => {
                 <Label htmlFor="role">Role</Label>
                 <Select
                   value={newMemberRole}
-                  onValueChange={(value) => setNewMemberRole(value as UserRole)}
+                  onValueChange={(value) => setNewMemberRole(value as RoleType)}
                   disabled={addingMemberLoading}
                 >
                   <SelectTrigger id="role">
                     <SelectValue placeholder="Select a role" />
                   </SelectTrigger>
                   <SelectContent>
-                    {Object.values(UserRole).map((role) => (
+                    {Object.values(RoleType).map((role) => (
                       <SelectItem key={role} value={role}>
                         {role}
                       </SelectItem>
@@ -264,13 +264,13 @@ export const TeamMembers = ({ teamId, onUpdate }: TeamMembersProps) => {
               <TableCell>
                 <Select
                   value={member.role}
-                  onValueChange={(value) => handleRoleChange(member.userId, value as UserRole)}
+                  onValueChange={(value) => handleRoleChange(member.userId, value as RoleType)}
                 >
                   <SelectTrigger className="w-[140px]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {Object.values(UserRole).map((role) => (
+                    {Object.values(RoleType).map((role) => (
                       <SelectItem key={role} value={role}>
                         {role}
                       </SelectItem>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { ChevronLeft } from 'lucide-react';
 import { TicketList } from '@/components/features/portal/TicketList';
@@ -32,32 +32,33 @@ export default function TicketsPage() {
     isLoading: true,
   });
 
-  const fetchTickets = async (page = 1) => {
+  const fetchTickets = useCallback(async (page = 1) => {
     setState(prev => ({ ...prev, isLoading: true }));
     try {
-      const response = await customerTicketService.getTickets({ page });
+      const response = await customerTicketService.getTickets(page);
       setState(prev => ({
         ...prev,
         tickets: response.tickets,
-        pagination: response.pagination,
+        pagination: {
+          ...prev.pagination,
+          page,
+          total: response.total,
+          totalPages: Math.ceil(response.total / prev.pagination.limit)
+        }
       }));
     } catch (error) {
       console.error('Error fetching tickets:', error);
       toast({
         title: 'Error',
         description: 'Failed to load tickets. Please try again.',
-        variant: 'destructive',
+        variant: 'destructive'
       });
     } finally {
       setState(prev => ({ ...prev, isLoading: false }));
     }
-  };
+  }, [toast]);
 
-  useEffect(() => {
-    fetchTickets();
-  }, []);
-
-  const handleCreateTicket = async (data: { title: string; description: string }) => {
+  const handleCreateTicket = useCallback(async (data: { title: string; description: string }) => {
     setState(prev => ({ ...prev, isLoading: true }));
     try {
       await customerTicketService.createTicket(data);
@@ -65,7 +66,7 @@ export default function TicketsPage() {
         title: 'Success',
         description: 'Ticket created successfully.',
       });
-      fetchTickets(1); // Refresh the list
+      void fetchTickets(1); // Refresh the list
     } catch (error) {
       console.error('Error creating ticket:', error);
       toast({
@@ -76,9 +77,9 @@ export default function TicketsPage() {
     } finally {
       setState(prev => ({ ...prev, isLoading: false }));
     }
-  };
+  }, [fetchTickets, toast]);
 
-  const handleAddComment = async (ticketId: string, content: string) => {
+  const handleAddComment = useCallback(async (ticketId: string, content: string) => {
     setState(prev => ({ ...prev, isLoading: true }));
     try {
       await customerTicketService.addComment(ticketId, content);
@@ -86,7 +87,7 @@ export default function TicketsPage() {
         title: 'Success',
         description: 'Comment added successfully.',
       });
-      fetchTickets(state.pagination.page); // Refresh current page
+      void fetchTickets(state.pagination.page); // Refresh current page
     } catch (error) {
       console.error('Error adding comment:', error);
       toast({
@@ -97,9 +98,9 @@ export default function TicketsPage() {
     } finally {
       setState(prev => ({ ...prev, isLoading: false }));
     }
-  };
+  }, [fetchTickets, state.pagination.page, toast]);
 
-  const handleUpdateStatus = async (ticketId: string, status: TicketStatus) => {
+  const handleUpdateStatus = useCallback(async (ticketId: string, status: TicketStatus) => {
     setState(prev => ({ ...prev, isLoading: true }));
     try {
       await customerTicketService.updateTicketStatus(ticketId, status);
@@ -107,7 +108,7 @@ export default function TicketsPage() {
         title: 'Success',
         description: 'Ticket status updated successfully.',
       });
-      fetchTickets(state.pagination.page); // Refresh current page
+      void fetchTickets(state.pagination.page); // Refresh current page
     } catch (error) {
       console.error('Error updating status:', error);
       toast({
@@ -118,7 +119,11 @@ export default function TicketsPage() {
     } finally {
       setState(prev => ({ ...prev, isLoading: false }));
     }
-  };
+  }, [fetchTickets, state.pagination.page, toast]);
+
+  useEffect(() => {
+    void fetchTickets();
+  }, [fetchTickets]);
 
   return (
     <div className="container mx-auto py-8 space-y-8">
@@ -140,9 +145,7 @@ export default function TicketsPage() {
         tickets={state.tickets}
         onCreateTicket={handleCreateTicket}
         onAddComment={handleAddComment}
-        onUpdateStatus={(ticketId: string, status: string) => 
-          handleUpdateStatus(ticketId, status as TicketStatus)
-        }
+        onUpdateStatus={handleUpdateStatus}
         isLoading={state.isLoading}
         pagination={state.pagination}
         onPageChange={fetchTickets}

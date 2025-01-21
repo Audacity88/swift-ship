@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { db } from '@/lib/db';
-import { UserRole } from '@/types/role';
+import { RoleType } from '@/types/role';
 import { Icons } from '@/components/ui/icons';
 
 export default function AuthCallbackPage() {
@@ -38,7 +38,7 @@ export default function AuthCallbackPage() {
           // Set default role and permissions
           const { error: roleError } = await db.from('user_roles').insert({
             user_id: user.id,
-            role: UserRole.CUSTOMER,
+            role: RoleType.CUSTOMER,
             assigned_by: 'SYSTEM',
             assigned_at: new Date().toISOString(),
           });

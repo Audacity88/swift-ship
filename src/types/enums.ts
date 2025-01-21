@@ -1,6 +1,7 @@
 export enum TicketStatus {
   OPEN = 'open',
   IN_PROGRESS = 'in_progress',
+  AWAITING_RESPONSE = 'awaiting_response',
   RESOLVED = 'resolved',
   CLOSED = 'closed'
 }
@@ -13,10 +14,4 @@ export enum TicketPriority {
 }
 
 // Re-export UserRole from role.ts for backward compatibility
-export { UserRole } from './role';
-
-export enum UserRole {
-  CUSTOMER = 'customer',
-  AGENT = 'agent',
-  ADMIN = 'admin'
-}
+export type { UserRole, RoleType } from './role';

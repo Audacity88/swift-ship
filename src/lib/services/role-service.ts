@@ -22,7 +22,14 @@ const rolePermissions: Record<RoleType, Permission[]> = {
     Permission.VIEW_TEAMS,
     Permission.VIEW_TEAM_METRICS,
   ],
-  [RoleType.CUSTOMER]: [],
+  [RoleType.CUSTOMER]: [
+    Permission.VIEW_OWN_TICKETS,
+    Permission.CREATE_OWN_TICKETS,
+    Permission.COMMENT_OWN_TICKETS,
+    Permission.VIEW_PUBLIC_ARTICLES,
+    Permission.RATE_ARTICLES,
+    Permission.MANAGE_OWN_PROFILE,
+  ],
 };
 
 export function getUserPermissions(role: RoleType): Permission[] {

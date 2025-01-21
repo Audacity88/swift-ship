@@ -1,9 +1,9 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { CustomerRegistration } from '@/components/features/auth/CustomerRegistration';
 import { db } from '@/lib/db';
-import { UserRole } from '@/types/enums';
+import { UserRole } from '@/types/role';
 import { useRouter } from 'next/navigation';
 
 // Mock next/navigation

@@ -18,10 +18,14 @@ const updateArticleSchema = z.object({
   tags: z.array(z.string().uuid()).optional()
 });
 
+type RouteContext = {
+  params: { id: string }
+}
+
 // GET /api/knowledge/articles/[id] - Get article details
 export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
+  req: NextRequest,
+  { params }: RouteContext
 ) {
   try {
     // Check permissions
@@ -74,8 +78,8 @@ export async function GET(
 
 // PUT /api/knowledge/articles/[id] - Update article
 export async function PUT(
-  request: NextRequest,
-  { params }: { params: { id: string } }
+  req: NextRequest,
+  { params }: RouteContext
 ) {
   try {
     // Check permissions
@@ -90,7 +94,7 @@ export async function PUT(
     const { session } = permissionCheck;
 
     // Get request body
-    const body = await request.json();
+    const body = await req.json();
     const {
       title,
       content,
@@ -192,8 +196,8 @@ export async function PUT(
 
 // DELETE /api/knowledge/articles/[id] - Archive article
 export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
+  req: NextRequest,
+  { params }: RouteContext
 ) {
   try {
     // Check permissions
@@ -229,9 +233,10 @@ export async function DELETE(
   }
 }
 
+// PATCH /api/knowledge/articles/[id] - Patch article
 export async function PATCH(
-  request: NextRequest,
-  { params }: { params: { id: string } }
+  req: NextRequest,
+  { params }: RouteContext
 ) {
   try {
     // Check permissions
@@ -244,78 +249,30 @@ export async function PATCH(
     }
 
     // Parse and validate request body
-    const body = await request.json();
+    const body = await req.json();
     const validatedData = updateArticleSchema.parse(body);
 
     // Update article
-    const { data: article, error: articleError } = await supabase
+    const { data: updatedArticle, error: updateError } = await supabase
       .from('articles')
-      .update({
-        title: validatedData.title,
-        content: validatedData.content,
-        category_id: validatedData.categoryId,
-        status: validatedData.status,
-        updated_at: new Date().toISOString(),
-        updated_by: permissionCheck.user.id
-      })
+      .update(validatedData)
       .eq('id', params.id)
       .select()
       .single();
 
-    if (articleError) {
-      console.error('Error updating article:', articleError);
+    if (updateError) {
+      console.error('Error updating article:', updateError);
       return NextResponse.json(
         { error: 'Failed to update article' },
         { status: 500 }
       );
     }
 
-    // Update tags if provided
-    if (validatedData.tags) {
-      // Delete existing tags
-      const { error: deleteError } = await supabase
-        .from('article_tags')
-        .delete()
-        .eq('article_id', params.id);
-
-      if (deleteError) {
-        console.error('Error deleting article tags:', deleteError);
-        return NextResponse.json(
-          { error: 'Failed to update article tags' },
-          { status: 500 }
-        );
-      }
-
-      // Add new tags
-      if (validatedData.tags.length > 0) {
-        const { error: insertError } = await supabase
-          .from('article_tags')
-          .insert(
-            validatedData.tags.map(tagId => ({
-              article_id: params.id,
-              tag_id: tagId
-            }))
-          );
-
-        if (insertError) {
-          console.error('Error adding article tags:', insertError);
-          return NextResponse.json(
-            { error: 'Failed to update article tags' },
-            { status: 500 }
-          );
-        }
-      }
-    }
-
-    return NextResponse.json(article);
+    return NextResponse.json({
+      message: 'Article updated successfully',
+      article: updatedArticle
+    });
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Invalid request data', details: error.errors },
-        { status: 400 }
-      );
-    }
-
     console.error('Error in PATCH /api/knowledge/articles/[id]:', error);
     return NextResponse.json(
       { error: 'Internal server error' },

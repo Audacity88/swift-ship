@@ -204,12 +204,14 @@ export function Header() {
             onClick={() => setShowProfileMenu(!showProfileMenu)}
             className="flex items-center gap-2"
           >
-            <div className="relative w-8 h-8 rounded-full overflow-hidden">
+            <div className="relative w-8 h-8 rounded-full overflow-hidden bg-gray-100">
               <Image
                 src="/default-avatar.png"
                 alt={user?.name || "Profile"}
-                fill
+                width={32}
+                height={32}
                 className="object-cover"
+                priority
               />
             </div>
             <ChevronDown className={`w-4 h-4 text-gray-600 transition-transform ${showProfileMenu ? 'rotate-180' : ''}`} />

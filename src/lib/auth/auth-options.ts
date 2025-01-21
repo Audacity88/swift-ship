@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { type AuthOptions, type DefaultSession } from 'next-auth';
+import { type AuthOptions, type DefaultSession, type User as NextAuthUser } from 'next-auth';
 import { type JWT } from 'next-auth/jwt';
 import GithubProvider from 'next-auth/providers/github';
 import GoogleProvider from 'next-auth/providers/google';
@@ -13,6 +13,17 @@ declare module 'next-auth' {
       type: 'agent' | 'customer' | null;
     } & DefaultSession['user'];
   }
+}
+
+interface ExtendedSession extends DefaultSession {
+  user: {
+    id: string;
+    role: UserRole | null;
+    type: 'agent' | 'customer' | null;
+    name?: string | null;
+    email?: string | null;
+    image?: string | null;
+  };
 }
 
 const supabase = createClient(
@@ -32,15 +43,17 @@ export const authOptions: AuthOptions = {
     }),
   ],
   callbacks: {
-    async jwt({ token, user }: { token: JWT; user: any }) {
+    async jwt({ token, user }: { token: JWT; user?: NextAuthUser }) {
       if (user) {
         token.id = user.id;
       }
       return token;
     },
-    async session({ session, token }: { session: any; token: JWT }) {
-      if (session?.user) {
-        session.user.id = token.id as string;
+    async session({ session, token }: { session: DefaultSession; token: JWT }): Promise<ExtendedSession> {
+      const extendedSession = session as ExtendedSession;
+      
+      if (extendedSession.user) {
+        extendedSession.user.id = token.id as string;
         
         // Check if user is an agent
         const { data: agentData } = await supabase
@@ -50,29 +63,23 @@ export const authOptions: AuthOptions = {
           .single();
 
         if (agentData) {
-          session.user.role = agentData.role as UserRole;
-          session.user.type = 'agent';
-          return session;
+          extendedSession.user.role = agentData.role as UserRole;
+          extendedSession.user.type = 'agent';
+        } else {
+          // Check if user is a customer
+          const { data: customerData } = await supabase
+            .from('customers')
+            .select('id')
+            .eq('id', token.sub)
+            .single();
+
+          if (customerData) {
+            extendedSession.user.role = RoleType.CUSTOMER;
+            extendedSession.user.type = 'customer';
+          }
         }
-
-        // If not an agent, check if user is a customer
-        const { data: customerData } = await supabase
-          .from('customers')
-          .select('id')
-          .eq('id', token.sub)
-          .single();
-
-        if (customerData) {
-          session.user.role = RoleType.CUSTOMER;
-          session.user.type = 'customer';
-          return session;
-        }
-
-        // If neither agent nor customer, set null values
-        session.user.role = null;
-        session.user.type = null;
       }
-      return session;
+      return extendedSession;
     },
   },
   pages: {
