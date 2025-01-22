@@ -21,10 +21,10 @@ export async function GET(request: NextRequest) {
   try {
     // Check permissions
     const permissionCheck = await checkUserPermissions(Permission.VIEW_TICKETS);
-    if ('error' in permissionCheck) {
+    if ('error' in permissionCheck || !permissionCheck.user) {
       return NextResponse.json(
-        { error: permissionCheck.error },
-        { status: permissionCheck.status }
+        { error: permissionCheck.error || 'User not found' },
+        { status: permissionCheck.status || 401 }
       );
     }
 
@@ -93,10 +93,10 @@ export async function POST(request: NextRequest) {
   try {
     // Check permissions
     const permissionCheck = await checkUserPermissions(Permission.CREATE_TICKETS);
-    if ('error' in permissionCheck) {
+    if ('error' in permissionCheck || !permissionCheck.user) {
       return NextResponse.json(
-        { error: permissionCheck.error },
-        { status: permissionCheck.status }
+        { error: permissionCheck.error || 'User not found' },
+        { status: permissionCheck.status || 401 }
       );
     }
 

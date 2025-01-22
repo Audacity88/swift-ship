@@ -44,7 +44,7 @@ import {
 
 interface TicketListProps {
   tickets: Ticket[];
-  onCreateTicket: (ticket: { title: string; description: string }) => Promise<void>;
+  onCreateTicket: (ticket: { description: string }) => Promise<void>;
   onAddComment: (ticketId: string, comment: string) => Promise<void>;
   onUpdateStatus: (ticketId: string, status: string) => Promise<void>;
   isLoading: boolean;
@@ -72,7 +72,7 @@ export const TicketList = ({
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'date' | 'status'>('date');
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const [newTicket, setNewTicket] = useState({ title: '', description: '' });
+  const [newTicket, setNewTicket] = useState({ description: '' });
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [newComment, setNewComment] = useState('');
 
@@ -92,8 +92,8 @@ export const TicketList = ({
 
   const handleCreateTicket = async () => {
     try {
-      await onCreateTicket(newTicket);
-      setNewTicket({ title: '', description: '' });
+      await onCreateTicket({ description: newTicket.description });
+      setNewTicket({ description: '' });
       setIsCreateDialogOpen(false);
     } catch (error) {
       console.error('Error creating ticket:', error);
@@ -174,43 +174,35 @@ export const TicketList = ({
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Create New Ticket</DialogTitle>
+              <DialogTitle>Create New Support Request</DialogTitle>
               <DialogDescription>
-                Submit a new support ticket. We'll get back to you as soon as possible.
+                Describe your issue and we'll get back to you as soon as possible.
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="title">Title</Label>
-                <Input
-                  id="title"
-                  value={newTicket.title}
-                  onChange={(e) => setNewTicket({ ...newTicket, title: e.target.value })}
-                />
-              </div>
-              <div>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
                 <Label htmlFor="description">Description</Label>
                 <Textarea
                   id="description"
+                  placeholder="Please describe your issue in detail..."
                   value={newTicket.description}
-                  onChange={(e) => setNewTicket({ ...newTicket, description: e.target.value })}
-                  rows={4}
+                  onChange={(e) => setNewTicket({ description: e.target.value })}
+                  className="min-h-[100px]"
                 />
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
+              <Button
+                variant="outline"
+                onClick={() => setIsCreateDialogOpen(false)}
+              >
                 Cancel
               </Button>
-              <Button onClick={handleCreateTicket} disabled={isLoading}>
-                {isLoading ? (
-                  <>
-                    <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                    Creating...
-                  </>
-                ) : (
-                  'Create Ticket'
-                )}
+              <Button
+                onClick={handleCreateTicket}
+                disabled={!newTicket.description.trim()}
+              >
+                Submit
               </Button>
             </DialogFooter>
           </DialogContent>

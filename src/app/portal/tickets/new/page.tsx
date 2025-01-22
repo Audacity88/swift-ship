@@ -16,12 +16,6 @@ export default function NewTicketPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [description, setDescription] = useState('')
 
-  const generateTitle = (description: string): string => {
-    // Take first 50 characters of the description and add ellipsis if needed
-    const title = description.split('\n')[0].trim()
-    return title.length > 50 ? `${title.substring(0, 47)}...` : title
-  }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
@@ -34,7 +28,7 @@ export default function NewTicketPage() {
 
     try {
       const ticketData = {
-        title: generateTitle(description),
+        title: `Support Request from ${user?.name || 'Customer'}`,
         description: description.trim(),
         priority: TicketPriority.MEDIUM, // Default priority
         customerId: user?.id as string,

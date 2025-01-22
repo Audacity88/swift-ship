@@ -45,14 +45,21 @@ export function useAuth() {
     let initializationInProgress = false
 
     const initializeAuth = async () => {
-      if (!mounted || initialized || initializationInProgress) return
+      if (!mounted || initialized || initializationInProgress) {
+        console.log('Skipping auth initialization:', { mounted, initialized, initializationInProgress })
+        return
+      }
       initializationInProgress = true
 
       console.log('Starting auth initialization...')
       try {
         // Get initial session and user in one call
         const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-        console.log('Session check result:', { session: !!session, error: sessionError })
+        console.log('Session check result:', { 
+          hasSession: !!session, 
+          error: sessionError?.message,
+          userId: session?.user?.id 
+        })
         
         if (!session || sessionError) {
           console.log('No valid session found, setting user to null')
@@ -65,8 +72,8 @@ export function useAuth() {
         }
 
         const authUser = session.user
-        if (!authUser) {
-          console.log('No auth user in session, setting user to null')
+        if (!authUser?.id || !authUser?.email) {
+          console.log('Invalid auth user data:', { id: authUser?.id, email: authUser?.email })
           if (mounted) {
             setUser(null)
             setLoading(false)
@@ -82,7 +89,11 @@ export function useAuth() {
             .select('*')
             .eq('id', authUser.id)
             .single()
-          console.log('Customer check result:', { customer: !!customer, error: customerError })
+          console.log('Customer check result:', { 
+            hasCustomer: !!customer, 
+            error: customerError?.message,
+            customerId: customer?.id 
+          })
 
           if (customer && !customerError) {
             console.log('Setting user as existing customer')
@@ -90,43 +101,48 @@ export function useAuth() {
               setUser({
                 id: customer.id,
                 name: customer.name || authUser.email?.split('@')[0] || 'Customer',
-                email: customer.email || authUser.email || '',
+                email: customer.email || authUser.email,
                 role: RoleType.CUSTOMER,
                 isAgent: false,
                 avatar: customer.avatar
               })
               setLoading(false)
               setInitialized(true)
+              return
             }
-            return
           }
 
-          // Only check agents if not a customer
+          // If not a customer, check if agent
           const { data: agent, error: agentError } = await supabase
             .from('agents')
             .select('*')
             .eq('id', authUser.id)
             .single()
-          console.log('Agent check result:', { agent: !!agent, error: agentError })
+          console.log('Agent check result:', { 
+            hasAgent: !!agent, 
+            error: agentError?.message,
+            agentId: agent?.id 
+          })
 
           if (agent && !agentError) {
-            console.log('Setting user as agent')
+            console.log('Setting user as existing agent')
             if (mounted) {
-              const role = agent.role.toUpperCase() as keyof typeof RoleType
               setUser({
                 id: agent.id,
                 name: agent.name || authUser.email?.split('@')[0] || 'Agent',
-                email: agent.email || authUser.email || '',
-                role: RoleType[role],
+                email: agent.email || authUser.email,
+                role: agent.role || RoleType.AGENT,
                 isAgent: true,
                 avatar: agent.avatar
               })
               setLoading(false)
               setInitialized(true)
+              return
             }
-            return
           }
 
+          // If we get here, the user exists in auth but not in our tables
+          console.log('User exists in auth but not in customers/agents tables:', authUser.id)
           // If neither customer nor agent, create customer record
           console.log('Attempting to create new customer record')
           const { data: newCustomer, error: createError } = await supabase
@@ -203,9 +219,6 @@ export function useAuth() {
       }
 
       if (event === 'SIGNED_IN' && session) {
-        // No need to handle SIGNED_IN during initialization
-        if (event === 'INITIAL_SESSION') return
-
         console.log('Processing sign in')
         setLoading(true)
 

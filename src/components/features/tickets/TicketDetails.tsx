@@ -100,6 +100,7 @@ export function TicketDetails({
         }
         const { data } = await response.json()
         console.log('Ticket data:', data)
+        console.log('Description:', data.description)
         setTicket(data)
       } catch (error) {
         console.error('Failed to load ticket:', error)
@@ -218,6 +219,9 @@ export function TicketDetails({
           <div className="mt-1 text-sm text-gray-500">
             Created {format(new Date(createdAt), 'MMM d, yyyy HH:mm')}
           </div>
+          <div className="mt-4 text-sm text-gray-700 whitespace-pre-wrap break-words">
+            {ticket.description}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -282,6 +286,16 @@ export function TicketDetails({
         <ScrollArea className="flex-1">
           {activeTab === 'details' ? (
             <div className="p-4 space-y-6">
+              {/* Description */}
+              <div className="space-y-2">
+                <h3 className="font-medium">Description</h3>
+                <div className="p-4 border rounded-lg bg-white">
+                  <pre className="whitespace-pre-wrap break-words text-sm">
+                    {ticket.description || 'No description provided'}
+                  </pre>
+                </div>
+              </div>
+
               {/* Status & Priority */}
               <div className="flex items-center justify-between">
                 <StatusTransition
@@ -344,14 +358,6 @@ export function TicketDetails({
                   value={tags.map(tag => tag.id)}
                   onChange={handleTagsChange}
                 />
-              </div>
-
-              {/* Description */}
-              <div className="space-y-2">
-                <h3 className="font-medium">Description</h3>
-                <div className="p-4 rounded-lg bg-gray-50">
-                  {ticket.description}
-                </div>
               </div>
 
               {/* Comments */}

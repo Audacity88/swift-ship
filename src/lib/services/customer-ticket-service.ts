@@ -3,8 +3,8 @@ import type { Ticket, TicketStatus, TicketComment } from '@/types/ticket';
 import type { Session } from '@supabase/supabase-js';
 
 interface CreateTicketData {
-  title: string;
   description: string;
+  title?: string;
   priority?: 'low' | 'medium' | 'high' | 'urgent';
 }
 
@@ -32,8 +32,17 @@ export const customerTicketService = {
     if (sessionError) throw sessionError;
     if (!session?.user?.id) throw new Error('Not authenticated');
 
+    // Get customer name
+    const { data: customer, error: customerError } = await db
+      .from('users')
+      .select('name')
+      .eq('id', session.user.id)
+      .single();
+
+    if (customerError) throw customerError;
+
     const { data: ticket, error } = await db.from('tickets').insert({
-      title: data.title,
+      title: `Support Request from ${customer?.name || 'Customer'}`,
       description: data.description,
       status: 'open',
       priority: data.priority || 'medium',

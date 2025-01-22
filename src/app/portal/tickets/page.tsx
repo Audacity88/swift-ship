@@ -58,10 +58,13 @@ export default function TicketsPage() {
     }
   }, [toast]);
 
-  const handleCreateTicket = useCallback(async (data: { title: string; description: string }) => {
+  const handleCreateTicket = useCallback(async (data: { description: string }) => {
     setState(prev => ({ ...prev, isLoading: true }));
     try {
-      await customerTicketService.createTicket(data);
+      await customerTicketService.createTicket({
+        description: data.description,
+        priority: 'medium'
+      });
       toast({
         title: 'Success',
         description: 'Ticket created successfully.',

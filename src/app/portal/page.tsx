@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Article } from '@/types/knowledge';
+import { Article, ArticleStatus } from '@/types/knowledge';
 import { SearchBar } from '@/components/features/portal/SearchBar';
 import { Button } from '@/components/ui/button';
 import { KnowledgeService } from '@/lib/services/knowledge-service';
@@ -36,13 +36,13 @@ export default function PortalHome() {
       try {
         // Fetch featured articles (published status)
         const { articles: featured } = await knowledgeService.getArticles(1, 6, { 
-          status: 'published' 
+          status: ArticleStatus.PUBLISHED 
         });
         setFeaturedArticles(featured);
 
         // Fetch popular articles (sort by view count)
         const { articles: popular } = await knowledgeService.getArticles(1, 6, {
-          status: 'published'
+          status: ArticleStatus.PUBLISHED
         });
         // Sort by view count
         const sortedPopular = [...popular].sort((a, b) => 
@@ -52,7 +52,7 @@ export default function PortalHome() {
 
         // Fetch recent articles
         const { articles: recent } = await knowledgeService.getArticles(1, 6, {
-          status: 'published'
+          status: ArticleStatus.PUBLISHED
         });
         setRecentArticles(recent);
       } catch (error) {
