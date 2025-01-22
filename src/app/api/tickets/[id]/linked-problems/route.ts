@@ -9,6 +9,21 @@ const supabase = createClient<Database>(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
+// Define types for the ticket relationship response
+type TicketRelationship = {
+  related_ticket_id: string
+  relationship_type: string
+  related_ticket: {
+    id: string
+    title: string
+    status: string
+    priority: string
+    created_at: string
+    updated_at: string
+    metadata: Record<string, any>
+  }
+}
+
 // GET /api/tickets/[id]/linked-problems - Get all linked problem tickets
 export async function GET(
   request: NextRequest,
@@ -55,7 +70,7 @@ export async function GET(
     }
 
     // Map the results to a cleaner format
-    const problems = linkedProblems?.map(link => ({
+    const problems = (linkedProblems as TicketRelationship[] | null)?.map(link => ({
       id: link.related_ticket.id,
       title: link.related_ticket.title,
       status: link.related_ticket.status,
