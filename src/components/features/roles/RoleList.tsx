@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { RoleType } from '@/types/role';
-import { roleService } from '@/lib/services/role-service';
+import { roleService, type RoleType, type Permission } from '@/lib/services';
 import {
   Table,
   TableBody,

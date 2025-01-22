@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useEffect, useState, useCallback } from 'react'
-import { fetchTickets } from '@/lib/services/ticket-service'
+import { fetchTickets, type TicketListItem } from '@/lib/services'
 import { format } from 'date-fns'
 import {
   Clock,
@@ -37,7 +37,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox'
 import { SLAIndicator } from '@/components/features/tickets/SLAIndicator'
 import { TagList } from '@/components/features/tags/TagList'
-import type { TicketListItem } from '@/types/ticket'
+import type { TicketListItem as TicketListItemType } from '@/types/ticket'
 import {
   Select,
   SelectContent,
@@ -80,7 +80,7 @@ export const TicketList: React.FC<TicketListProps> = ({
     total: 0
   })
   const [sort, setSort] = useState({
-    field: 'createdAt',
+    field: 'created_at',
     direction: 'desc' as 'asc' | 'desc'
   })
   const [selectedTickets, setSelectedTickets] = useState<string[]>([])
@@ -140,9 +140,17 @@ export const TicketList: React.FC<TicketListProps> = ({
   }
 
   const handleSort = (field: string) => {
+    // Map frontend field names to database column names
+    const dbField = {
+      title: 'title',
+      priority: 'priority',
+      status: 'status',
+      createdAt: 'created_at'
+    }[field] || field
+
     setSort(prev => ({
-      field,
-      direction: prev.field === field && prev.direction === 'desc' ? 'asc' : 'desc'
+      field: dbField,
+      direction: prev.field === dbField && prev.direction === 'desc' ? 'asc' : 'desc'
     }))
   }
 

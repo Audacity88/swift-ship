@@ -6,7 +6,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { MetricsPeriod, TeamMetrics as TeamMetricsType, AgentMetrics } from '@/types/metrics';
-import { metricsService } from '@/lib/services/metrics-service';
+import { metricsService } from '@/lib/services';
 import { PerformanceCharts } from '@/components/features/analytics/PerformanceCharts';
 import { WorkloadDistribution } from '@/components/features/analytics/WorkloadDistribution';
 import { CoverageAnalysis } from '@/components/features/analytics/CoverageAnalysis';
@@ -41,31 +41,30 @@ export function TeamMetrics({ teamId }: TeamMetricsProps) {
         setLoading(true);
         setError(null);
 
-        // Load team metrics
-        const teamMetrics = await metricsService.getTeamMetrics(teamId, period);
+        // Load team metrics and schedule data in parallel
+        const [
+          teamMetrics,
+          { data: teamMembers },
+          { data: teamData }
+        ] = await Promise.all([
+          metricsService.getTeamMetrics(teamId, period),
+          supabase.from('team_members').select('user_id').eq('team_id', teamId),
+          supabase.from('teams').select('schedule, timezone').eq('id', teamId).single()
+        ]);
+
         setMetrics(teamMetrics);
 
-        // Load agent metrics
-        const { data: teamMembers } = await supabase
-          .from('team_members')
-          .select('user_id')
-          .eq('team_id', teamId);
-
+        // Load agent metrics if we have team members
         if (teamMembers) {
-          const agentMetricsPromises = teamMembers.map((member: TeamMember) => 
-            metricsService.getAgentMetrics(member.user_id, period)
+          const agentMetricsData = await metricsService.getTeamAgentMetrics(
+            teamId,
+            teamMembers.map((m: TeamMember) => m.user_id),
+            period
           );
-          const agentMetricsData = await Promise.all(agentMetricsPromises);
           setAgentMetrics(agentMetricsData);
         }
 
-        // Load team schedule
-        const { data: teamData } = await supabase
-          .from('teams')
-          .select('schedule, timezone')
-          .eq('id', teamId)
-          .single();
-        
+        // Set schedule data
         if (teamData) {
           const data = teamData as TeamData;
           setSchedule(data.schedule);

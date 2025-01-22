@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { Article, ArticleStatus } from '@/types/knowledge';
 import { SearchBar } from '@/components/features/portal/SearchBar';
 import { Button } from '@/components/ui/button';
-import { KnowledgeService } from '@/lib/services/knowledge-service';
+import { knowledgeService } from '@/lib/services';
 import {
   Card,
   CardContent,
@@ -30,33 +30,34 @@ export default function PortalHome() {
   const [recentArticles, setRecentArticles] = useState<Article[]>([]);
 
   useEffect(() => {
-    const knowledgeService = new KnowledgeService();
-    
     const fetchArticles = async () => {
       try {
         // Fetch featured articles (published status)
-        const { articles: featured } = await knowledgeService.getArticles(1, 6, { 
-          status: ArticleStatus.PUBLISHED 
+        const { articles: featured } = await knowledgeService.getArticles(1, 6, {
+          status: ArticleStatus.PUBLISHED,
+          sort: { field: 'highlight', direction: 'desc' }
         });
         setFeaturedArticles(featured);
 
         // Fetch popular articles (sort by view count)
         const { articles: popular } = await knowledgeService.getArticles(1, 6, {
-          status: ArticleStatus.PUBLISHED
+          status: ArticleStatus.PUBLISHED,
+          sort: { field: 'metadata->views', direction: 'desc' }
         });
-        // Sort by view count
-        const sortedPopular = [...popular].sort((a, b) => 
-          (b.metadata?.views || 0) - (a.metadata?.views || 0)
-        );
-        setPopularArticles(sortedPopular);
+        setPopularArticles(popular);
 
         // Fetch recent articles
         const { articles: recent } = await knowledgeService.getArticles(1, 6, {
-          status: ArticleStatus.PUBLISHED
+          status: ArticleStatus.PUBLISHED,
+          sort: { field: 'updated_at', direction: 'desc' }
         });
         setRecentArticles(recent);
+
+        // Get recent searches from localStorage
+        const searches = JSON.parse(localStorage.getItem('recentSearches') || '[]');
+        setRecentSearches(searches);
       } catch (error) {
-        console.error('Error fetching articles:', error);
+        console.error('Error fetching portal data:', error);
       }
     };
 
@@ -92,14 +93,25 @@ export default function PortalHome() {
   ];
 
   const handleSearch = async (query: string): Promise<Article[]> => {
-    // In a real app, this would navigate to the search page with the query
-    console.log('Search:', query);
-    return [];
+    try {
+      const results = await knowledgeService.searchArticles(query);
+      // Save search to localStorage
+      const searches = JSON.parse(localStorage.getItem('recentSearches') || '[]');
+      localStorage.setItem('recentSearches', JSON.stringify([query, ...searches].slice(0, 5)));
+      return results;
+    } catch (error) {
+      console.error('Search error:', error);
+      return [];
+    }
   };
 
-  const handleSelectArticle = (articleId: string) => {
-    // In a real app, this would navigate to the article page
-    console.log('Selected article:', articleId);
+  const handleSelectArticle = async (articleId: string) => {
+    try {
+      // Track article view
+      await knowledgeService.trackArticleView(articleId);
+    } catch (error) {
+      console.error('Error tracking article view:', error);
+    }
   };
 
   return (

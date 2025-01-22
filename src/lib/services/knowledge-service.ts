@@ -1,298 +1,194 @@
-import { createClient } from '@supabase/supabase-js';
-import { 
-  Article, 
-  ArticleStatus, 
-  Category, 
-  SearchFilters, 
-  SearchResponse, 
-  ArticleFeedback, 
-  ArticleVersion,
-  ArticleAnalytics
-} from '@/types/knowledge';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase'
+import type { Article, Category, ArticleStatus } from '@/types/knowledge'
+import type { ArticleInteraction, ArticleRating } from '@/types/portal'
 
-export class KnowledgeService {
-  // Article CRUD Operations
-  async getArticles(page = 1, pageSize = 10, filters?: Partial<SearchFilters>) {
-    const query = supabase
-      .from('articles')
-      .select('*, author:agents(*), category:categories(*)')
-      .order('createdAt', { ascending: false });
-
-    if (filters?.categoryId) {
-      query.eq('category_id', filters.categoryId);
-    }
-    if (filters?.status) {
-      query.eq('status', filters.status);
-    }
-    if (filters?.tags && filters.tags.length > 0) {
-      query.contains('tags', filters.tags);
-    }
-    if (filters?.authorId) {
-      query.eq('author_id', filters.authorId);
-    }
-    if (filters?.dateRange) {
-      query
-        .gte('created_at', filters.dateRange.start)
-        .lte('created_at', filters.dateRange.end);
-    }
-
-    const { data: articles, error, count } = await query
-      .range((page - 1) * pageSize, page * pageSize - 1)
-      .returns<Article[]>();
-
-    if (error) throw error;
-    return { articles, count };
+interface GetArticlesOptions {
+  page?: number
+  pageSize?: number
+  status?: ArticleStatus
+  categoryId?: string
+  sort?: {
+    field: string
+    direction: 'asc' | 'desc'
   }
+}
 
-  async getArticleById(id: string): Promise<Article> {
-    const { data: article, error } = await supabase
+export const knowledgeService = {
+  async getArticles(page = 1, pageSize = 10, options: Partial<GetArticlesOptions> = {}): Promise<{ articles: Article[], total: number }> {
+    let query = supabase
       .from('articles')
-      .select('*, author:agents(*), category:categories(*), versions:article_versions(*)')
-      .eq('id', id)
-      .single();
+      .select('*', { count: 'exact' })
 
-    if (error) throw error;
-    return article;
-  }
+    if (options.status) {
+      query = query.eq('status', options.status)
+    }
+    if (options.categoryId) {
+      query = query.eq('category_id', options.categoryId)
+    }
 
-  async createArticle(article: Omit<Article, 'id' | 'createdAt' | 'updatedAt'>): Promise<Article> {
-    const { data, error } = await supabase
-      .from('articles')
-      .insert([{
-        ...article,
-        currentVersion: 1,
-        metadata: {
-          views: 0,
-          helpfulCount: 0,
-          notHelpfulCount: 0,
-          lastUpdated: new Date(),
-        }
-      }])
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data;
-  }
-
-  async updateArticle(id: string, updates: Partial<Article>): Promise<Article> {
-    const { data, error } = await supabase
-      .from('articles')
-      .update({
-        ...updates,
-        updatedAt: new Date(),
+    query = query
+      .order(options.sort?.field || 'updated_at', { 
+        ascending: options.sort?.direction === 'asc' 
       })
-      .eq('id', id)
-      .select()
-      .single();
+      .range((page - 1) * pageSize, page * pageSize - 1)
 
-    if (error) throw error;
-    return data;
-  }
+    const { data, error, count } = await query
 
-  async archiveArticle(id: string): Promise<void> {
-    const { error } = await supabase
+    if (error) {
+      console.error('Failed to get articles:', error)
+      return { articles: [], total: 0 }
+    }
+
+    const articles = (data || []).map((row: any) => ({
+      id: row.id,
+      title: row.title,
+      content: row.content,
+      excerpt: row.excerpt,
+      slug: row.slug,
+      status: row.status as ArticleStatus,
+      categoryId: row.category_id,
+      tags: row.tags || [],
+      author: row.author || { id: '', name: '', email: '' },
+      metadata: row.metadata || {
+        views: 0,
+        helpfulCount: 0,
+        notHelpfulCount: 0,
+        lastUpdated: row.updated_at
+      },
+      highlight: row.highlight,
+      createdAt: new Date(row.created_at),
+      updatedAt: new Date(row.updated_at),
+    }))
+
+    return { articles, total: count || 0 }
+  },
+
+  async createArticle(article: Partial<Article>): Promise<Article | null> {
+    const { data, error } = await supabase
       .from('articles')
-      .update({ status: ArticleStatus.ARCHIVED })
-      .eq('id', id);
-
-    if (error) throw error;
-  }
-
-  // Category Management
-  async getCategories(): Promise<Category[]> {
-    const { data: categories, error } = await supabase
-      .from('categories')
-      .select('*')
-      .order('order', { ascending: true });
-
-    if (error) throw error;
-    return this.buildCategoryTree(categories);
-  }
-
-  private buildCategoryTree(categories: Category[]): Category[] {
-    const categoryMap = new Map<string, Category>();
-    const rootCategories: Category[] = [];
-
-    // First pass: Create map of all categories
-    categories.forEach(category => {
-      categoryMap.set(category.id, { ...category, children: [] });
-    });
-
-    // Second pass: Build tree structure
-    categories.forEach(category => {
-      const currentCategory = categoryMap.get(category.id)!;
-      if (category.parentId) {
-        const parent = categoryMap.get(category.parentId);
-        if (parent) {
-          parent.children?.push(currentCategory);
-        }
-      } else {
-        rootCategories.push(currentCategory);
-      }
-    });
-
-    return rootCategories;
-  }
-
-  async createCategory(category: Omit<Category, 'id' | 'createdAt' | 'updatedAt'>): Promise<Category> {
-    const { data, error } = await supabase
-      .from('categories')
-      .insert([category])
+      .insert({
+        title: article.title,
+        content: article.content,
+        slug: article.slug,
+        status: article.status || 'draft',
+        category_id: article.categoryId,
+        tags: article.tags || [],
+        author: article.author || {},
+        metadata: article.metadata || {},
+      })
       .select()
-      .single();
+      .single()
 
-    if (error) throw error;
-    return data;
-  }
+    if (error || !data) {
+      console.error('Failed to create article:', error)
+      return null
+    }
+    return data
+  },
 
-  async updateCategory(id: string, updates: Partial<Category>): Promise<Category> {
-    const { data, error } = await supabase
-      .from('categories')
-      .update(updates)
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data;
-  }
-
-  async deleteCategory(id: string): Promise<void> {
+  async updateArticle(articleId: string, updates: Partial<Article>): Promise<boolean> {
     const { error } = await supabase
-      .from('categories')
-      .delete()
-      .eq('id', id);
-
-    if (error) throw error;
-  }
-
-  // Search Functionality
-  async searchArticles(query: string, filters?: SearchFilters): Promise<SearchResponse> {
-    const { data: results, error, count } = await supabase
-      .rpc('search_articles', {
-        search_query: query,
-        category_id: filters?.categoryId,
-        status: filters?.status,
-        tags: filters?.tags,
-        author_id: filters?.authorId,
-        start_date: filters?.dateRange?.start,
-        end_date: filters?.dateRange?.end
-      });
-
-    if (error) throw error;
-
-    return {
-      results,
-      total: count || 0,
-      page: 1,
-      pageSize: results.length,
-      filters: filters || {}
-    };
-  }
-
-  async getRelatedArticles(articleId: string, limit = 5): Promise<Article[]> {
-    const { data: articles, error } = await supabase
-      .rpc('get_related_articles', {
-        article_id: articleId,
-        limit_num: limit
-      });
-
-    if (error) throw error;
-    return articles;
-  }
-
-  // Version Management
-  async createVersion(version: Omit<ArticleVersion, 'id' | 'createdAt'>): Promise<ArticleVersion> {
-    const { data, error } = await supabase
-      .from('article_versions')
-      .insert([version])
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data;
-  }
-
-  async revertToVersion(articleId: string, versionId: string): Promise<Article> {
-    const { data: version, error: versionError } = await supabase
-      .from('article_versions')
-      .select('*')
-      .eq('id', versionId)
-      .single();
-
-    if (versionError) throw versionError;
-
-    const { data: article, error: articleError } = await supabase
       .from('articles')
       .update({
-        content: version.content,
-        title: version.title,
-        updatedAt: new Date()
+        title: updates.title,
+        content: updates.content,
+        tags: updates.tags,
+        status: updates.status,
+        category_id: updates.categoryId,
+        slug: updates.slug,
       })
       .eq('id', articleId)
-      .select()
-      .single();
 
-    if (articleError) throw articleError;
-    return article;
-  }
+    if (error) {
+      console.error('Failed to update article:', error)
+      return false
+    }
+    return true
+  },
 
-  // Analytics Tracking
-  async trackView(articleId: string): Promise<void> {
+  async deleteArticle(articleId: string): Promise<boolean> {
     const { error } = await supabase
-      .rpc('increment_article_views', {
-        article_id: articleId
-      });
-
-    if (error) throw error;
-  }
-
-  async getArticleMetrics(articleId: string, startDate: Date, endDate: Date): Promise<ArticleAnalytics> {
-    const { data, error } = await supabase
-      .from('article_analytics')
-      .select('*')
-      .eq('articleId', articleId)
-      .gte('periodStart', startDate)
-      .lte('periodEnd', endDate)
-      .single();
-
-    if (error) throw error;
-    return data;
-  }
-
-  async getPopularArticles(limit = 10): Promise<Article[]> {
-    const { data: articles, error } = await supabase
       .from('articles')
-      .select('*, author:agents(*), category:categories(*)')
-      .eq('status', ArticleStatus.PUBLISHED)
-      .order('metadata->views', { ascending: false })
-      .limit(limit);
+      .delete()
+      .eq('id', articleId)
 
-    if (error) throw error;
-    return articles;
-  }
+    if (error) {
+      console.error('Failed to delete article:', error)
+      return false
+    }
+    return true
+  },
 
-  // Feedback Management
-  async submitFeedback(feedback: Omit<ArticleFeedback, 'id' | 'createdAt'>): Promise<ArticleFeedback> {
+  async searchArticles(query: string): Promise<Article[]> {
     const { data, error } = await supabase
-      .from('article_feedback')
-      .insert([feedback])
-      .select()
-      .single();
+      .from('articles')
+      .select('*')
+      .ilike('title', `%${query}%`)
+      .eq('status', 'published')
+      .order('updated_at', { ascending: false })
 
-    if (error) throw error;
-    return data;
+    if (error) {
+      console.error('Failed to search articles:', error)
+      return []
+    }
+
+    return data as Article[]
+  },
+
+  // Article Interactions
+  async trackArticleView(articleId: string, userId?: string): Promise<void> {
+    const { error } = await supabase
+      .from('article_interactions')
+      .insert([{
+        articleId,
+        userId,
+        type: 'view',
+      }])
+
+    if (error) {
+      console.error('Failed to track article view:', error)
+    }
+
+    // Update view count in article metadata
+    await this._updateArticleMetadata(articleId, 'views')
+  },
+
+  async rateArticle(articleId: string, userId: string, isHelpful: boolean): Promise<void> {
+    const { error } = await supabase
+      .from('article_ratings')
+      .upsert([{
+        articleId,
+        userId,
+        isHelpful,
+      }], {
+        onConflict: 'userId,articleId'
+      })
+
+    if (error) {
+      console.error('Failed to rate article:', error)
+      return
+    }
+
+    // Update helpful/not helpful count in article metadata
+    await this._updateArticleMetadata(articleId, isHelpful ? 'helpfulCount' : 'notHelpfulCount')
+  },
+
+  // Internal method for updating article metadata
+  async _updateArticleMetadata(articleId: string, field: 'views' | 'helpfulCount' | 'notHelpfulCount'): Promise<void> {
+    const { data: article } = await supabase
+      .from('articles')
+      .select('metadata')
+      .eq('id', articleId)
+      .single()
+
+    if (article) {
+      const metadata = article.metadata || {}
+      metadata[field] = (metadata[field] || 0) + 1
+
+      await supabase
+        .from('articles')
+        .update({ metadata })
+        .eq('id', articleId)
+    }
   }
 }
-
-export const saveArticle = async (article: Article) => {
-  // TODO: Implement actual API call
-  return { data: article }
-}
-
-export const publishArticle = async (article: Article) => {
-  // TODO: Implement actual API call
-  return { data: { ...article, status: ArticleStatus.PUBLISHED } }
-} 

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Article, ArticleStatus, Category } from '@/types/knowledge';
-import { KnowledgeService } from '@/lib/services/knowledge-service';
+import { knowledgeService } from '@/lib/services';
 import { Button } from '@/components/ui/button';
 import {
   Card,

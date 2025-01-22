@@ -1,248 +1,267 @@
-import type { TicketListItem } from '@/types/ticket'
-import { TicketPriority } from '@/types/ticket'
-import { createBrowserClient } from '@supabase/ssr'
+import { supabase } from '@/lib/supabase'
+import type { Ticket, TicketListItem, TicketStatus, TicketPriority } from '@/types/ticket'
+import type { SearchRequest } from '@/types/search'
 
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
-
-async function getAuthHeaders() {
-  const { data: { session }, error } = await supabase.auth.getSession()
-  console.log('Auth session check:', { session, error }) // Debug log
-  
-  if (error) {
-    console.error('Session error:', error)
-    throw new Error('Authentication error: ' + error.message)
-  }
-  
-  if (!session?.access_token) {
-    console.error('No access token found in session')
-    throw new Error('Not authenticated')
-  }
-
-  // Get the raw token
-  const token = await supabase.auth.getSession().then(({ data: { session } }) => session?.access_token)
-  if (!token) {
-    throw new Error('No token available')
-  }
-
-  console.log('Got auth token:', token.slice(0, 10) + '...') // Debug log - only show first 10 chars
-  return {
-    'Authorization': `Bearer ${token}`,
-    'Content-Type': 'application/json'
-  }
-}
-
-interface FetchTicketsParams {
+// Individual function exports
+export const fetchTickets = async (options?: {
   filters?: {
     status?: string[]
     priority?: string[]
     search?: string
     dateFrom?: string
     dateTo?: string
-  }
+  },
   pagination?: {
     page: number
     pageSize: number
-  }
+  },
   sort?: {
     field: string
     direction: 'asc' | 'desc'
   }
+}): Promise<{ data: TicketListItem[], total: number }> => {
+  return ticketService.fetchTickets(options)
 }
 
-interface FetchTicketsResponse {
-  data: TicketListItem[]
-  total: number
-}
-
-export async function fetchTickets(params: FetchTicketsParams): Promise<FetchTicketsResponse> {
-  const queryParams = new URLSearchParams()
-
-  // Add filters
-  if (params.filters?.status?.length) {
-    queryParams.append('status', params.filters.status.join(','))
-  }
-  if (params.filters?.priority?.length) {
-    queryParams.append('priority', params.filters.priority.join(','))
-  }
-  if (params.filters?.search) {
-    queryParams.append('search', params.filters.search)
-  }
-  if (params.filters?.dateFrom) {
-    queryParams.append('dateFrom', params.filters.dateFrom)
-  }
-  if (params.filters?.dateTo) {
-    queryParams.append('dateTo', params.filters.dateTo)
-  }
-
-  // Add pagination
-  if (params.pagination) {
-    queryParams.append('page', params.pagination.page.toString())
-    queryParams.append('pageSize', params.pagination.pageSize.toString())
-  }
-
-  // Add sorting
-  if (params.sort) {
-    queryParams.append('sortField', params.sort.field)
-    queryParams.append('sortDirection', params.sort.direction)
-  }
-
-  const headers = await getAuthHeaders()
-  const response = await fetch(`/api/tickets?${queryParams.toString()}`, {
-    credentials: 'include',
-    headers
-  })
-  if (!response.ok) {
-    throw new Error('Failed to fetch tickets')
-  }
-
-  return response.json()
-}
-
-export interface CreateTicketData {
+export const createTicket = async (payload: {
   title: string
   description: string
   priority: TicketPriority
   customerId: string
   assigneeId?: string
   tags?: string[]
-  metadata?: Record<string, unknown>
+  metadata?: Record<string, any>
+}): Promise<any> => {
+  return ticketService.createTicket(payload)
 }
 
-export interface Ticket extends TicketListItem {
-  description: string
-  metadata: Record<string, unknown>
-  comments: Array<{
-    id: string
-    content: string
-    authorType: 'customer' | 'agent'
-    authorId: string
-    createdAt: string
-    updatedAt: string
-    isInternal?: boolean
-    user: {
-      name: string
-      email: string
+export const updateTicket = async (ticketId: string, updates: Record<string, any>): Promise<any> => {
+  return ticketService.updateTicket(ticketId, updates)
+}
+
+export const getTicket = async (ticketId: string): Promise<Ticket | null> => {
+  return ticketService.getTicket(ticketId)
+}
+
+export const updateTicketStatus = async (ticketId: string, newStatus: TicketStatus, reason?: string): Promise<void> => {
+  return ticketService.updateTicketStatus(ticketId, newStatus, reason)
+}
+
+// Main service object
+export const ticketService = {
+  // Used in TicketList, SearchTicketsPage, etc.
+  async fetchTickets(options?: {
+    filters?: {
+      status?: string[]
+      priority?: string[]
+      search?: string
+      dateFrom?: string
+      dateTo?: string
+    },
+    pagination?: {
+      page: number
+      pageSize: number
+    },
+    sort?: {
+      field: string
+      direction: 'asc' | 'desc'
     }
-  }>
-  assignee?: {
-    id: string
-    name: string
-    email: string
-    avatar_url?: string
-    role: 'agent' | 'admin'
-  }
-  customer: {
-    id: string
-    name: string
-    email: string
-    avatar_url?: string
-    company?: string
-  }
-  isArchived: boolean
-}
+  }): Promise<{ data: TicketListItem[], total: number }> {
+    const page = options?.pagination?.page || 1
+    const pageSize = options?.pagination?.pageSize || 10
+    const sortField = options?.sort?.field === 'createdAt' ? 'created_at' : options?.sort?.field || 'created_at'
+    const sortDirection = options?.sort?.direction || 'desc'
 
-interface ValidationError {
-  path: string[];
-  message: string;
-}
+    let query = supabase
+      .from('tickets')
+      .select('*, customer:customers(*), assignee:agents!tickets_assignee_id_fkey(*)', { count: 'exact' })
 
-export async function createTicket(data: CreateTicketData): Promise<Ticket> {
-  const headers = await getAuthHeaders()
-  const response = await fetch('/api/tickets', {
-    method: 'POST',
-    credentials: 'include',
-    headers,
-    body: JSON.stringify(data),
-  })
-
-  if (!response.ok) {
-    const error = await response.json()
-    if (response.status === 400 && error.details) {
-      // Format validation errors
-      const messages = error.details.map((err: ValidationError) => 
-        `${err.path.join('.')}: ${err.message}`
-      ).join(', ')
-      throw new Error(`Validation failed: ${messages}`)
+    // Apply filters
+    if (options?.filters?.status?.length) {
+      query = query.in('status', options.filters.status)
     }
-    throw new Error(error.error || 'Failed to create ticket')
-  }
+    if (options?.filters?.priority?.length) {
+      query = query.in('priority', options.filters.priority)
+    }
+    if (options?.filters?.search) {
+      query = query.ilike('title', `%${options.filters.search}%`)
+    }
+    if (options?.filters?.dateFrom) {
+      query = query.gte('created_at', options.filters.dateFrom)
+    }
+    if (options?.filters?.dateTo) {
+      query = query.lte('created_at', options.filters.dateTo)
+    }
 
-  const result = await response.json()
-  return result.data
+    // Sorting
+    query = query.order(sortField, { ascending: sortDirection === 'asc' })
+
+    const from = (page - 1) * pageSize
+    const to = from + pageSize - 1
+    query = query.range(from, to)
+
+    const { data, count, error } = await query
+    if (error) {
+      console.error('Failed to fetch tickets:', error)
+      return { data: [], total: 0 }
+    }
+
+    const result = (data || []).map((ticket: any) => ({
+      id: ticket.id,
+      title: ticket.title,
+      status: ticket.status,
+      priority: ticket.priority,
+      type: ticket.type,
+      createdAt: ticket.created_at,
+      updatedAt: ticket.updated_at,
+      customer: {
+        id: ticket.customer?.id || '',
+        name: ticket.customer?.name || '',
+        email: ticket.customer?.email || ''
+      },
+      assignee: ticket.assignee ? {
+        id: ticket.assignee.id,
+        name: ticket.assignee.name,
+        email: ticket.assignee.email,
+        role: ticket.assignee.role
+      } : undefined,
+      tags: ticket.metadata?.tags || [],
+    })) as TicketListItem[]
+
+    return { data: result, total: count || 0 }
+  },
+
+  async createTicket(payload: {
+    title: string
+    description: string
+    priority: TicketPriority
+    customerId: string
+    assigneeId?: string
+    tags?: string[]
+    metadata?: Record<string, any>
+  }): Promise<any> {
+    // Insert ticket
+    const { data, error } = await supabase
+      .from('tickets')
+      .insert({
+        title: payload.title,
+        description: payload.description,
+        status: 'open',
+        priority: payload.priority,
+        customer_id: payload.customerId,
+        assignee_id: payload.assigneeId || null,
+        metadata: {
+          tags: payload.tags || [],
+          ...payload.metadata
+        },
+        type: 'question',
+        source: 'web',
+      })
+      .select()
+      .single()
+
+    if (error || !data) {
+      console.error('Failed to create ticket:', error)
+      throw new Error(error?.message || 'Failed to create ticket')
+    }
+
+    return data
+  },
+
+  async updateTicket(ticketId: string, updates: Record<string, any>): Promise<any> {
+    const { data, error } = await supabase
+      .from('tickets')
+      .update(updates)
+      .eq('id', ticketId)
+      .select()
+      .single()
+
+    if (error || !data) {
+      console.error('Failed to update ticket:', error)
+      throw new Error(error?.message || 'Failed to update ticket')
+    }
+
+    return data
+  },
+
+  async getTicket(ticketId: string): Promise<Ticket | null> {
+    const { data, error } = await supabase
+      .from('tickets')
+      .select(`
+        *,
+        customer:customers(*),
+        assignee:agents!tickets_assignee_id_fkey(*)
+      `)
+      .eq('id', ticketId)
+      .single()
+
+    if (error || !data) {
+      console.error('Failed to get ticket:', error)
+      return null
+    }
+
+    const result: Ticket = {
+      id: data.id,
+      title: data.title,
+      description: data.description,
+      status: data.status,
+      priority: data.priority,
+      type: data.type,
+      isArchived: data.is_archived,
+      metadata: data.metadata || {
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+        tags: [],
+        customFields: {}
+      },
+      customerId: data.customer_id,
+      assigneeId: data.assignee_id || undefined,
+      customer: data.customer
+        ? {
+            id: data.customer.id,
+            name: data.customer.name,
+            email: data.customer.email,
+            role: 'customer',
+            isActive: true,
+            createdAt: data.customer.created_at,
+            updatedAt: data.customer.updated_at,
+          }
+        : {
+            id: '',
+            name: '',
+            email: '',
+            role: 'customer',
+            isActive: true,
+            createdAt: '',
+            updatedAt: '',
+          },
+      assignee: data.assignee
+        ? {
+            id: data.assignee.id,
+            name: data.assignee.name,
+            email: data.assignee.email,
+            role: data.assignee.role,
+            isActive: true,
+            createdAt: data.assignee.created_at,
+            updatedAt: data.assignee.updated_at
+          }
+        : undefined,
+      comments: [], // We rely on /comments API or messages table
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+      resolvedAt: data.resolved_at || undefined,
+    }
+
+    return result
+  },
+
+  async updateTicketStatus(ticketId: string, newStatus: TicketStatus, reason?: string): Promise<void> {
+    try {
+      await this.updateTicket(ticketId, { status: newStatus })
+      // Optionally store reason in an audit log
+    } catch (error) {
+      console.error('Failed to update ticket status:', error)
+      throw error
+    }
+  },
 }
-
-export async function getTicket(id: string): Promise<Ticket> {
-  const headers = await getAuthHeaders()
-  const url = `/api/tickets/${id}`
-  console.log('Fetching ticket:', { url, headers })
-  
-  const response = await fetch(url, {
-    credentials: 'include',
-    headers
-  })
-
-  if (!response.ok) {
-    const error = await response.json()
-    throw new Error(error.error || 'Failed to fetch ticket')
-  }
-
-  const result = await response.json()
-  return result.data
-}
-
-export async function updateTicket(id: string, data: Partial<Ticket>): Promise<Ticket> {
-  const headers = await getAuthHeaders()
-  const response = await fetch(`/api/tickets/${id}`, {
-    method: 'PATCH',
-    credentials: 'include',
-    headers,
-    body: JSON.stringify(data),
-  })
-
-  if (!response.ok) {
-    const error = await response.json()
-    throw new Error(error.error || 'Failed to update ticket')
-  }
-
-  const result = await response.json()
-  return result.data
-}
-
-export async function addComment(ticketId: string, data: { content: string; isInternal: boolean }): Promise<Ticket['comments'][0]> {
-  const headers = await getAuthHeaders()
-  const response = await fetch(`/api/tickets/${ticketId}/comments`, {
-    method: 'POST',
-    credentials: 'include',
-    headers,
-    body: JSON.stringify(data),
-  })
-
-  if (!response.ok) {
-    const error = await response.json()
-    throw new Error(error.error || 'Failed to add comment')
-  }
-
-  const result = await response.json()
-  return result.data
-}
-
-export async function updateTicketStatus(ticketId: string, status: string, reason?: string): Promise<Ticket> {
-  const headers = await getAuthHeaders()
-  const response = await fetch(`/api/tickets/${ticketId}/status`, {
-    method: 'POST',
-    credentials: 'include',
-    headers,
-    body: JSON.stringify({ status, reason }),
-  })
-
-  if (!response.ok) {
-    const error = await response.json()
-    throw new Error(error.error || 'Failed to update status')
-  }
-
-  const result = await response.json()
-  return result.data
-} 

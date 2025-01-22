@@ -7,7 +7,7 @@ import { Command, CommandInput, CommandEmpty, CommandGroup, CommandItem } from '
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import type { Tag, TagSuggestion } from '@/types/tag'
-import { tagService } from '@/lib/services/tag-service'
+import { tagService } from '@/lib/services'
 
 interface TagManagerProps {
   ticketId: string

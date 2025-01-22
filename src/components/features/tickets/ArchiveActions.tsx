@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import type { Ticket, Agent, TicketSnapshot } from '@/types/ticket'
-import { archiveService } from '@/lib/services/archive-service'
+import { archiveService } from '@/lib/services'
 
 interface ArchiveActionsProps {
   ticket: Ticket

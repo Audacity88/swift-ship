@@ -19,8 +19,13 @@ import {
 } from '@/components/features/tickets/PropertyDropdowns'
 import { StatusTransition } from '@/components/features/tickets/StatusTransition'
 import { useSupabase } from '@/app/providers'
-import { getTicket, updateTicket, updateTicketStatus } from '@/lib/services/ticket-service'
-import type { Ticket as TicketData } from '@/lib/services/ticket-service'
+import { 
+  getTicket, 
+  updateTicket, 
+  updateTicketStatus, 
+  slaService,
+  type Ticket as TicketData 
+} from '@/lib/services'
 import { TicketConversation } from '@/components/features/tickets/TicketConversation'
 
 interface Tag {
@@ -44,6 +49,7 @@ export default function TicketPage() {
   const [error, setError] = useState<string | null>(null)
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [slaStatus, setSlaStatus] = useState<any>(null)
 
   // Dropdown visibility states
   const [showTypeDropdown, setShowTypeDropdown] = useState(false)
@@ -76,6 +82,9 @@ export default function TicketPage() {
       
       try {
         const ticketData = await getTicket(ticketId)
+        if (!ticketData) {
+          throw new Error('Ticket not found')
+        }
         setTicket(ticketData)
         setSelectedType((ticketData.metadata?.type as TicketType) || 'problem')
         setSelectedPriority(ticketData.priority)
@@ -93,6 +102,26 @@ export default function TicketPage() {
       void fetchTicket()
     }
   }, [ticketId, isAuthenticated])
+
+  // Add SLA status fetch
+  useEffect(() => {
+    const fetchSlaStatus = async () => {
+      if (!ticket) return
+      try {
+        const status = await slaService.getTicketSLA(ticket.id)
+        setSlaStatus(status)
+      } catch (error) {
+        console.error('Error fetching SLA status:', error)
+      }
+    }
+
+    if (ticket) {
+      void fetchSlaStatus()
+      // Refresh SLA status every minute
+      const interval = setInterval(fetchSlaStatus, 60000)
+      return () => clearInterval(interval)
+    }
+  }, [ticket])
 
   // Show loading state while checking auth
   if (isAuthenticated === null) {
@@ -217,6 +246,29 @@ export default function TicketPage() {
     }
   }
 
+  // Add SLA pause/resume handlers
+  const handlePauseSla = async (reason: string) => {
+    if (!ticket) return
+    try {
+      await slaService.pauseSLA(ticket.id, reason)
+      const status = await slaService.getTicketSLA(ticket.id)
+      setSlaStatus(status)
+    } catch (error) {
+      console.error('Error pausing SLA:', error)
+    }
+  }
+
+  const handleResumeSla = async () => {
+    if (!ticket) return
+    try {
+      await slaService.resumeSLA(ticket.id)
+      const status = await slaService.getTicketSLA(ticket.id)
+      setSlaStatus(status)
+    } catch (error) {
+      console.error('Error resuming SLA:', error)
+    }
+  }
+
   return (
     <div className="flex h-[calc(100vh-4rem)]">
       {/* Main Ticket Content */}
@@ -230,6 +282,32 @@ export default function TicketPage() {
               <div className="mt-1 text-sm text-gray-500">
                 Created {new Date(ticket.createdAt).toLocaleString()}
               </div>
+              {/* Add SLA Status Display */}
+              {slaStatus && (
+                <div className="mt-2 flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-gray-500" />
+                  <div className="text-sm">
+                    <span className={`font-medium ${slaStatus.isBreached ? 'text-red-600' : 'text-green-600'}`}>
+                      {slaStatus.name}
+                    </span>
+                    {slaStatus.isPaused ? (
+                      <button
+                        onClick={handleResumeSla}
+                        className="ml-2 text-blue-600 hover:text-blue-800"
+                      >
+                        Resume
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handlePauseSla('Manual pause')}
+                        className="ml-2 text-blue-600 hover:text-blue-800"
+                      >
+                        Pause
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-4">
               <StatusTransition

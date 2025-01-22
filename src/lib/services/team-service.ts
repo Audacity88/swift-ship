@@ -1,114 +1,261 @@
-import { createClient } from '@supabase/supabase-js';
-import { 
-  Team, TeamCreationData, TeamUpdateData, TeamMember, TeamMemberUpdate,
-  WeeklySchedule, TeamSkillSet, TeamMetrics
-} from '@/types/team';
-import { 
-  TeamPerformanceMetrics, AgentPerformanceMetrics, MetricsQuery,
-  MetricsPeriod
-} from '@/types/metrics';
-import { UserRole } from '@/types/role';
+import { supabase } from '@/lib/supabase'
+import type { Team, TeamCreationData, TeamUpdateData, TeamMember } from '@/types/team'
+import { UserRole } from '@/types/role'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-
-export class TeamService {
-  // Team CRUD Operations
+export const teamService = {
   async getAllTeams(): Promise<Team[]> {
-    const { data, error } = await supabase
-      .from('teams')
-      .select('*')
-      .eq('isActive', true);
-
-    if (error) throw error;
-    return data || [];
-  }
-
-  async getTeamById(teamId: string): Promise<Team | null> {
+    // Matches usage in TeamList to show teams
     const { data, error } = await supabase
       .from('teams')
       .select(`
-        *,
-        members:team_members(*)
+        id,
+        name,
+        description,
+        schedule,
+        skills,
+        metrics,
+        created_at,
+        updated_at,
+        is_active,
+        members:team_members (
+          team_id,
+          user_id,
+          role,
+          joined_at,
+          skills,
+          schedule
+        )
       `)
-      .eq('id', teamId)
-      .single();
 
-    if (error || !data) return null;
-    return this.mapDatabaseTeamToTeam(data);
-  }
+    if (error) {
+      console.error('Failed to get all teams:', error)
+      return []
+    }
 
-  async createTeam(teamData: TeamCreationData): Promise<Team | null> {
+    // Transform data to match the Team interface
+    return (data || []).map((t: any) => ({
+      id: t.id,
+      name: t.name,
+      description: t.description,
+      members: (t.members || []).map((m: any) => ({
+        teamId: m.team_id,
+        userId: m.user_id,
+        role: m.role as UserRole,
+        schedule: m.schedule || {},
+        skills: m.skills || [],
+        joinedAt: new Date(m.joined_at),
+      })),
+      schedule: t.schedule || {},
+      skills: t.skills || [],
+      metrics: t.metrics || {
+        averageResponseTime: 0,
+        averageResolutionTime: 0,
+        openTickets: 0,
+        resolvedTickets: 0,
+        customerSatisfactionScore: 0,
+        updatedAt: new Date(),
+      },
+      createdAt: t.created_at,
+      updatedAt: t.updated_at,
+      isActive: t.is_active,
+    }))
+  },
+
+  async getTeamById(id: string): Promise<Team | null> {
+    const { data, error } = await supabase
+      .from('teams')
+      .select(`
+        id,
+        name,
+        description,
+        schedule,
+        skills,
+        metrics,
+        created_at,
+        updated_at,
+        is_active,
+        members:team_members (
+          team_id,
+          user_id,
+          role,
+          joined_at,
+          skills,
+          schedule
+        )
+      `)
+      .eq('id', id)
+      .single()
+
+    if (error || !data) {
+      console.error('Failed to get team by id:', error)
+      return null
+    }
+
+    return {
+      id: data.id,
+      name: data.name,
+      description: data.description,
+      members: (data.members || []).map((m: any) => ({
+        teamId: m.team_id,
+        userId: m.user_id,
+        role: m.role as UserRole,
+        schedule: m.schedule || {},
+        skills: m.skills || [],
+        joinedAt: new Date(m.joined_at),
+      })),
+      schedule: data.schedule || {},
+      skills: data.skills || [],
+      metrics: data.metrics || {
+        averageResponseTime: 0,
+        averageResolutionTime: 0,
+        openTickets: 0,
+        resolvedTickets: 0,
+        customerSatisfactionScore: 0,
+        updatedAt: new Date(),
+      },
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+      isActive: data.is_active,
+    }
+  },
+
+  async createTeam(payload: TeamCreationData): Promise<Team | null> {
+    // Insert a new team record
     const { data, error } = await supabase
       .from('teams')
       .insert({
-        name: teamData.name,
-        description: teamData.description,
-        schedule: teamData.schedule,
-        skills: teamData.skills || [],
-        isActive: true,
+        name: payload.name,
+        description: payload.description || '',
+        schedule: payload.schedule,
+        skills: payload.skills || [],
+        is_active: true,
       })
       .select()
-      .single();
+      .single()
 
-    if (error || !data) return null;
-    return this.mapDatabaseTeamToTeam(data);
-  }
+    if (error || !data) {
+      console.error('Failed to create team:', error)
+      return null
+    }
 
-  async updateTeam(teamData: TeamUpdateData): Promise<boolean> {
+    // Return the newly created team
+    return {
+      id: data.id,
+      name: data.name,
+      description: data.description,
+      members: [],
+      schedule: data.schedule || {},
+      skills: data.skills || [],
+      metrics: {
+        averageResponseTime: 0,
+        averageResolutionTime: 0,
+        openTickets: 0,
+        resolvedTickets: 0,
+        customerSatisfactionScore: 0,
+        updatedAt: new Date(),
+      },
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+      isActive: data.is_active,
+    }
+  },
+
+  async updateTeam(payload: TeamUpdateData): Promise<boolean> {
+    // Update an existing team
     const { error } = await supabase
       .from('teams')
       .update({
-        name: teamData.name,
-        description: teamData.description,
-        schedule: teamData.schedule,
-        skills: teamData.skills,
-        isActive: teamData.isActive,
-        updatedAt: new Date().toISOString(),
+        name: payload.name,
+        description: payload.description,
+        is_active: payload.isActive,
       })
-      .eq('id', teamData.id);
+      .eq('id', payload.id)
 
-    return !error;
-  }
+    if (error) {
+      console.error('Failed to update team:', error)
+      return false
+    }
+    return true
+  },
 
   async deleteTeam(teamId: string): Promise<boolean> {
+    // Delete a team record
     const { error } = await supabase
       .from('teams')
-      .update({ isActive: false })
-      .eq('id', teamId);
+      .delete()
+      .eq('id', teamId)
 
-    return !error;
-  }
+    if (error) {
+      console.error('Failed to delete team:', error)
+      return false
+    }
+    return true
+  },
 
-  // Member Management
   async getTeamMembers(teamId: string): Promise<TeamMember[]> {
+    // Return a list of team_members
     const { data, error } = await supabase
       .from('team_members')
-      .select('*')
-      .eq('teamId', teamId);
+      .select(`
+        team_id,
+        user_id,
+        role,
+        schedule,
+        skills,
+        joined_at
+      `)
+      .eq('team_id', teamId)
 
-    if (error) throw error;
-    return data || [];
-  }
+    if (error) {
+      console.error('Failed to get team members:', error)
+      return []
+    }
+
+    return (data || []).map((m: any) => ({
+      teamId: m.team_id,
+      userId: m.user_id,
+      role: m.role as UserRole,
+      schedule: m.schedule || {},
+      skills: m.skills || [],
+      joinedAt: new Date(m.joined_at),
+    }))
+  },
 
   async addTeamMember(member: TeamMember): Promise<boolean> {
+    // Insert a new team member
     const { error } = await supabase
       .from('team_members')
       .insert({
-        teamId: member.teamId,
-        userId: member.userId,
+        team_id: member.teamId,
+        user_id: member.userId,
         role: member.role,
         schedule: member.schedule,
         skills: member.skills,
-        joinedAt: new Date().toISOString(),
-      });
+        joined_at: new Date().toISOString(),
+      })
 
-    return !error;
-  }
+    if (error) {
+      console.error('Failed to add team member:', error)
+      return false
+    }
+    return true
+  },
 
-  async updateTeamMember(update: TeamMemberUpdate): Promise<boolean> {
+  async removeTeamMember(teamId: string, userId: string): Promise<boolean> {
+    const { error } = await supabase
+      .from('team_members')
+      .delete()
+      .eq('team_id', teamId)
+      .eq('user_id', userId)
+
+    if (error) {
+      console.error('Failed to remove team member:', error)
+      return false
+    }
+    return true
+  },
+
+  async updateTeamMember(update: { teamId: string; userId: string; role?: UserRole; schedule?: any; skills?: string[] }): Promise<boolean> {
     const { error } = await supabase
       .from('team_members')
       .update({
@@ -116,125 +263,56 @@ export class TeamService {
         schedule: update.schedule,
         skills: update.skills,
       })
-      .match({ teamId: update.teamId, userId: update.userId });
+      .eq('team_id', update.teamId)
+      .eq('user_id', update.userId)
 
-    return !error;
-  }
+    if (error) {
+      console.error('Failed to update team member:', error)
+      return false
+    }
+    return true
+  },
 
-  async removeTeamMember(teamId: string, userId: string): Promise<boolean> {
-    const { error } = await supabase
-      .from('team_members')
-      .delete()
-      .match({ teamId, userId });
-
-    return !error;
-  }
-
-  // Schedule Management
-  async getTeamSchedule(teamId: string): Promise<WeeklySchedule | null> {
+  async getTeamSchedule(teamId: string): Promise<any> {
+    // In this example, we store schedule on the teams table or in a separate table. We'll assume it's on `teams`.
     const { data, error } = await supabase
       .from('teams')
-      .select('schedule')
+      .select('schedule, timezone')
       .eq('id', teamId)
-      .single();
+      .single()
 
-    if (error || !data) return null;
-    return data.schedule;
-  }
+    if (error || !data) {
+      console.error('Failed to get team schedule:', error)
+      return {}
+    }
+    return {
+      ...data.schedule,
+      timezone: data.timezone || 'UTC',
+    }
+  },
 
-  async updateTeamSchedule(teamId: string, schedule: WeeklySchedule): Promise<boolean> {
+  async updateTeamSchedule(teamId: string, schedule: any): Promise<boolean> {
+    // Update schedule field in teams table
     const { error } = await supabase
       .from('teams')
-      .update({ schedule })
-      .eq('id', teamId);
+      .update({
+        schedule: {
+          monday: schedule.monday,
+          tuesday: schedule.tuesday,
+          wednesday: schedule.wednesday,
+          thursday: schedule.thursday,
+          friday: schedule.friday,
+          saturday: schedule.saturday,
+          sunday: schedule.sunday,
+        },
+        timezone: schedule.timezone,
+      })
+      .eq('id', teamId)
 
-    return !error;
-  }
-
-  // Performance Tracking & Metrics
-  async getTeamMetrics(teamId: string, query: MetricsQuery): Promise<TeamPerformanceMetrics | null> {
-    const { data, error } = await supabase
-      .from('team_metrics')
-      .select('*')
-      .eq('teamId', teamId)
-      .gte('period.start', query.startDate?.toISOString())
-      .lte('period.end', query.endDate?.toISOString())
-      .order('period.start', { ascending: false })
-      .limit(1)
-      .single();
-
-    if (error || !data) return null;
-    return data;
-  }
-
-  async getAgentMetrics(teamId: string, userId: string, query: MetricsQuery): Promise<AgentPerformanceMetrics | null> {
-    const { data, error } = await supabase
-      .from('agent_metrics')
-      .select('*')
-      .match({ teamId, userId })
-      .gte('period.start', query.startDate?.toISOString())
-      .lte('period.end', query.endDate?.toISOString())
-      .order('period.start', { ascending: false })
-      .limit(1)
-      .single();
-
-    if (error || !data) return null;
-    return data;
-  }
-
-  async updateTeamMetrics(metrics: TeamPerformanceMetrics): Promise<boolean> {
-    const { error } = await supabase
-      .from('team_metrics')
-      .upsert({
-        ...metrics,
-        updatedAt: new Date().toISOString(),
-      });
-
-    return !error;
-  }
-
-  // Team Availability
-  async getAvailableAgents(teamId: string): Promise<TeamMember[]> {
-    const now = new Date();
-    const dayOfWeek = now.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
-    const currentTime = now.toLocaleTimeString('en-US', { hour12: false });
-
-    const { data, error } = await supabase
-      .from('team_members')
-      .select('*')
-      .eq('teamId', teamId)
-      .contains('schedule', {
-        [dayOfWeek]: {
-          start: { $lte: currentTime },
-          end: { $gt: currentTime }
-        }
-      });
-
-    if (error) throw error;
-    return data || [];
-  }
-
-  async isTeamAvailable(teamId: string): Promise<boolean> {
-    const availableAgents = await this.getAvailableAgents(teamId);
-    return availableAgents.length > 0;
-  }
-
-  // Helper Methods
-  private mapDatabaseTeamToTeam(dbTeam: any): Team {
-    return {
-      id: dbTeam.id,
-      name: dbTeam.name,
-      description: dbTeam.description,
-      members: dbTeam.members || [],
-      schedule: dbTeam.schedule,
-      skills: dbTeam.skills || [],
-      metrics: dbTeam.metrics,
-      createdAt: new Date(dbTeam.createdAt),
-      updatedAt: new Date(dbTeam.updatedAt),
-      isActive: dbTeam.isActive,
-    };
-  }
+    if (error) {
+      console.error('Failed to update team schedule:', error)
+      return false
+    }
+    return true
+  },
 }
-
-// Export singleton instance
-export const teamService = new TeamService(); 

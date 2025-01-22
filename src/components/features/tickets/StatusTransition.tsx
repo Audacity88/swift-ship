@@ -31,6 +31,7 @@ import {
 } from '@/components/ui/popover'
 import { Textarea } from '@/components/ui/textarea'
 import { TicketStatus } from '@/types/enums'
+import { statusWorkflow } from '@/lib/services'
 
 interface StatusTransition {
   status: TicketStatus
@@ -67,9 +68,8 @@ export function StatusTransition({
     const loadTransitions = async () => {
       try {
         setIsLoading(true)
-        const response = await fetch(`/api/tickets/${ticketId}/status`)
-        const data = await response.json()
-        setAvailableTransitions(data.data || [])
+        const transitions = await statusWorkflow.getAvailableTransitions(ticketId, currentStatus)
+        setAvailableTransitions(transitions)
       } catch (error) {
         console.error('Failed to load status transitions:', error)
         setError('Failed to load available status transitions')
@@ -107,14 +107,20 @@ export function StatusTransition({
     setError(null)
 
     try {
+      // Validate transition first
+      const isValid = await statusWorkflow.validateTransition(ticketId, currentStatus, selectedStatus)
+      if (!isValid) {
+        throw new Error('Invalid status transition')
+      }
+
       await onStatusChange(selectedStatus, reason.trim() || undefined)
       setIsDialogOpen(false)
       setSelectedStatus(null)
       setReason('')
 
       // Refresh transitions
-      const { data: transitions } = await fetch(`/api/tickets/${ticketId}/status`).then(res => res.json())
-      setAvailableTransitions(transitions.data || [])
+      const transitions = await statusWorkflow.getAvailableTransitions(ticketId, selectedStatus)
+      setAvailableTransitions(transitions)
     } catch (error) {
       console.error('Failed to update status:', error)
       setError(error instanceof Error ? error.message : 'Failed to update status')

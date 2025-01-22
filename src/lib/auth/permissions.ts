@@ -1,6 +1,6 @@
-import { isAgentRole, Permission, RoleType } from '@/types/role';
+import { roleService } from '@/lib/services'
 import { createClient } from '@supabase/supabase-js';
-import { roleService } from '@/lib/services/role-service';
+import { RoleType, type Permission } from '@/types/role'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
