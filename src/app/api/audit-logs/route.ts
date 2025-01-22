@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
-import type { AuditLogFilters, AuditLogSort, AuditLogPagination } from '@/types/audit'
+import type { AuditLogFilters, AuditLogSort } from '@/types/audit'
 
 interface AuditLogRequest {
   filters?: AuditLogFilters
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
     // Build base query
     let query = supabase
       .from('audit_logs')
-      .select('*, actor:actor_id(*)', { count: 'exact' })
+      .select('*', { count: 'exact' })
 
     // Apply filters
     if (filters.entity_type?.length) {
@@ -92,10 +92,11 @@ export async function POST(request: Request) {
         })
         break
       case 'actor.name':
-        // Note: This assumes the actor's name is in the joined table
-        query = query.order('actor(name)', {
-          ascending: sort.direction === 'asc',
-          nullsFirst: false
+        // Sort by actor_type first, then actor_id since we can't sort on joined fields
+        query = query.order('actor_type', {
+          ascending: sort.direction === 'asc'
+        }).order('actor_id', {
+          ascending: sort.direction === 'asc'
         })
         break
     }
@@ -106,22 +107,44 @@ export async function POST(request: Request) {
     query = query.range(from, to)
 
     // Execute query
-    const { data, error, count } = await query
-
+    const { data: logs, error, count } = await query
     if (error) throw error
 
-    // Transform response
-    const logs = data.map(log => ({
-      ...log,
-      actor: {
-        id: log.actor_id,
-        type: log.actor_type,
-        ...(log.actor || {})
+    // Fetch actor details in parallel for non-system actors
+    const actorPromises = logs.map(async (log) => {
+      if (log.actor_type === 'system') {
+        return {
+          ...log,
+          actor: {
+            id: log.actor_id,
+            type: 'system',
+            name: 'System',
+            email: null
+          }
+        }
       }
-    }))
+
+      const table = log.actor_type === 'agent' ? 'agents' : 'customers'
+      const { data: actor } = await supabase
+        .from(table)
+        .select('id, name, email, avatar')
+        .eq('id', log.actor_id)
+        .single()
+
+      return {
+        ...log,
+        actor: {
+          id: log.actor_id,
+          type: log.actor_type,
+          ...(actor || {})
+        }
+      }
+    })
+
+    const enrichedLogs = await Promise.all(actorPromises)
 
     return NextResponse.json({
-      data: logs,
+      data: enrichedLogs,
       pagination: {
         page: pagination.page,
         per_page: pagination.per_page,

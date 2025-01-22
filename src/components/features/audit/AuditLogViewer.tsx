@@ -49,16 +49,16 @@ export const AuditLogViewer = ({ ticketId }: AuditLogViewerProps) => {
     const loadSnapshots = async () => {
       try {
         const logs = await auditService.getAuditLogs()
-        const ticketLogs = logs.filter(log => log.entityId === ticketId && log.entityType === 'ticket')
+        const ticketLogs = logs.filter(log => log.entity_id === ticketId && log.entity_type === 'ticket')
         setSnapshots(ticketLogs.map(log => ({
           id: log.id,
-          ticketId: log.entityId,
-          snapshotAt: log.createdAt,
+          ticketId: log.entity_id,
+          snapshotAt: log.created_at,
           data: log.changes as TicketSnapshotData,
-          reason: log.reason,
+          reason: log.change_reason,
           triggeredBy: {
-            name: log.actorName || 'Unknown',
-            avatar: log.actorAvatar
+            name: log.actor_name || 'Unknown',
+            avatar: log.actor_avatar
           }
         })))
       } catch (error) {

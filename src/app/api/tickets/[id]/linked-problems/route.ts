@@ -10,7 +10,7 @@ const supabase = createClient<Database>(
 )
 
 // Define types for the ticket relationship response
-type TicketRelationship = {
+interface TicketRelationship {
   related_ticket_id: string
   relationship_type: string
   related_ticket: {
@@ -20,7 +20,7 @@ type TicketRelationship = {
     priority: string
     created_at: string
     updated_at: string
-    metadata: Record<string, any>
+    metadata: Record<string, unknown>
   }
 }
 
@@ -48,7 +48,7 @@ export async function GET(
       .select(`
         related_ticket_id,
         relationship_type,
-        related_ticket:tickets!related_ticket_id (
+        related_ticket:tickets!ticket_relationships_related_ticket_id_fkey (
           id,
           title,
           status,
@@ -60,27 +60,17 @@ export async function GET(
       `)
       .eq('ticket_id', id)
       .eq('relationship_type', 'problem')
+      .returns<TicketRelationship[]>()
 
     if (linksError) {
-      console.error('Error fetching ticket links:', linksError)
+      console.error('Error fetching linked problems:', linksError)
       return NextResponse.json(
         { error: 'Failed to fetch linked problems' },
         { status: 500 }
       )
     }
 
-    // Map the results to a cleaner format
-    const problems = (linkedProblems as TicketRelationship[] | null)?.map(link => ({
-      id: link.related_ticket.id,
-      title: link.related_ticket.title,
-      status: link.related_ticket.status,
-      priority: link.related_ticket.priority,
-      createdAt: link.related_ticket.created_at,
-      updatedAt: link.related_ticket.updated_at,
-      metadata: link.related_ticket.metadata
-    })) || []
-
-    return NextResponse.json(problems)
+    return NextResponse.json(linkedProblems)
   } catch (error) {
     console.error('Error in GET /api/tickets/[id]/linked-problems:', error)
     return NextResponse.json(
@@ -93,11 +83,10 @@ export async function GET(
 // POST /api/tickets/[id]/linked-problems - Link a problem ticket
 export async function POST(
   request: NextRequest,
-  props: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const params = await props.params;
-    const ticketId = params.id
+    const { id } = await context.params;
     const session = await auth()
 
     if (!session) {
@@ -142,7 +131,7 @@ export async function POST(
     const { error: relationshipError } = await supabase
       .from('ticket_relationships')
       .insert({
-        ticket_id: ticketId,
+        ticket_id: id,
         related_ticket_id: problemId,
         relationship_type: 'problem',
         created_by: session.id,
@@ -164,7 +153,7 @@ export async function POST(
     const { error: auditError } = await supabase
       .from('audit_logs')
       .insert({
-        ticket_id: ticketId,
+        ticket_id: id,
         actor_id: session.id,
         action: 'link_problem',
         metadata: {
@@ -191,11 +180,10 @@ export async function POST(
 // DELETE /api/tickets/[id]/linked-problems - Unlink a problem ticket
 export async function DELETE(
   request: NextRequest,
-  props: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const params = await props.params;
-    const ticketId = params.id
+    const { id } = await context.params;
     const session = await auth()
 
     if (!session) {
@@ -218,7 +206,7 @@ export async function DELETE(
     const { error: unlinkError } = await supabase
       .from('ticket_relationships')
       .delete()
-      .eq('ticket_id', ticketId)
+      .eq('ticket_id', id)
       .eq('related_ticket_id', problemId)
       .eq('relationship_type', 'problem')
 
@@ -234,7 +222,7 @@ export async function DELETE(
     const { error: auditError } = await supabase
       .from('audit_logs')
       .insert({
-        ticket_id: ticketId,
+        ticket_id: id,
         actor_id: session.id,
         action: 'unlink_problem',
         metadata: {

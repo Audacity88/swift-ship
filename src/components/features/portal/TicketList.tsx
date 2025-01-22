@@ -316,7 +316,7 @@ export const TicketList = ({
         {filteredTickets.length === 0 && (
           <div className="text-center py-8 text-muted-foreground">
             {searchTerm ? (
-              <>No tickets found matching "{searchTerm}"</>
+              <>No tickets found matching &quot;{searchTerm}&quot;</>
             ) : (
               <>No tickets found</>
             )}

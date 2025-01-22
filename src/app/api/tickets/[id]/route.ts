@@ -1,15 +1,12 @@
 import { NextResponse } from 'next/server'
-import { z } from 'zod'
-import { sql, Transaction } from '@/lib/db'
-import { auth } from '@/lib/auth'
-import { TicketPriority, TicketStatus } from '@/types/ticket'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { TicketPriority, TicketStatus } from '@/types/ticket'
+import { z } from 'zod'
 import { Permission } from '@/types/role'
-import { hasAnyPermission, getUserRole } from '@/lib/auth/permissions'
-import { RoleType } from '@/types/role'
+import { getUserRole, hasAnyPermission } from '@/lib/auth/permissions'
 
-const createClient = async (request: Request) => {
+const createClient = async () => {
   const cookieStore = await cookies()
   
   return createServerClient(
@@ -20,18 +17,18 @@ const createClient = async (request: Request) => {
         get(name: string) {
           return cookieStore.get(name)?.value
         },
-        set(name: string, value: string, options: any) {
+        set(name: string, value: string, options: Record<string, unknown>) {
           try {
             cookieStore.set({ name, value, ...options })
-          } catch (error) {
-            // Handle cookie setting error
+          } catch {
+            // Handle cookie setting error silently
           }
         },
-        remove(name: string, options: any) {
+        remove(name: string, options: Record<string, unknown>) {
           try {
             cookieStore.set({ name, value: '', ...options })
-          } catch (error) {
-            // Handle cookie removal error
+          } catch {
+            // Handle cookie removal error silently
           }
         },
       },
@@ -48,7 +45,7 @@ interface TicketResult {
   priority: TicketPriority
   customer_id: string
   assignee_id: string | null
-  metadata: Record<string, any>
+  metadata: Record<string, unknown>
   created_at: string
   updated_at: string
   resolved_at: string | null
@@ -77,7 +74,7 @@ interface TicketResult {
   snapshots: Array<{
     id: string
     snapshotAt: string
-    data: Record<string, any>
+    data: Record<string, unknown>
     reason: string | null
     triggeredBy: string
   }>
@@ -119,7 +116,7 @@ export async function GET(
   })
   
   try {
-    const supabase = await createClient(request)
+    const supabase = await createClient()
     const { data: { session }, error: sessionError } = await supabase.auth.getSession()
 
     if (sessionError || !session) {
@@ -229,7 +226,7 @@ export async function GET(
 export async function PATCH(request: Request, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
-    const supabase = await createClient(request)
+    const supabase = await createClient()
     const { data: { session }, error: sessionError } = await supabase.auth.getSession()
 
     if (sessionError || !session) {

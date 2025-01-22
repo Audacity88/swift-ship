@@ -23,7 +23,7 @@ const updateProfileSchema = z.object({
 });
 
 // GET /api/portal/profile - Get customer profile
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     // Check permissions
     const permissionCheck = await checkUserPermissions(Permission.VIEW_PROFILE);

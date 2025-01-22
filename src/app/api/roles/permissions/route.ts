@@ -15,13 +15,7 @@ const adminClient = createClient(
   }
 );
 
-// Create public client for user verification
-const publicClient = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     // Check permissions using public client
     const permissionCheck = await checkUserPermissions(Permission.VIEW_ROLES);
@@ -41,8 +35,7 @@ export async function GET(request: NextRequest) {
     if (error) throw error;
 
     return NextResponse.json(roles);
-  } catch (error) {
-    console.error('Error fetching roles:', error);
+  } catch {
     return NextResponse.json(
       { error: 'Failed to fetch roles' },
       { status: 500 }

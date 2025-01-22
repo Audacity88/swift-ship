@@ -66,7 +66,7 @@ export default function HomePage() {
           </h1>
           <p className="text-gray-600">
             Welcome to Swift Ship Express, your trusted partner in global logistics. 
-            We're here to help you manage your shipments efficiently and provide you with 
+            We&apos;re here to help you manage your shipments efficiently and provide you with 
             the best shipping experience possible.
           </p>
         </div>
@@ -137,7 +137,7 @@ export default function HomePage() {
             <div className="p-4 bg-blue-50 rounded-lg">
               <h3 className="text-blue-800 font-medium mb-2">New Route Optimization</h3>
               <p className="text-blue-700">
-                We've enhanced our delivery network with AI-powered route optimization, 
+                We&apos;ve enhanced our delivery network with AI-powered route optimization, 
                 resulting in 15% faster delivery times across all major routes.
               </p>
             </div>

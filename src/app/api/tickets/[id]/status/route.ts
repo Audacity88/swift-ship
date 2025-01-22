@@ -5,7 +5,7 @@ import { TicketStatus } from '@/types/ticket'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
-const createClient = async (request: Request) => {
+const createClient = async () => {
   const cookieStore = await cookies()
   
   return createServerClient(
@@ -16,18 +16,18 @@ const createClient = async (request: Request) => {
         get(name: string) {
           return cookieStore.get(name)?.value
         },
-        set(name: string, value: string, options: any) {
+        set(name: string, value: string, options: Record<string, unknown>) {
           try {
             cookieStore.set({ name, value, ...options })
-          } catch (error) {
-            // Handle cookie setting error
+          } catch {
+            // Handle cookie setting error silently
           }
         },
-        remove(name: string, options: any) {
+        remove(name: string, options: Record<string, unknown>) {
           try {
             cookieStore.set({ name, value: '', ...options })
-          } catch (error) {
-            // Handle cookie removal error
+          } catch {
+            // Handle cookie removal error silently
           }
         },
       },
@@ -43,9 +43,9 @@ interface StatusTransition {
   conditions: Array<{
     type: 'required_field' | 'time_restriction' | 'permission'
     message: string
-    data?: Record<string, any>
+    data?: Record<string, unknown>
   }>
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 }
 
 interface TicketStatusInfo {
@@ -53,7 +53,7 @@ interface TicketStatusInfo {
   status: TicketStatus
   assignee_id: string | null
   customer_id: string
-  metadata: Record<string, any>
+  metadata: Record<string, unknown>
   created_at: string
   updated_at: string
   resolved_at: string | null
@@ -191,7 +191,7 @@ export async function GET(
       )
     }
 
-    const supabase = await createClient(request)
+    const supabase = await createClient()
 
     // Get current ticket status
     const { data: ticket, error: ticketError } = await supabase
@@ -290,7 +290,7 @@ export async function POST(
       )
     }
 
-    const supabase = await createClient(request)
+    const supabase = await createClient()
     const json = await request.json()
     const body = updateStatusSchema.parse(json)
 

@@ -15,7 +15,7 @@ const createRoleSchema = z.object({
   permissions: z.array(z.nativeEnum(Permission))
 });
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     // Check permissions
     const permissionCheck = await checkUserPermissions(Permission.VIEW_ROLES);

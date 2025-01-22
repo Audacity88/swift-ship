@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
-import type { Tag } from '@/types/ticket'
 
-const createClient = async (request: Request) => {
+const createClient = async () => {
   const cookieStore = await cookies()
   
   return createServerClient(
@@ -14,18 +13,18 @@ const createClient = async (request: Request) => {
         get(name: string) {
           return cookieStore.get(name)?.value
         },
-        set(name: string, value: string, options: any) {
+        set(name: string, value: string, options: Record<string, unknown>) {
           try {
             cookieStore.set({ name, value, ...options })
-          } catch (error) {
-            // Handle cookie setting error
+          } catch {
+            // Handle cookie setting error silently
           }
         },
-        remove(name: string, options: any) {
+        remove(name: string, options: Record<string, unknown>) {
           try {
             cookieStore.set({ name, value: '', ...options })
-          } catch (error) {
-            // Handle cookie removal error
+          } catch {
+            // Handle cookie removal error silently
           }
         },
       },
@@ -34,12 +33,12 @@ const createClient = async (request: Request) => {
 }
 
 // GET /api/tags - Get all tags
-export async function GET(request: Request) {
+export async function GET() {
   try {
-    const supabase = await createClient(request)
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+    const supabase = await createClient()
+    const { data: { session } } = await supabase.auth.getSession()
 
-    if (sessionError || !session) {
+    if (!session) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -47,7 +46,7 @@ export async function GET(request: Request) {
     }
 
     // Get all tags
-    const { data: tags, error: tagsError } = await supabase
+    const { data: tags } = await supabase
       .from('tags')
       .select('*')
       .order('name')
@@ -72,7 +71,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient(request)
+    const supabase = await createClient()
     const tag: Tag = await request.json()
 
     // Validate required fields
@@ -117,7 +116,7 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
-    const supabase = await createClient(request)
+    const supabase = await createClient()
     const tag: Tag = await request.json()
 
     if (!tag.id) {
@@ -163,7 +162,7 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const supabase = await createClient(request)
+    const supabase = await createClient()
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
 
@@ -222,7 +221,7 @@ export async function DELETE(request: Request) {
 // Bulk operations endpoint
 export async function PATCH(request: Request) {
   try {
-    const supabase = await createClient(request)
+    const supabase = await createClient()
     const { operation, tagIds, ticketIds }: {
       operation: 'add' | 'remove'
       tagIds: string[]

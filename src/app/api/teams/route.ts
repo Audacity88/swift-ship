@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { Team } from '@/types/team';
 import { Permission } from '@/types/role';
 import { checkUserPermissions } from '@/lib/auth/check-permissions';
 
@@ -9,7 +8,7 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     // Check permissions
     const permissionCheck = await checkUserPermissions(Permission.VIEW_TEAMS);

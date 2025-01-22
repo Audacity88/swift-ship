@@ -61,7 +61,7 @@ export default function SignUp() {
             Check your email
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
-            We've sent you a confirmation link. Please check your email to complete your registration.
+            We&apos;ve sent you a confirmation link. Please check your email to complete your registration.
           </p>
           <div className="mt-4 text-center">
             <Link

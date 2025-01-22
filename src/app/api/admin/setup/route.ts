@@ -1,6 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { cookies } from 'next/headers'
 import { RoleType } from '@/types/role'
 
 // Create admin client with service role key for admin operations
@@ -15,24 +14,16 @@ const adminClient = createClient(
   }
 )
 
-export async function POST(request: NextRequest) {
+export async function POST() {
   try {
     // Create public client for user verification
-    const cookieStore = await cookies()
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get(name: string) {
-            return cookieStore.get(name)?.value
-          }
-        }
-      }
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     )
     
     // Get current user's session
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
       return NextResponse.json(
         { error: 'Unauthorized' },

@@ -2,19 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { Permission } from '@/types/role';
 import { checkUserPermissions } from '@/lib/auth/check-permissions';
-import { z } from 'zod';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
-
-const updateCategorySchema = z.object({
-  name: z.string().min(1).optional(),
-  description: z.string().optional(),
-  parentId: z.string().uuid().optional(),
-  order: z.number().int().min(0).optional()
-});
 
 // GET /api/knowledge/categories/[id] - Get category details
 export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {

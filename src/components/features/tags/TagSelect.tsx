@@ -124,7 +124,7 @@ export const TagSelect = ({
                 className="p-2 text-sm text-blue-500 hover:underline"
                 onClick={() => createTag(search)}
               >
-                Create tag "{search}"
+                Create tag &quot;{search}&quot;
               </button>
             </CommandEmpty>
             <CommandGroup>

@@ -8,7 +8,7 @@ const supabase = createClient(
 )
 
 // GET /api/customers - List customers
-export async function GET(request: Request) {
+export async function GET() {
   try {
     const session = await auth()
     if (!session) {
@@ -33,4 +33,4 @@ export async function GET(request: Request) {
       { status: 500 }
     )
   }
-} 
+}

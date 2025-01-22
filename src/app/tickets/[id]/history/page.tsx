@@ -176,7 +176,7 @@ export default function TicketHistoryPage() {
                         <div className="flex items-center gap-2 mb-1">
                           <div className="flex items-center gap-2">
                             <Image
-                              src={event.user.avatar || '/default-avatar.png'}
+                              src={event.user.avatar || '/images/default-avatar.png'}
                               alt={event.user.name}
                               width={20}
                               height={20}

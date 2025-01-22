@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
-const createClient = async (request: Request) => {
+const createClient = async () => {
   const cookieStore = await cookies()
   
   return createServerClient(
@@ -13,18 +13,18 @@ const createClient = async (request: Request) => {
         get(name: string) {
           return cookieStore.get(name)?.value
         },
-        set(name: string, value: string, options: any) {
+        set(name: string, value: string, options: Record<string, unknown>) {
           try {
             cookieStore.set({ name, value, ...options })
-          } catch (error) {
-            // Handle cookie setting error
+          } catch {
+            // Handle cookie setting error silently
           }
         },
-        remove(name: string, options: any) {
+        remove(name: string, options: Record<string, unknown>) {
           try {
             cookieStore.set({ name, value: '', ...options })
-          } catch (error) {
-            // Handle cookie removal error
+          } catch {
+            // Handle cookie removal error silently
           }
         },
       },
@@ -33,10 +33,10 @@ const createClient = async (request: Request) => {
 }
 
 // GET /api/tickets/[id]/assignment-history
-export async function GET(request: Request, props: { params: Promise<{ id: string }> }) {
+export async function GET(props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
-    const supabase = await createClient(request)
+    const supabase = await createClient()
     const { data: { session }, error: sessionError } = await supabase.auth.getSession()
 
     if (sessionError || !session) {
@@ -49,66 +49,38 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
     // First get all assignment changes from audit logs
     const { data: history, error: historyError } = await supabase
       .from('audit_logs')
-      .select('id, created_at, changes, actor_id')
+      .select(`
+        id,
+        action,
+        changes,
+        created_at,
+        performed_by,
+        agents!performed_by (
+          id,
+          name,
+          email,
+          avatar_url
+        )
+      `)
       .eq('entity_type', 'ticket')
       .eq('entity_id', params.id)
       .eq('action', 'update')
-      .not('changes->assigneeId', 'is', null)
+      .contains('changes', { assignee_id: true })
       .order('created_at', { ascending: false })
 
     if (historyError) {
-      console.error('Failed to fetch assignment history:', historyError)
+      console.error('Error fetching assignment history:', historyError)
       return NextResponse.json(
         { error: 'Failed to fetch assignment history' },
         { status: 500 }
       )
     }
 
-    // Get all unique agent IDs from both actor_id and assigneeId
-    const actorIds = new Set(history.map(entry => entry.actor_id))
-    const assigneeIds = new Set(history.map(entry => entry.changes.assigneeId))
-    const allAgentIds = [...new Set([...actorIds, ...assigneeIds])]
-
-    // Fetch agent details in a single query
-    const { data: agents, error: agentsError } = await supabase
-      .from('agents')
-      .select('id, name, avatar')
-      .in('id', allAgentIds)
-
-    if (agentsError) {
-      console.error('Failed to fetch agent details:', agentsError)
-      return NextResponse.json(
-        { error: 'Failed to fetch agent details' },
-        { status: 500 }
-      )
-    }
-
-    // Create a map of agent details for easy lookup
-    const agentMap = new Map(agents?.map(agent => [agent.id, agent]))
-
-    // Transform the data to match the frontend's expected format
-    const transformedHistory = history.map(entry => {
-      const actor = agentMap.get(entry.actor_id)
-      const assignedAgent = agentMap.get(entry.changes.assigneeId)
-
-      return {
-        id: entry.id,
-        agent: {
-          name: assignedAgent?.name || 'Unknown',
-          avatar: assignedAgent?.avatar
-        },
-        assignedBy: {
-          name: actor?.name || 'Unknown'
-        },
-        assignedAt: entry.created_at
-      }
-    })
-
-    return NextResponse.json(transformedHistory)
+    return NextResponse.json(history)
   } catch (error) {
-    console.error('Error fetching assignment history:', error)
+    console.error('Error in GET /api/tickets/[id]/assignment-history:', error)
     return NextResponse.json(
-      { error: 'Failed to fetch assignment history' },
+      { error: 'Internal server error' },
       { status: 500 }
     )
   }
