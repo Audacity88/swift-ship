@@ -43,6 +43,7 @@ export default function TicketPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
 
   // Dropdown visibility states
   const [showTypeDropdown, setShowTypeDropdown] = useState(false)
@@ -58,6 +59,7 @@ export default function TicketPage() {
         console.log('Auth status:', { session: session?.user?.id, error })
         if (error) throw error
         setIsAuthenticated(!!session?.user)
+        setCurrentUserId(session?.user?.id || null)
       } catch (error) {
         console.error('Auth error:', error)
         setError('Authentication failed')
@@ -241,7 +243,7 @@ export default function TicketPage() {
           {/* Replace old comments section with TicketConversation */}
           <TicketConversation
             ticketId={ticket.id}
-            currentUserId={ticket.assignee?.id || ''}
+            currentUserId={currentUserId || ''}
             isAgent={true}
           />
         </div>

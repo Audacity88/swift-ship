@@ -172,22 +172,25 @@ export function ConversationView({
 
   const handleSendMessage = async () => {
     if (!ticketId || !newMessage.trim() || isSending) return
+    
+    // Add validation for currentUserId
+    if (!currentUserId) {
+      setError('User ID is missing. Please try logging in again.')
+      return
+    }
+
+    // Validate UUID format
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    if (!uuidRegex.test(currentUserId) || !uuidRegex.test(ticketId)) {
+      setError('Invalid user or ticket ID format.')
+      return
+    }
 
     setIsSending(true)
     setError(null)
     try {
-      // First, get the user's type (customer or agent)
-      const { data: customer, error: customerError } = await supabase
-        .from('customers')
-        .select('id')
-        .eq('id', currentUserId)
-        .single()
-
-      if (customerError && customerError.code !== 'PGRST116') { // PGRST116 is "not found" error
-        throw customerError
-      }
-
-      const authorType = customer ? 'customer' : 'agent'
+      // Use the isAgent prop to determine author_type instead of querying the database
+      const authorType = isAgent ? 'agent' : 'customer'
 
       const { error: insertError } = await supabase
         .from('messages')
