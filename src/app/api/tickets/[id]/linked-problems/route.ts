@@ -12,7 +12,7 @@ const supabase = createClient<Database>(
 // GET /api/tickets/[id]/linked-problems - Get all linked problem tickets
 export async function GET(
   request: NextRequest,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
     // Use server-side auth check
@@ -78,11 +78,11 @@ export async function GET(
 // POST /api/tickets/[id]/linked-problems - Link a problem ticket
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: Promise<string> } }
+  props: { params: Promise<{ id: string }> }
 ) {
   try {
-    // Await the params
-    const ticketId = await params.id
+    const params = await props.params;
+    const ticketId = params.id
     const session = await auth()
 
     if (!session) {
@@ -176,11 +176,11 @@ export async function POST(
 // DELETE /api/tickets/[id]/linked-problems - Unlink a problem ticket
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: Promise<string> } }
+  props: { params: Promise<{ id: string }> }
 ) {
   try {
-    // Await the params
-    const ticketId = await params.id
+    const params = await props.params;
+    const ticketId = params.id
     const session = await auth()
 
     if (!session) {

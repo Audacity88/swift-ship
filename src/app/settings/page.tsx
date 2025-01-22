@@ -216,7 +216,7 @@ export default function SettingsPage() {
                       await fetch('/api/preferences', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ darkMode, emailUpdates, ... }),
+                        body: JSON.stringify({ darkMode, emailUpdates }),
                       })
                       alert('Preferences saved!')
                     } catch (err) {

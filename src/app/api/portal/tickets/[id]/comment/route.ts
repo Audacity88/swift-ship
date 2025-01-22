@@ -15,10 +15,8 @@ const createCommentSchema = z.object({
 });
 
 // POST /api/portal/tickets/[id]/comment - Add ticket comment
-export async function POST(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function POST(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     // Check permissions
     const permissionCheck = await checkUserPermissions(Permission.CREATE_COMMENTS);

@@ -1,4 +1,5 @@
-'use client';
+'use client';;
+import { use } from "react";
 
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
@@ -6,12 +7,13 @@ import { ArrowLeft } from 'lucide-react';
 import { TeamMetrics } from '@/components/features/teams/TeamMetrics';
 
 interface TeamMetricsPageProps {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 }
 
-export default function TeamMetricsPage({ params }: TeamMetricsPageProps) {
+export default function TeamMetricsPage(props: TeamMetricsPageProps) {
+  const params = use(props.params);
   const router = useRouter();
 
   return (

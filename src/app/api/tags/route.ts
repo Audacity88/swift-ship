@@ -4,7 +4,7 @@ import { cookies } from 'next/headers'
 import type { Tag } from '@/types/ticket'
 
 const createClient = async (request: Request) => {
-  const cookieStore = cookies()
+  const cookieStore = await cookies()
   
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

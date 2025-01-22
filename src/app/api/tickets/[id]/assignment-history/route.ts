@@ -3,7 +3,7 @@ import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
 const createClient = async (request: Request) => {
-  const cookieStore = cookies()
+  const cookieStore = await cookies()
   
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -33,10 +33,8 @@ const createClient = async (request: Request) => {
 }
 
 // GET /api/tickets/[id]/assignment-history
-export async function GET(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function GET(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const supabase = await createClient(request)
     const { data: { session }, error: sessionError } = await supabase.auth.getSession()

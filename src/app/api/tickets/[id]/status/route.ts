@@ -178,9 +178,9 @@ const updateStatusSchema = z.object({
 // GET /api/tickets/[id]/status - Get available status transitions
 export async function GET(
   request: Request,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await Promise.resolve(context.params)
+  const { id } = await Promise.resolve((await context.params))
   
   try {
     const session = await auth()
@@ -277,9 +277,9 @@ export async function GET(
 // POST /api/tickets/[id]/status - Update ticket status
 export async function POST(
   request: Request,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await Promise.resolve(context.params)
+  const { id } = await Promise.resolve((await context.params))
   
   try {
     const session = await auth()

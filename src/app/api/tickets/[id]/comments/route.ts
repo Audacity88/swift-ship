@@ -30,10 +30,8 @@ const createCommentSchema = z.object({
 })
 
 // POST /api/tickets/[id]/comments - Add a comment to a ticket
-export async function POST(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function POST(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const session = await auth()
     if (!session) {
@@ -125,10 +123,8 @@ export async function POST(
 }
 
 // GET /api/tickets/[id]/comments - Get comments for a ticket
-export async function GET(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function GET(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const { searchParams } = new URL(request.url)
     const page = parseInt(searchParams.get('page') || '1')

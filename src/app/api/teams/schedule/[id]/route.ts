@@ -17,10 +17,8 @@ const scheduleSchema = z.object({
   }))
 });
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     // Check permissions
     const permissionCheck = await checkUserPermissions(Permission.VIEW_TEAMS);
@@ -79,10 +77,8 @@ export async function GET(
   }
 }
 
-export async function POST(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function POST(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     // Check permissions
     const permissionCheck = await checkUserPermissions(Permission.MANAGE_TEAMS);
@@ -135,10 +131,8 @@ export async function POST(
   }
 }
 
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     // Check permissions
     const permissionCheck = await checkUserPermissions(Permission.MANAGE_TEAMS);

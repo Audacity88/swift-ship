@@ -1,4 +1,5 @@
-'use client';
+'use client';;
+import { use } from "react";
 
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -7,12 +8,13 @@ import { ArrowLeft } from 'lucide-react';
 import { CoverageSchedule } from '@/components/features/teams/CoverageSchedule';
 
 interface TeamSchedulePageProps {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 }
 
-export default function TeamSchedulePage({ params }: TeamSchedulePageProps) {
+export default function TeamSchedulePage(props: TeamSchedulePageProps) {
+  const params = use(props.params);
   const router = useRouter();
 
   const handleUpdate = () => {

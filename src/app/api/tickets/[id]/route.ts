@@ -10,7 +10,7 @@ import { hasAnyPermission, getUserRole } from '@/lib/auth/permissions'
 import { RoleType } from '@/types/role'
 
 const createClient = async (request: Request) => {
-  const cookieStore = cookies()
+  const cookieStore = await cookies()
   
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -108,9 +108,9 @@ const updateTicketSchema = z.object({
 // GET /api/tickets/[id] - Get a single ticket
 export async function GET(
   request: Request,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await Promise.resolve(context.params)
+  const { id } = await Promise.resolve((await context.params))
   
   console.log('API route hit:', { 
     url: request.url,
@@ -226,10 +226,8 @@ export async function GET(
 }
 
 // PATCH /api/tickets/[id] - Update a ticket
-export async function PATCH(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function PATCH(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const supabase = await createClient(request)
     const { data: { session }, error: sessionError } = await supabase.auth.getSession()

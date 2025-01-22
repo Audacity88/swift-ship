@@ -1,4 +1,5 @@
-'use client';
+'use client';;
+import { use } from "react";
 
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -7,12 +8,13 @@ import { ArrowLeft } from 'lucide-react';
 import { TeamForm } from '@/components/features/teams/TeamForm';
 
 interface TeamPageProps {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 }
 
-export default function TeamPage({ params }: TeamPageProps) {
+export default function TeamPage(props: TeamPageProps) {
+  const params = use(props.params);
   const router = useRouter();
 
   const handleTeamUpdated = (success: boolean) => {

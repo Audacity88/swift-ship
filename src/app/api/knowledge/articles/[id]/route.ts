@@ -19,14 +19,12 @@ const updateArticleSchema = z.object({
 });
 
 type RouteContext = {
-  params: { id: string }
+  params: Promise<{ id: string }>
 }
 
 // GET /api/knowledge/articles/[id] - Get article details
-export async function GET(
-  req: NextRequest,
-  { params }: RouteContext
-) {
+export async function GET(req: NextRequest, props: RouteContext) {
+  const params = await props.params;
   try {
     // Check permissions
     const permissionCheck = await checkUserPermissions(Permission.VIEW_KNOWLEDGE_BASE);
@@ -77,10 +75,8 @@ export async function GET(
 }
 
 // PUT /api/knowledge/articles/[id] - Update article
-export async function PUT(
-  req: NextRequest,
-  { params }: RouteContext
-) {
+export async function PUT(req: NextRequest, props: RouteContext) {
+  const params = await props.params;
   try {
     // Check permissions
     const permissionCheck = await checkUserPermissions(Permission.MANAGE_KNOWLEDGE_BASE);
@@ -195,10 +191,8 @@ export async function PUT(
 }
 
 // DELETE /api/knowledge/articles/[id] - Archive article
-export async function DELETE(
-  req: NextRequest,
-  { params }: RouteContext
-) {
+export async function DELETE(req: NextRequest, props: RouteContext) {
+  const params = await props.params;
   try {
     // Check permissions
     const permissionCheck = await checkUserPermissions(Permission.MANAGE_KNOWLEDGE_BASE);
@@ -234,10 +228,8 @@ export async function DELETE(
 }
 
 // PATCH /api/knowledge/articles/[id] - Patch article
-export async function PATCH(
-  req: NextRequest,
-  { params }: RouteContext
-) {
+export async function PATCH(req: NextRequest, props: RouteContext) {
+  const params = await props.params;
   try {
     // Check permissions
     const permissionCheck = await checkUserPermissions(Permission.MANAGE_KNOWLEDGE_BASE);

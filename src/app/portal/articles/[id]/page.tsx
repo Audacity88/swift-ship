@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, use } from 'react';
 import { Article, ArticleStatus } from '@/types/knowledge';
 import { ArticleRating } from '@/types/portal';
 import { ArticleViewer } from '@/components/features/portal/ArticleViewer';
@@ -12,12 +12,13 @@ import Link from 'next/link';
 import { UserRole } from '@/types/role';
 
 interface ArticlePageProps {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 }
 
-export default function ArticlePage({ params }: ArticlePageProps) {
+export default function ArticlePage(props: ArticlePageProps) {
+  const params = use(props.params);
   const [article, setArticle] = useState<Article | null>(null);
   const [relatedArticles, setRelatedArticles] = useState<Article[]>([]);
   const [userRating, setUserRating] = useState<ArticleRating | undefined>(undefined);

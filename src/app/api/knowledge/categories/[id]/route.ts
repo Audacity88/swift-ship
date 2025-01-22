@@ -17,10 +17,8 @@ const updateCategorySchema = z.object({
 });
 
 // GET /api/knowledge/categories/[id] - Get category details
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     // Check permissions
     const permissionCheck = await checkUserPermissions(Permission.VIEW_KNOWLEDGE_BASE);
@@ -66,10 +64,8 @@ export async function GET(
 }
 
 // PUT /api/knowledge/categories/[id] - Update category
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PUT(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     // Check permissions
     const permissionCheck = await checkUserPermissions(Permission.MANAGE_KNOWLEDGE_BASE);
@@ -160,10 +156,8 @@ export async function PUT(
 }
 
 // DELETE /api/knowledge/categories/[id] - Delete category
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     // Check permissions
     const permissionCheck = await checkUserPermissions(Permission.MANAGE_KNOWLEDGE_BASE);

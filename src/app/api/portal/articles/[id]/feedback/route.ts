@@ -15,10 +15,8 @@ const createFeedbackSchema = z.object({
 });
 
 // POST /api/portal/articles/[id]/feedback - Submit article feedback
-export async function POST(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function POST(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     // Check permissions
     const permissionCheck = await checkUserPermissions(Permission.VIEW_KNOWLEDGE_BASE);
