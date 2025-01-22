@@ -92,6 +92,7 @@ export interface Ticket {
   description: string
   status: TicketStatus
   priority: TicketPriority
+  type: TicketType
   isArchived: boolean
   metadata: {
     createdAt: string
@@ -119,6 +120,7 @@ export interface TicketListItem {
   title: string
   status: TicketStatus
   priority: TicketPriority
+  type: TicketType
   customer: Customer
   assignee?: Agent
   createdAt: string

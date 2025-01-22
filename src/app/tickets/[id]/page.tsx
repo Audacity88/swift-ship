@@ -17,21 +17,16 @@ import {
   TagsDropdown, 
   FollowersDropdown 
 } from '@/components/features/tickets/PropertyDropdowns'
-import { ReplyComposer } from '@/components/features/tickets/ReplyComposer'
 import { StatusTransition } from '@/components/features/tickets/StatusTransition'
 import { useSupabase } from '@/app/providers'
-import { getTicket, updateTicket, addComment, updateTicketStatus } from '@/lib/services/ticket-service'
+import { getTicket, updateTicket, updateTicketStatus } from '@/lib/services/ticket-service'
 import type { Ticket as TicketData } from '@/lib/services/ticket-service'
+import { TicketConversation } from '@/components/features/tickets/TicketConversation'
 
 interface Tag {
   id: string
   name: string
   color: string
-}
-
-interface ReplyMessage {
-  content: string;
-  user: User;
 }
 
 export default function TicketPage() {
@@ -45,7 +40,6 @@ export default function TicketPage() {
   const [tags, setTags] = useState<Tag[]>([])
   const [linkedProblem, setLinkedProblem] = useState<string | null>(null)
   const [followers, setFollowers] = useState<string[]>([])
-  const [isSubmitting, setIsSubmitting] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null)
@@ -204,29 +198,6 @@ export default function TicketPage() {
     }
   }
 
-  // Reply handler
-  const handleReply = async (message: ReplyMessage) => {
-    if (!ticket) return
-    
-    setIsSubmitting(true)
-    try {
-      const comment = await addComment(ticketId, {
-        content: message.content,
-        isInternal: false
-      })
-
-      setTicket(prev => prev ? {
-        ...prev,
-        comments: [...prev.comments, comment],
-        updatedAt: new Date().toISOString()
-      } : null)
-    } catch (error) {
-      console.error('Failed to send message:', error)
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-
   // Handle status change
   const handleStatusChange = async (newStatus: TicketStatus, reason?: string) => {
     if (!ticket) return
@@ -267,46 +238,12 @@ export default function TicketPage() {
             </div>
           </div>
 
-          {/* Comments */}
-          <div className="space-y-6 mb-6">
-            {ticket.comments.map((comment) => (
-              <div 
-                key={comment.id} 
-                className={`rounded-lg p-4 ${
-                  comment.isInternal ? 'bg-yellow-50' : 'bg-blue-50'
-                }`}
-              >
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="relative w-8 h-8 rounded-full overflow-hidden">
-                    <Image
-                      src="/images/default-avatar.png"
-                      alt="Profile"
-                      width={32}
-                      height={32}
-                      className="object-cover"
-                    />
-                  </div>
-                  <div>
-                    <h3 className="font-medium">{comment.user.name}</h3>
-                    <p className="text-sm text-gray-500">
-                      {new Date(comment.createdAt).toLocaleString()}
-                    </p>
-                  </div>
-                  {comment.isInternal && (
-                    <span className="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded">
-                      Internal Note
-                    </span>
-                  )}
-                </div>
-                <p className="text-gray-700 whitespace-pre-wrap">
-                  {comment.content}
-                </p>
-              </div>
-            ))}
-          </div>
-
-          {/* Reply Composer */}
-          <ReplyComposer onSubmit={handleReply} isSubmitting={isSubmitting} />
+          {/* Replace old comments section with TicketConversation */}
+          <TicketConversation
+            ticketId={ticket.id}
+            currentUserId={ticket.assignee?.id || ''}
+            isAgent={true}
+          />
         </div>
       </div>
 

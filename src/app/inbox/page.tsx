@@ -7,6 +7,7 @@ import { Search, Filter, Star, MessageSquare, Phone, Mail, Plus } from 'lucide-r
 import { COLORS } from '@/lib/constants'
 import { useSupabase } from '@/app/providers'
 import { ConversationView } from '@/components/features/inbox/ConversationView'
+import { format } from 'date-fns'
 
 // We assume: The "messages" table is joined to "tickets" for the conversation thread.
 // We'll fetch: all messages for the logged in user, either as the ticket's customer or as message author.
@@ -22,6 +23,25 @@ interface InboxMessage {
   ticketCustomerId: string
 }
 
+interface Ticket {
+  id: string
+  title: string
+  status: string
+  created_at: string
+  customer: {
+    id: string
+    name: string
+    email: string
+  }
+  messages: Array<{
+    id: string
+    content: string
+    created_at: string
+    author_id: string
+    author_type: string
+  }>
+}
+
 export default function InboxPage() {
   const supabase = useSupabase()
   const [searchQuery, setSearchQuery] = useState('')
@@ -30,6 +50,59 @@ export default function InboxPage() {
   const [error, setError] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null)
+  const [tickets, setTickets] = useState<any[]>([])
+
+  const loadMessages = async () => {
+    if (!userId) return // Don't load if we don't have a userId yet
+    
+    setIsLoading(true)
+    setError(null)
+    try {
+      // First get all tickets for the current user
+      const { data: tickets, error: ticketsError } = await supabase
+        .from('tickets')
+        .select(`
+          id,
+          title,
+          status,
+          created_at,
+          customer:customer_id (
+            id,
+            name,
+            email
+          ),
+          messages!inner (
+            id,
+            content,
+            created_at,
+            author_id,
+            author_type
+          )
+        `)
+        .or(`customer_id.eq.${userId},assignee_id.eq.${userId}`)
+        .order('created_at', { foreignTable: 'messages', ascending: false })
+        .limit(1, { foreignTable: 'messages' })
+
+      if (ticketsError) throw ticketsError
+
+      // Map the tickets to the format we need
+      const mappedTickets = tickets.map((ticket: Ticket) => ({
+        id: ticket.id,
+        subject: ticket.title,
+        status: ticket.status,
+        createdAt: ticket.created_at,
+        customer: ticket.customer,
+        latestMessage: ticket.messages[0]
+      }))
+
+      setTickets(mappedTickets)
+    } catch (err: any) {
+      console.error('Error loading messages:', err)
+      setError(err.message)
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   useEffect(() => {
     // On mount, get the logged in user, then fetch messages
@@ -43,79 +116,20 @@ export default function InboxPage() {
           return
         }
         setUserId(session.user.id)
-        // fetch messages
-        await loadInbox(session.user.id)
       } catch (err: any) {
         setError(err.message)
-      } finally {
         setIsLoading(false)
       }
     }
     void init()
   }, [supabase])
 
-  const loadInbox = async (uid: string) => {
-    setIsLoading(true)
-    setError(null)
-    try {
-      // Get messages from tickets where user is the customer
-      const customerMessages = await supabase
-        .from('messages')
-        .select(`
-          id,
-          ticket_id,
-          content,
-          author_id,
-          author_type,
-          created_at,
-          tickets!inner(id, title, customer_id)
-        `)
-        .eq('tickets.customer_id', uid);
-
-      // Get messages where user is the author
-      const authorMessages = await supabase
-        .from('messages')
-        .select(`
-          id,
-          ticket_id,
-          content,
-          author_id,
-          author_type,
-          created_at,
-          tickets!inner(id, title, customer_id)
-        `)
-        .eq('author_id', uid);
-
-      if (customerMessages.error) throw customerMessages.error;
-      if (authorMessages.error) throw authorMessages.error;
-
-      // Merge and deduplicate messages
-      const allMessages = [...(customerMessages.data || []), ...(authorMessages.data || [])];
-      const uniqueMessages = Array.from(new Map(allMessages.map(m => [m.id, m])).values());
-      
-      // Sort by created_at
-      const sortedMessages = uniqueMessages.sort(
-        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
-
-      const mapped: InboxMessage[] = sortedMessages.map((row: any) => ({
-        id: row.id,
-        ticketId: row.ticket_id,
-        content: row.content,
-        authorId: row.author_id,
-        authorType: row.author_type,
-        createdAt: row.created_at,
-        ticketTitle: row.tickets.title,
-        ticketCustomerId: row.tickets.customer_id
-      }))
-      setMessages(mapped)
-    } catch (err: any) {
-      console.error('Error loading inbox:', err)
-      setError(err.message)
-    } finally {
-      setIsLoading(false)
+  // Add a new useEffect to trigger loadMessages when userId changes
+  useEffect(() => {
+    if (userId) {
+      void loadMessages()
     }
-  }
+  }, [userId])
 
   // Filter messages in memory
   const filteredMessages = messages.filter(msg => {
@@ -144,56 +158,42 @@ export default function InboxPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-5rem)] -mt-6 -mx-6">
-      {/* Messages List */}
-      <div className="w-80 border-r border-gray-200 bg-white flex flex-col">
+    <div className="flex h-full">
+      {/* Tickets List */}
+      <div className="w-1/3 border-r border-gray-200 overflow-auto">
         <div className="p-4 border-b border-gray-200">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="search"
-              placeholder="Search messages..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 text-sm border border-gray-200 rounded-lg"
-            />
-          </div>
+          <input
+            type="text"
+            placeholder="Search messages..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full p-2 border border-gray-200 rounded-lg"
+          />
         </div>
-        
-        <div className="flex-1 overflow-auto">
-          {filteredMessages.map((message) => (
+        <div className="divide-y divide-gray-200">
+          {tickets.map((ticket) => (
             <div
-              key={message.id}
-              onClick={() => setSelectedTicketId(message.ticketId)}
-              className={`w-full p-4 text-left border-b border-gray-100 hover:bg-gray-50 cursor-pointer ${
-                selectedTicketId === message.ticketId ? 'bg-gray-50' : ''
+              key={ticket.id}
+              onClick={() => setSelectedTicketId(ticket.id)}
+              className={`p-4 hover:bg-gray-50 cursor-pointer ${
+                selectedTicketId === ticket.id ? 'bg-gray-50' : ''
               }`}
             >
-              <div className="flex gap-3">
-                <div className="relative w-10 h-10">
-                  {/* We might show an avatar if we have it, else default */}
-                  <Image
-                    src="/images/default-avatar.png"
-                    alt={message.authorId}
-                    fill
-                    className="rounded-full object-cover"
-                  />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex justify-between items-start">
-                    <span className="font-medium truncate">
-                      {message.ticketTitle || 'No Title'}
-                    </span>
-                    <span className="text-xs text-gray-500 whitespace-nowrap ml-2">
-                      {new Date(message.createdAt).toLocaleString()}
-                    </span>
-                  </div>
-                  <p className="text-sm font-medium text-gray-900 truncate">
-                    {/* If user is the author, show "You:" or "Agent:" etc */}
-                    {message.authorId === userId ? 'You:' : (message.authorType === 'agent' ? 'Agent:' : 'Customer:')}
-                  </p>
-                  <p className="text-sm text-gray-500 truncate">{message.content}</p>
-                </div>
+              <div className="flex justify-between items-start mb-2">
+                <h3 className="font-medium text-sm">{ticket.subject || 'No Subject'}</h3>
+                <span className="text-xs text-gray-500">
+                  {format(new Date(ticket.createdAt), 'MMM d, h:mm a')}
+                </span>
+              </div>
+              <div className="flex justify-between items-start">
+                <p className="text-sm text-gray-600 truncate">
+                  {ticket.latestMessage?.content || 'No messages yet'}
+                </p>
+                <span className={`text-xs px-2 py-1 rounded-full ${
+                  ticket.status === 'open' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                }`}>
+                  {ticket.status}
+                </span>
               </div>
             </div>
           ))}
@@ -201,7 +201,7 @@ export default function InboxPage() {
       </div>
 
       {/* Conversation View */}
-      <div className="flex-1 bg-white">
+      <div className="flex-1">
         <ConversationView
           ticketId={selectedTicketId}
           currentUserId={userId || ''}
