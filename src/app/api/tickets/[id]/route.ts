@@ -10,7 +10,7 @@ import { hasAnyPermission, getUserRole } from '@/lib/auth/permissions'
 import { RoleType } from '@/types/role'
 
 const createClient = async (request: Request) => {
-  const cookieStore = await cookies()
+  const cookieStore = cookies()
   
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -119,28 +119,18 @@ export async function GET(
   })
   
   try {
-    const authHeader = request.headers.get('Authorization')
-    if (!authHeader?.startsWith('Bearer ')) {
-      console.error('No Bearer token found')
+    const supabase = await createClient(request)
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+
+    if (sessionError || !session) {
+      console.error('Auth error:', sessionError)
       return NextResponse.json(
         { error: 'Not authenticated' },
         { status: 401 }
       )
     }
 
-    const token = authHeader.split(' ')[1]
-    const supabase = await createClient(request)
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-
-    if (authError || !user) {
-      console.error('Auth error:', authError)
-      return NextResponse.json(
-        { error: 'Invalid token' },
-        { status: 401 }
-      )
-    }
-
-    console.log('Authenticated as:', user.id)
+    console.log('Authenticated as:', session.user.id)
 
     // Get current ticket using Supabase query builder
     console.log('Fetching ticket:', id)

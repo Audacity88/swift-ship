@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useRouter, useParams } from 'next/navigation'
 import Image from 'next/image'
 import { Search, UserPlus, History, Check } from 'lucide-react'
 import type { Agent } from '@/types/ticket'
@@ -13,6 +14,17 @@ export default function TicketAssigneePage() {
   const [agents, setAgents] = useState<Agent[]>([])
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null)
   const [isAssigning, setIsAssigning] = useState(false)
+  const [assignmentHistory, setAssignmentHistory] = useState<Array<{
+    id: string
+    agent: {
+      name: string
+      avatar?: string
+    }
+    assignedBy: {
+      name: string
+    }
+    assignedAt: string
+  }>>([])
 
   const router = useRouter()
   const params = useParams()
@@ -32,6 +44,20 @@ export default function TicketAssigneePage() {
     loadAgents()
   }, [])
 
+  useEffect(() => {
+    const loadHistory = async () => {
+      try {
+        const response = await fetch('/api/tickets/' + ticketId + '/assignment-history')
+        if (!response.ok) throw new Error('Failed to fetch assignment history')
+        const data = await response.json()
+        setAssignmentHistory(data)
+      } catch (error) {
+        console.error('Failed to load assignment history:', error)
+      }
+    }
+    loadHistory()
+  }, [ticketId])
+
   // Filter
   const filteredAgents = agents.filter((agent) => {
     if (!searchQuery) return true
@@ -43,23 +69,22 @@ export default function TicketAssigneePage() {
   })
 
   const handleAssign = async () => {
-  if (!selectedAgent) return
-  setIsAssigning(true)
-  try {
-    const response = await fetch(\`/api/tickets/\${ticketId}\`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ assignee_id: selectedAgent }),
-    })
-    if (!response.ok) throw new Error('Failed to assign ticket')
-    // Optionally refresh or display success
-    router.refresh()
-  } catch (error) {
-    console.error('Failed to assign ticket:', error)
-  } finally {
-    setIsAssigning(false)
+    if (!selectedAgent) return
+    setIsAssigning(true)
+    try {
+      const response = await fetch('/api/tickets/' + ticketId, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assignee_id: selectedAgent }),
+      })
+      if (!response.ok) throw new Error('Failed to assign ticket')
+      router.refresh()
+    } catch (error) {
+      console.error('Failed to assign ticket:', error)
+    } finally {
+      setIsAssigning(false)
+    }
   }
-}
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -145,11 +170,11 @@ export default function TicketAssigneePage() {
           </div>
 
           <div className="space-y-6">
-            {mockAssignmentHistory.map((assignment) => (
+            {assignmentHistory.map((assignment) => (
               <div key={assignment.id} className="flex items-start gap-4">
                 <div className="relative w-8 h-8 rounded-full overflow-hidden flex-shrink-0">
                   <Image
-                    src={assignment.agent.avatar || 'https://picsum.photos/200'}
+                    src={assignment.agent.avatar || '/images/default-avatar.png'}
                     alt={assignment.agent.name}
                     fill
                     className="object-cover"

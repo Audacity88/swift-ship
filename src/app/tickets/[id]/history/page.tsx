@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import { Clock, Filter, ChevronDown, MessageSquare, Tag, AlertCircle, User } from 'lucide-react'
 import Image from 'next/image'
@@ -23,8 +23,6 @@ interface HistoryEvent {
   }
 }
 
-const [historyEvents, setHistoryEvents] = useState<HistoryEvent[]>([]);
-
 const filterOptions = [
   { value: 'all', label: 'All Activities' },
   { value: 'status', label: 'Status Changes' },
@@ -41,13 +39,12 @@ export default function TicketHistoryPage() {
   const [selectedFilter, setSelectedFilter] = useState('all')
   const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [historyEvents, setHistoryEvents] = useState<HistoryEvent[]>([])
 
   useEffect(() => {
     const loadAuditLogs = async () => {
       try {
         setLoading(true)
-        // Suppose we fetch from the local “auditService” (which calls /api/audit-logs).
-        // Filter to logs with entity_type="ticket" and entity_id=ticketId
         const response = await fetch(`/api/audit-logs`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -59,10 +56,9 @@ export default function TicketHistoryPage() {
         })
         const json = await response.json()
         const logs = json.data || []
-        // Transform to match HistoryEvent
         const mapped = logs.map((log:any) => ({
           id: log.id,
-          type: 'comment', // or guess from log.action
+          type: 'comment',
           action: log.action,
           user: {
             name: log.actor?.name || 'System',
@@ -126,9 +122,7 @@ export default function TicketHistoryPage() {
             <div className="relative">
               <button
                 onClick={() => setIsFilterOpen(!isFilterOpen)}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium \
-                  text-gray-700 bg-white border border-gray-200 rounded-lg \
-                  hover:bg-gray-50 transition-colors"
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
               >
                 <Filter className="w-4 h-4" />
                 {filterOptions.find(opt => opt.value === selectedFilter)?.label}
@@ -136,8 +130,7 @@ export default function TicketHistoryPage() {
               </button>
 
               {isFilterOpen && (
-                <div className="absolute right-0 mt-2 w-48 bg-white border \
-                  border-gray-200 rounded-lg shadow-lg z-10">
+                <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
                   {filterOptions.map((option) => (
                     <button
                       key={option.value}
@@ -145,11 +138,11 @@ export default function TicketHistoryPage() {
                         setSelectedFilter(option.value)
                         setIsFilterOpen(false)
                       }}
-                      className={`flex items-center w-full px-4 py-2 text-sm \
-                        ${selectedFilter === option.value
+                      className={`flex items-center w-full px-4 py-2 text-sm ${
+                        selectedFilter === option.value
                           ? 'bg-primary/5 text-primary'
                           : 'text-gray-700 hover:bg-gray-50'
-                        } transition-colors`}
+                      } transition-colors`}
                     >
                       {option.label}
                     </button>
@@ -162,71 +155,73 @@ export default function TicketHistoryPage() {
           {/* Timeline */}
           <div className="space-y-6">
             {loading ? (
-  <div className="text-center py-8 text-gray-500">Loading history...</div>
-) : filteredHistory.map((event, index) => (
-                {/* Timeline Line */}
-                <div className="relative flex flex-col items-center">
-                  <div className="p-2 rounded-full bg-gray-50">
-                    {getEventIcon(event.type)}
+              <div className="text-center py-8 text-gray-500">Loading history...</div>
+            ) : (
+              filteredHistory.map((event, index) => (
+                <div key={event.id} className="flex gap-4">
+                  {/* Timeline Line */}
+                  <div className="relative flex flex-col items-center">
+                    <div className="p-2 rounded-full bg-gray-50">
+                      {getEventIcon(event.type)}
+                    </div>
+                    {index !== filteredHistory.length - 1 && (
+                      <div className="w-px h-full bg-gray-200 mt-2" />
+                    )}
                   </div>
-                  {index !== filteredHistory.length - 1 && (
-                    <div className="w-px h-full bg-gray-200 mt-2" />
-                  )}
-                </div>
 
-                {/* Event Content */}
-                <div className="flex-1 pt-1">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <div className="flex items-center gap-2">
-                          <Image
-                            src={event.user.avatar}
-                            alt={event.user.name}
-                            width={20}
-                            height={20}
-                            className="rounded-full"
-                          />
-                          <span className="font-medium text-gray-900">
-                            {event.user.name}
-                          </span>
+                  {/* Event Content */}
+                  <div className="flex-1 pt-1">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <div className="flex items-center gap-2">
+                            <Image
+                              src={event.user.avatar || '/default-avatar.png'}
+                              alt={event.user.name}
+                              width={20}
+                              height={20}
+                              className="rounded-full"
+                            />
+                            <span className="font-medium text-gray-900">
+                              {event.user.name}
+                            </span>
+                          </div>
+                          <span className="text-gray-500">{event.action}</span>
                         </div>
-                        <span className="text-gray-500">{event.action}</span>
+
+                        {/* Event Details */}
+                        {event.type === 'comment' ? (
+                          <p className="text-gray-700 bg-gray-50 p-3 rounded-lg mt-2">
+                            {event.details.comment}
+                          </p>
+                        ) : event.type === 'tag' ? (
+                          <div className="flex items-center gap-2 mt-1">
+                            {event.details.tags?.map((tag) => (
+                              <span
+                                key={tag}
+                                className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded-full"
+                              >
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-gray-500">{event.details.from}</span>
+                            <span className="text-gray-500">→</span>
+                            <span className="text-gray-900">{event.details.to}</span>
+                          </div>
+                        )}
                       </div>
 
-                      {/* Event Details */}
-                      {event.type === 'comment' ? (
-                        <p className="text-gray-700 bg-gray-50 p-3 rounded-lg mt-2">
-                          {event.details.comment}
-                        </p>
-                      ) : event.type === 'tag' ? (
-                        <div className="flex items-center gap-2 mt-1">
-                          {event.details.tags?.map((tag) => (
-                            <span
-                              key={tag}
-                              className="px-2 py-1 text-xs font-medium bg-gray-100 \
-                                text-gray-700 rounded-full"
-                            >
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-gray-500">{event.details.from}</span>
-                          <span className="text-gray-500">→</span>
-                          <span className="text-gray-900">{event.details.to}</span>
-                        </div>
-                      )}
+                      <span className="text-sm text-gray-500 whitespace-nowrap">
+                        {formatTimestamp(event.timestamp)}
+                      </span>
                     </div>
-
-                    <span className="text-sm text-gray-500 whitespace-nowrap">
-                      {formatTimestamp(event.timestamp)}
-                    </span>
                   </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       </div>
@@ -241,45 +236,15 @@ export default function TicketHistoryPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="p-4 bg-gray-50 rounded-lg">
                 <div className="text-2xl font-semibold text-gray-900">
-                  {mockHistory.length}
+                  {historyEvents.length}
                 </div>
                 <div className="text-sm text-gray-500">Total Activities</div>
               </div>
               <div className="p-4 bg-gray-50 rounded-lg">
                 <div className="text-2xl font-semibold text-gray-900">
-                  {mockHistory.filter(e => e.type === 'comment').length}
+                  {historyEvents.filter(e => e.type === 'comment').length}
                 </div>
                 <div className="text-sm text-gray-500">Comments</div>
-              </div>
-            </div>
-
-            {/* Activity Breakdown */}
-            <div className="pt-6 border-t border-gray-200">
-              <h3 className="text-sm font-medium text-gray-700 mb-4">
-                Activity Breakdown
-              </h3>
-              <div className="space-y-3">
-                {filterOptions.slice(1).map((option) => {
-                  const count = mockHistory.filter(e => e.type === option.value).length
-                  const percentage = (count / mockHistory.length) * 100
-                  return (
-                    <div key={option.value}>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm text-gray-600">{option.label}</span>
-                        <span className="text-sm text-gray-900">{count}</span>
-                      </div>
-                      <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-primary rounded-full transition-all"
-                          style={{
-                            width: `${percentage}%`,
-                            backgroundColor: '#0052CC',
-                          }}
-                        />
-                      </div>
-                    </div>
-                  )
-                })}
               </div>
             </div>
           </div>
