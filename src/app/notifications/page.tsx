@@ -28,6 +28,15 @@ const filterOptions = [
 export default function NotificationsPage() {
   const { notifications, markAsRead, markAllAsRead, deleteNotification, getUnreadCount } = 
     useNotificationStore()
+  
+  async function persistAllRead() {
+    // Example: /api/notifications/markAllAsRead
+    try {
+      await fetch('/api/notifications/markAllAsRead', { method: 'POST' })
+    } catch (error) {
+      console.error('Failed to persist markAllAsRead', error)
+    }
+  }
   const [activeFilter, setActiveFilter] = useState<NotificationType>('all')
   const [showUnreadOnly, setShowUnreadOnly] = useState(false)
 
@@ -63,7 +72,10 @@ export default function NotificationsPage() {
               {showUnreadOnly ? 'Show All' : 'Show Unread'}
             </button>
             <button
-              onClick={markAllAsRead}
+              onClick={() => {
+                markAllAsRead()
+                persistAllRead()
+              }}
               className="px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm \
                 font-medium text-gray-700"
             >

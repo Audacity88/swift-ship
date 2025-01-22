@@ -13,43 +13,15 @@ interface LinkedTicket {
   createdAt: string
 }
 
-const mockLinkedTickets: LinkedTicket[] = [
-  {
-    id: 'TICKET-123',
-    title: 'Server performance degradation in US-East region',
-    status: 'open',
-    priority: 'high',
-    type: 'problem',
-    createdAt: '2024-03-15T10:30:00Z',
-  },
-  {
-    id: 'TICKET-124',
-    title: 'Database connection timeout issues',
-    status: 'in-progress',
-    priority: 'urgent',
-    type: 'incident',
-    createdAt: '2024-03-15T11:45:00Z',
-  },
-]
-
-const mockSearchResults: LinkedTicket[] = [
-  {
-    id: 'TICKET-125',
-    title: 'API Gateway latency spikes',
-    status: 'open',
-    priority: 'medium',
-    type: 'problem',
-    createdAt: '2024-03-15T09:15:00Z',
-  },
-  {
-    id: 'TICKET-126',
-    title: 'Cache invalidation errors',
-    status: 'open',
-    priority: 'high',
-    type: 'incident',
-    createdAt: '2024-03-15T08:30:00Z',
-  },
-]
+// Remove the mock data, define the LinkedTicket but we fetch from supabase
+interface LinkedTicket {
+  id: string
+  title: string
+  status: string
+  priority: string
+  type: string
+  createdAt: string
+}
 
 export default function LinkedProblemPage() {
   const params = useParams()
@@ -57,20 +29,39 @@ export default function LinkedProblemPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [isSearching, setIsSearching] = useState(false)
   const [searchResults, setSearchResults] = useState<LinkedTicket[]>([])
-  const [linkedTickets, setLinkedTickets] = useState<LinkedTicket[]>(mockLinkedTickets)
+  const [linkedTickets, setLinkedTickets] = useState<LinkedTicket[]>([])
+
+  useEffect(() => {
+    // fetch existing linked "problem" tickets from supabase or from a /api/tickets?type=problem&linkedTo=...
+    // For demonstration, we do a simpler approach
+    const loadLinkedProblems = async () => {
+      try {
+        const response = await fetch(`/api/tickets?filters[type]=problem&filters[linkedTo]=${ticketId}`)
+        // or store a "linked_tickets" table. We'll assume "metadata.linkedProblem" for demonstration
+        if (response.ok) {
+          const data = await response.json()
+          setLinkedTickets(data.data || [])
+        }
+      } catch (error) {
+        console.error('Failed to load linked problems:', error)
+      }
+    }
+    loadLinkedProblems()
+  }, [ticketId])
 
   const handleSearch = async () => {
-    setIsSearching(true)
-    try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      setSearchResults(mockSearchResults)
-    } catch (error) {
-      console.error('Failed to search tickets:', error)
-    } finally {
-      setIsSearching(false)
-    }
+  setIsSearching(true)
+  try {
+    const response = await fetch(`/api/tickets?filters[type]=problem&search=${encodeURIComponent(searchQuery)}`)
+    if (!response.ok) throw new Error('Failed to search tickets')
+    const json = await response.json()
+    setSearchResults(json.data || [])
+  } catch (error) {
+    console.error('Failed to search tickets:', error)
+  } finally {
+    setIsSearching(false)
   }
+}
 
   const handleLink = async (ticket: LinkedTicket) => {
     try {

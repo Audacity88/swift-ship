@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { format } from 'date-fns'
 import { Edit2, Loader2, AlertCircle } from 'lucide-react'
+import { useParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -44,6 +45,21 @@ export function CustomFieldsSection({
   fields,
   className = ''
 }: CustomFieldsSectionProps) {
+  const [definitions, setDefinitions] = useState<any[]>([])
+
+  useEffect(() => {
+    const loadDefinitions = async () => {
+      try {
+        const res = await fetch('/api/custom-fields')
+        if (!res.ok) throw new Error('Failed to load custom fields')
+        const json = await res.json()
+        setDefinitions(json.data || [])
+      } catch (err) {
+        console.error('Could not load custom fields definitions:', err)
+      }
+    }
+    loadDefinitions()
+  }, [])
   // State
   const [customFields, setCustomFields] = useState<CustomField[]>([])
   const [values, setValues] = useState<Record<string, CustomFieldValue>>({})

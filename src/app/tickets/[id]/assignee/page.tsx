@@ -6,62 +6,34 @@ import { Search, UserPlus, History, Check } from 'lucide-react'
 import type { Agent } from '@/types/ticket'
 
 // Mock data - replace with actual API calls
-const mockAgents: Agent[] = [
-  {
-    id: '1',
-    name: 'Sarah Wilson',
-    email: 'sarah@example.com',
-    role: 'agent',
-    avatar: 'https://picsum.photos/200',
-  },
-  {
-    id: '2',
-    name: 'Michael Chen',
-    email: 'michael@example.com',
-    role: 'agent',
-    avatar: 'https://picsum.photos/201',
-  },
-  {
-    id: '3',
-    name: 'Emma Davis',
-    email: 'emma@example.com',
-    role: 'agent',
-    avatar: 'https://picsum.photos/202',
-  },
-]
-
-const mockAssignmentHistory = [
-  {
-    id: '1',
-    agent: mockAgents[0],
-    assignedAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-    assignedBy: {
-      id: '4',
-      name: 'Admin User',
-      email: 'admin@example.com',
-      role: 'admin',
-    },
-  },
-  {
-    id: '2',
-    agent: mockAgents[1],
-    assignedAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(),
-    assignedBy: {
-      id: '4',
-      name: 'Admin User',
-      email: 'admin@example.com',
-      role: 'admin',
-    },
-  },
-]
+// We'll remove the mocks. We'll store agents in state and assignmentHistory in another state or skip it.
 
 export default function TicketAssigneePage() {
   const [searchQuery, setSearchQuery] = useState('')
+  const [agents, setAgents] = useState<Agent[]>([])
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null)
   const [isAssigning, setIsAssigning] = useState(false)
 
-  // Filter agents based on search query
-  const filteredAgents = mockAgents.filter((agent) => {
+  const router = useRouter()
+  const params = useParams()
+  const ticketId = params?.id as string
+
+  useEffect(() => {
+    const loadAgents = async () => {
+      try {
+        const response = await fetch('/api/agents')
+        if (!response.ok) throw new Error('Failed to fetch agents')
+        const data = await response.json()
+        setAgents(data)
+      } catch (error) {
+        console.error('Failed to load agents:', error)
+      }
+    }
+    loadAgents()
+  }, [])
+
+  // Filter
+  const filteredAgents = agents.filter((agent) => {
     if (!searchQuery) return true
     const query = searchQuery.toLowerCase()
     return (
@@ -71,18 +43,23 @@ export default function TicketAssigneePage() {
   })
 
   const handleAssign = async () => {
-    if (!selectedAgent) return
-    setIsAssigning(true)
-    try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      // Handle successful assignment
-    } catch (error) {
-      console.error('Failed to assign ticket:', error)
-    } finally {
-      setIsAssigning(false)
-    }
+  if (!selectedAgent) return
+  setIsAssigning(true)
+  try {
+    const response = await fetch(\`/api/tickets/\${ticketId}\`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assignee_id: selectedAgent }),
+    })
+    if (!response.ok) throw new Error('Failed to assign ticket')
+    // Optionally refresh or display success
+    router.refresh()
+  } catch (error) {
+    console.error('Failed to assign ticket:', error)
+  } finally {
+    setIsAssigning(false)
   }
+}
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

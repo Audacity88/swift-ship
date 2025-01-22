@@ -6,20 +6,8 @@ import { Search, Plus, X, Check } from 'lucide-react'
 import type { Tag } from '@/types/ticket'
 
 // Mock data - replace with actual API calls
-const mockTags: Tag[] = [
-  { id: '1', name: 'bug', color: '#DE350B' },
-  { id: '2', name: 'feature', color: '#36B37E' },
-  { id: '3', name: 'documentation', color: '#00B8D9' },
-  { id: '4', name: 'enhancement', color: '#6554C0' },
-  { id: '5', name: 'help wanted', color: '#FF991F' },
-  { id: '6', name: 'question', color: '#998DD9' },
-]
-
-const tagCategories = [
-  { id: '1', name: 'Type', tags: ['bug', 'feature', 'enhancement'] },
-  { id: '2', name: 'Priority', tags: ['urgent', 'high', 'medium', 'low'] },
-  { id: '3', name: 'Status', tags: ['in progress', 'blocked', 'reviewing'] },
-]
+// Remove the mock definitions entirely
+let tagCategories: Array<any> = []
 
 interface TagWithCategory extends Tag {
   category?: string
@@ -29,15 +17,30 @@ export default function TicketTagsPage() {
   const params = useParams()
   const ticketId = params?.id as string
   const [searchQuery, setSearchQuery] = useState('')
-  const [selectedTags, setSelectedTags] = useState<Tag[]>([mockTags[0], mockTags[2]])
+  const [tags, setTags] = useState<Tag[]>([])
+  const [selectedTags, setSelectedTags] = useState<Tag[]>([])
   const [showNewTagForm, setShowNewTagForm] = useState(false)
   const [newTag, setNewTag] = useState({ name: '', color: '#000000' })
 
   // Filter tags based on search query
-  const filteredTags = mockTags.filter((tag) => {
-    if (!searchQuery) return true
-    return tag.name.toLowerCase().includes(searchQuery.toLowerCase())
-  })
+  useEffect(() => {
+  const loadTags = async () => {
+    try {
+      const response = await fetch('/api/tags')
+      if (!response.ok) throw new Error('Failed to fetch tags')
+      const data = await response.json()
+      setTags(data)
+    } catch (err) {
+      console.error('Failed to load tags:', err)
+    }
+  }
+  loadTags()
+}, [])
+
+const filteredTags = tags.filter(tag => {
+  if (!searchQuery) return true
+  return tag.name.toLowerCase().includes(searchQuery.toLowerCase())
+})
 
   const isSelected = (tagId: string) => {
     return selectedTags.some(tag => tag.id === tagId)
@@ -96,31 +99,27 @@ export default function TicketTagsPage() {
 
           {/* Tag Categories */}
           <div className="space-y-6">
-            {tagCategories.map((category) => (
-              <div key={category.id}>
-                <h3 className="text-sm font-medium text-gray-700 mb-3">{category.name}</h3>
-                <div className="flex flex-wrap gap-2">
-                  {filteredTags
-                    .filter(tag => category.tags.includes(tag.name))
-                    .map((tag) => (
-                      <button
-                        key={tag.id}
-                        onClick={() => toggleTag(tag)}
-                        className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm \
-                          font-medium transition-colors ${
-                          isSelected(tag.id)
-                            ? 'text-white'
-                            : 'text-gray-700 bg-gray-100 hover:bg-gray-200'
-                        }`}
-                        style={isSelected(tag.id) ? { backgroundColor: tag.color } : {}}
-                      >
-                        {tag.name}
-                        {isSelected(tag.id) && <X className="w-4 h-4" />}
-                      </button>
-                    ))}
-                </div>
+            <div>
+              <h3 className="text-sm font-medium text-gray-700 mb-3">All Tags</h3>
+              <div className="flex flex-wrap gap-2">
+                {filteredTags.map((tag) => (
+                  <button
+                    key={tag.id}
+                    onClick={() => toggleTag(tag)}
+                    className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm
+                                font-medium transition-colors ${
+                      isSelected(tag.id)
+                        ? 'text-white'
+                        : 'text-gray-700 bg-gray-100 hover:bg-gray-200'
+                    }`}
+                    style={isSelected(tag.id) ? { backgroundColor: tag.color } : {}}
+                  >
+                    {tag.name}
+                    {isSelected(tag.id) && <X className="w-4 h-4" />}
+                  </button>
+                ))}
               </div>
-            ))}
+            </div>
           </div>
         </div>
 
