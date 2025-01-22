@@ -53,7 +53,10 @@ export default function LinkedProblemPage() {
           const error = await response.json()
           throw new Error(error.error || 'Failed to fetch available problems')
         }
-        const data = await response.json()
+        const { data } = await response.json()
+        if (!Array.isArray(data)) {
+          throw new Error('Invalid response format')
+        }
         setAvailableTickets(data.filter((ticket: LinkedTicket) => 
           ticket.id !== ticketId && !linkedTickets.some(lt => lt.id === ticket.id)
         ))
