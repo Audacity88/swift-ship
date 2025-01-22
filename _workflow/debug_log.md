@@ -296,57 +296,85 @@ export async function GET(
 2. Are there performance implications of making all parameter access async?
 3. Should we consider alternative routing strategies?
 
-# Debug Log: Next.js Dynamic APIs in App Router
+# Debug Log: Next.js 15 Async API Migration
 
-## Key Discovery: Next.js 15 Changes
-After investigating why some routes work and others fail, we discovered important changes in Next.js 15:
+## Current Status
+After investigating the route parameter issues, we've discovered this is part of a broader change in Next.js 15 where previously synchronous APIs are now asynchronous.
 
-1. Dynamic APIs (including route params) are now truly asynchronous
-2. The error message about awaiting params is NOT misleading - it's a new requirement
-3. Different routes might be using different versions or patterns
+## Key Changes in Next.js 15
+1. Dynamic APIs are now fully asynchronous:
+   - `cookies()`
+   - `headers()`
+   - `draftMode()`
+   - Route parameters (`params`)
+   - Search parameters (`searchParams`)
 
-### Working vs Non-Working Examples
+## Migration Strategy
 
-1. Non-Working Pattern:
+### 1. Use Next.js Codemod
+```bash
+npx @next/codemod@latest next-async-request-api .
+```
+
+This will automatically:
+- Transform dynamic API calls to be properly awaited
+- Update route handlers to be async
+- Add type casts where needed
+- Flag areas needing manual review
+
+### 2. Pattern Updates Required
+Before:
 ```typescript
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  // ❌ Direct access fails in Next.js 15
-  const ticketId = params.id
+  const ticketId = params.id  // ❌ No longer works
 }
 ```
 
-2. Working Pattern (Next.js 15):
+After:
 ```typescript
 export async function GET(
   request: NextRequest,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
-  // ✅ Properly await the params
-  const { id } = await context.params
+  const { id } = await context.params  // ✅ Correct async usage
 }
 ```
 
-### Key Insights:
-1. The params object itself must be awaited, not just its properties
-2. Using destructuring in the function parameters can cause issues
-3. Using a separate context parameter helps maintain the async nature
-4. Other routes might work because they're not yet running under strict Next.js 15 rules
+### 3. Files to Update
+Priority order:
+1. `/api/tickets/[id]/linked-problems/route.ts` ✅
+2. Other dynamic API routes:
+   - `/api/users/[id]/route.ts`
+   - `/api/tickets/[id]/route.ts`
+   - `/api/tickets/[id]/assignment-history/route.ts`
+   - `/api/teams/metrics/[id]/route.ts`
 
-### Solution Requirements:
-1. Always await the params object before accessing properties
-2. Use the context parameter pattern instead of destructuring
-3. Update all route handlers to follow this pattern for consistency
+## Implementation Plan
+1. Run codemod to automatically update files
+2. Review and test each updated route
+3. Pay special attention to:
+   - Cookie handling
+   - Route parameters
+   - Header access
+   - Search parameters
 
-### Migration Path:
-1. Use the `@next/codemod` tool for automatic fixes where possible
-2. Manually update routes following the Next.js 15 pattern
-3. Consider adding ESLint rules to enforce the new pattern
+## Validation Steps
+1. Run TypeScript compiler
+2. Test each route with Postman/curl
+3. Verify error handling
+4. Check performance impact
 
-## Next Steps:
-1. Test this solution with the updated route handler
-2. Update other route handlers to follow the same pattern
-3. Document this as a required pattern for all new route handlers
-4. Consider adding automated tests to verify proper param handling
+## Open Questions
+1. Performance implications of async route params?
+2. Impact on existing error handling?
+3. Need for additional error boundaries?
+
+## Next Steps
+1. Run codemod
+2. Review flagged files
+3. Update types where needed
+4. Add comprehensive tests
+5. Document new patterns for team
