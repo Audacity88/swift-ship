@@ -1,11 +1,11 @@
 'use client'
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { useState } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
-import { createContext, useContext } from 'react'
+import { useState, createContext, useContext, useRef, type PropsWithChildren } from 'react'
+import { createBrowserClient, type SupabaseClient } from '@supabase/ssr'
+import { Database } from '@/types/supabase'
 
-const SupabaseContext = createContext<ReturnType<typeof createBrowserClient> | null>(null)
+const SupabaseContext = createContext<SupabaseClient<Database> | null>(null)
 
 export const useSupabase = () => {
   const context = useContext(SupabaseContext)
@@ -15,7 +15,18 @@ export const useSupabase = () => {
   return context
 }
 
-export default function Providers({ children }: { children: React.ReactNode }) {
+export default function Providers({ children }: PropsWithChildren) {
+  // Use useRef to ensure stable reference across renders
+  const supabaseClient = useRef<SupabaseClient<Database> | null>(null)
+  
+  // Initialize clients only once
+  if (!supabaseClient.current) {
+    supabaseClient.current = createBrowserClient<Database>(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
+  }
+
   const [queryClient] = useState(
     () =>
       new QueryClient({
@@ -28,15 +39,13 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       })
   )
 
-  const [supabase] = useState(() => 
-    createBrowserClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
-  )
+  // Ensure we have a client before rendering children
+  if (!supabaseClient.current) {
+    return null // or loading state
+  }
 
   return (
-    <SupabaseContext.Provider value={supabase}>
+    <SupabaseContext.Provider value={supabaseClient.current}>
       <QueryClientProvider client={queryClient}>
         {children}
       </QueryClientProvider>

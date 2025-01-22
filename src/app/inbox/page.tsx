@@ -1,53 +1,151 @@
 'use client'
 
-import { useState } from 'react'
-import { Search, Filter, Star, MessageSquare, Phone, Mail, Plus } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Image from 'next/image'
+import { Search, Filter, Star, MessageSquare, Phone, Mail, Plus } from 'lucide-react'
 import { COLORS } from '@/lib/constants'
+import { useSupabase } from '@/app/providers'
+import { ConversationView } from '@/components/features/inbox/ConversationView'
 
-const messages = [
-  {
-    id: 1,
-    sender: 'John Smith',
-    title: 'Shipping Delay Query',
-    preview: 'Hi, I wanted to check on the status of my shipment...',
-    time: '10:30 AM',
-    unread: true,
-    avatar: 'https://picsum.photos/200',
-  },
-  {
-    id: 2,
-    sender: 'Sarah Johnson',
-    title: 'Package Insurance',
-    preview: 'Could you provide more information about your insurance options?',
-    time: 'Yesterday',
-    unread: false,
-    avatar: 'https://picsum.photos/201',
-  },
-  {
-    id: 3,
-    sender: 'Mike Wilson',
-    title: 'Bulk Shipping Rates',
-    preview: 'We are interested in your bulk shipping rates for our company...',
-    time: 'Jan 18',
-    unread: true,
-    avatar: 'https://picsum.photos/202',
-  },
-]
+// We assume: The "messages" table is joined to "tickets" for the conversation thread.
+// We'll fetch: all messages for the logged in user, either as the ticket's customer or as message author.
 
-const quickReplies = [
-  "Thank you for your message. We will get back to you shortly.",
-  "Your shipment is currently in transit and on schedule.",
-  "I have escalated this to our support team for further assistance.",
-  "Could you please provide your tracking number?",
-]
+interface InboxMessage {
+  id: string
+  ticketId: string
+  content: string
+  authorId: string
+  authorType: 'agent' | 'customer'
+  createdAt: string
+  ticketTitle: string
+  ticketCustomerId: string
+}
 
 export default function InboxPage() {
-  const [selectedMessage, setSelectedMessage] = useState(messages[0])
+  const supabase = useSupabase()
+  const [searchQuery, setSearchQuery] = useState('')
+  const [isLoading, setIsLoading] = useState(true)
+  const [messages, setMessages] = useState<InboxMessage[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [userId, setUserId] = useState<string | null>(null)
+  const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null)
+
+  useEffect(() => {
+    // On mount, get the logged in user, then fetch messages
+    const init = async () => {
+      try {
+        const sessionRes = await supabase.auth.getSession()
+        const session = sessionRes.data.session
+        if (!session?.user?.id) {
+          setError('Not authenticated')
+          setIsLoading(false)
+          return
+        }
+        setUserId(session.user.id)
+        // fetch messages
+        await loadInbox(session.user.id)
+      } catch (err: any) {
+        setError(err.message)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    void init()
+  }, [supabase])
+
+  const loadInbox = async (uid: string) => {
+    setIsLoading(true)
+    setError(null)
+    try {
+      // Get messages from tickets where user is the customer
+      const customerMessages = await supabase
+        .from('messages')
+        .select(`
+          id,
+          ticket_id,
+          content,
+          author_id,
+          author_type,
+          created_at,
+          tickets!inner(id, title, customer_id)
+        `)
+        .eq('tickets.customer_id', uid);
+
+      // Get messages where user is the author
+      const authorMessages = await supabase
+        .from('messages')
+        .select(`
+          id,
+          ticket_id,
+          content,
+          author_id,
+          author_type,
+          created_at,
+          tickets!inner(id, title, customer_id)
+        `)
+        .eq('author_id', uid);
+
+      if (customerMessages.error) throw customerMessages.error;
+      if (authorMessages.error) throw authorMessages.error;
+
+      // Merge and deduplicate messages
+      const allMessages = [...(customerMessages.data || []), ...(authorMessages.data || [])];
+      const uniqueMessages = Array.from(new Map(allMessages.map(m => [m.id, m])).values());
+      
+      // Sort by created_at
+      const sortedMessages = uniqueMessages.sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+
+      const mapped: InboxMessage[] = sortedMessages.map((row: any) => ({
+        id: row.id,
+        ticketId: row.ticket_id,
+        content: row.content,
+        authorId: row.author_id,
+        authorType: row.author_type,
+        createdAt: row.created_at,
+        ticketTitle: row.tickets.title,
+        ticketCustomerId: row.tickets.customer_id
+      }))
+      setMessages(mapped)
+    } catch (err: any) {
+      console.error('Error loading inbox:', err)
+      setError(err.message)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // Filter messages in memory
+  const filteredMessages = messages.filter(msg => {
+    if (!searchQuery) return true
+    const q = searchQuery.toLowerCase()
+    return (
+      msg.ticketTitle.toLowerCase().includes(q) ||
+      msg.content.toLowerCase().includes(q)
+    )
+  })
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-5rem)] -mt-6">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900" />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-5rem)] -mt-6 text-red-500">
+        {error}
+      </div>
+    )
+  }
 
   return (
     <div className="flex h-[calc(100vh-5rem)] -mt-6 -mx-6">
-      {/* Message List */}
+      {/* Messages List */}
       <div className="w-80 border-r border-gray-200 bg-white flex flex-col">
         <div className="p-4 border-b border-gray-200">
           <div className="relative">
@@ -55,136 +153,64 @@ export default function InboxPage() {
             <input
               type="search"
               placeholder="Search messages..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2 text-sm border border-gray-200 rounded-lg"
             />
           </div>
         </div>
         
         <div className="flex-1 overflow-auto">
-          {messages.map((message) => (
-            <button
+          {filteredMessages.map((message) => (
+            <div
               key={message.id}
-              onClick={() => setSelectedMessage(message)}
-              className={`w-full p-4 text-left border-b border-gray-100 hover:bg-gray-50 \
-                ${selectedMessage.id === message.id ? 'bg-gray-50' : ''} \
-                ${message.unread ? 'bg-blue-50/50' : ''}`}
+              onClick={() => setSelectedTicketId(message.ticketId)}
+              className={`w-full p-4 text-left border-b border-gray-100 hover:bg-gray-50 cursor-pointer ${
+                selectedTicketId === message.ticketId ? 'bg-gray-50' : ''
+              }`}
             >
               <div className="flex gap-3">
                 <div className="relative w-10 h-10">
+                  {/* We might show an avatar if we have it, else default */}
                   <Image
-                    src={message.avatar}
-                    alt={message.sender}
+                    src="/images/default-avatar.png"
+                    alt={message.authorId}
                     fill
                     className="rounded-full object-cover"
                   />
-                  {message.unread && (
-                    <div className="absolute -top-1 -right-1 w-3 h-3 bg-primary rounded-full" />
-                  )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex justify-between items-start">
-                    <span className="font-medium truncate">{message.sender}</span>
-                    <span className="text-xs text-gray-500 whitespace-nowrap ml-2">{message.time}</span>
+                    <span className="font-medium truncate">
+                      {message.ticketTitle || 'No Title'}
+                    </span>
+                    <span className="text-xs text-gray-500 whitespace-nowrap ml-2">
+                      {new Date(message.createdAt).toLocaleString()}
+                    </span>
                   </div>
-                  <p className="text-sm font-medium text-gray-900 truncate">{message.title}</p>
-                  <p className="text-sm text-gray-500 truncate">{message.preview}</p>
+                  <p className="text-sm font-medium text-gray-900 truncate">
+                    {/* If user is the author, show "You:" or "Agent:" etc */}
+                    {message.authorId === userId ? 'You:' : (message.authorType === 'agent' ? 'Agent:' : 'Customer:')}
+                  </p>
+                  <p className="text-sm text-gray-500 truncate">{message.content}</p>
                 </div>
               </div>
-            </button>
+            </div>
           ))}
         </div>
       </div>
 
       {/* Conversation View */}
-      <div className="flex-1 bg-white flex flex-col">
-        {selectedMessage ? (
-          <>
-            <div className="p-4 border-b border-gray-200">
-              <div className="flex justify-between items-start mb-4">
-                <div className="flex items-center gap-4">
-                  <div className="relative w-12 h-12">
-                    <Image
-                      src={selectedMessage.avatar}
-                      alt={selectedMessage.sender}
-                      fill
-                      className="rounded-full object-cover"
-                    />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-semibold">{selectedMessage.sender}</h2>
-                    <p className="text-sm text-gray-500">{selectedMessage.title}</p>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <button className="p-2 text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-100">
-                    <Star className="w-5 h-5" />
-                  </button>
-                  <button className="p-2 text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-100">
-                    <MessageSquare className="w-5 h-5" />
-                  </button>
-                  <button className="p-2 text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-100">
-                    <Phone className="w-5 h-5" />
-                  </button>
-                  <button className="p-2 text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-100">
-                    <Mail className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex-1 p-4 overflow-auto">
-              <div className="max-w-3xl mx-auto">
-                <p className="text-gray-600 leading-relaxed">
-                  {selectedMessage.preview}
-                  Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor 
-                  incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis 
-                  nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.
-                </p>
-              </div>
-            </div>
-
-            <div className="p-4 border-t border-gray-200">
-              <div className="max-w-3xl mx-auto">
-                <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
-                  {quickReplies.map((reply) => (
-                    <button
-                      key={reply}
-                      className="px-4 py-2 bg-gray-100 text-sm text-gray-700 rounded-full whitespace-nowrap \
-                        hover:bg-gray-200"
-                    >
-                      {reply}
-                    </button>
-                  ))}
-                </div>
-                <div className="flex gap-4">
-                  <textarea
-                    placeholder="Type your message..."
-                    className="flex-1 p-3 border border-gray-200 rounded-lg resize-none \
-                      focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                    rows={4}
-                  />
-                  <button
-                    className="self-end px-6 py-3 bg-primary text-white rounded-lg font-medium \
-                      hover:bg-primary/90 transition-colors"
-                    style={{ backgroundColor: COLORS.primary }}
-                  >
-                    Send
-                  </button>
-                </div>
-              </div>
-            </div>
-          </>
-        ) : (
-          <div className="flex-1 flex items-center justify-center text-gray-500">
-            Select a message to view
-          </div>
-        )}
+      <div className="flex-1 bg-white">
+        <ConversationView
+          ticketId={selectedTicketId}
+          currentUserId={userId || ''}
+        />
       </div>
 
       {/* Floating Action Button */}
       <button
-        className="fixed bottom-6 right-6 p-4 bg-primary text-white rounded-full shadow-lg \
-          hover:bg-primary/90 transition-colors"
+        className="fixed bottom-6 right-6 p-4 bg-primary text-white rounded-full shadow-lg hover:bg-primary/90 transition-colors"
         style={{ backgroundColor: COLORS.primary }}
       >
         <Plus className="w-6 h-6" />
