@@ -3,47 +3,66 @@ import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import type { Tag } from '@/types/ticket'
 
-const createClient = () => {
+const createClient = async (request: Request) => {
+  const cookieStore = cookies()
+  
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        async get(name: string) {
-          const cookieStore = await cookies()
+        get(name: string) {
           return cookieStore.get(name)?.value
+        },
+        set(name: string, value: string, options: any) {
+          try {
+            cookieStore.set({ name, value, ...options })
+          } catch (error) {
+            // Handle cookie setting error
+          }
+        },
+        remove(name: string, options: any) {
+          try {
+            cookieStore.set({ name, value: '', ...options })
+          } catch (error) {
+            // Handle cookie removal error
+          }
         },
       },
     }
   )
 }
 
+// GET /api/tags - Get all tags
 export async function GET(request: Request) {
   try {
-    const supabase = await createClient()
-    const { searchParams } = new URL(request.url)
-    const search = searchParams.get('search')
-    const parentId = searchParams.get('parent_id')
+    const supabase = await createClient(request)
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
 
-    let query = supabase
+    if (sessionError || !session) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
+    // Get all tags
+    const { data: tags, error: tagsError } = await supabase
       .from('tags')
       .select('*')
+      .order('name')
 
-    if (search) {
-      query = query.ilike('name', `%${search}%`)
+    if (tagsError) {
+      console.error('Failed to fetch tags:', tagsError)
+      return NextResponse.json(
+        { error: 'Failed to fetch tags' },
+        { status: 500 }
+      )
     }
-
-    if (parentId) {
-      query = query.eq('parent_id', parentId)
-    }
-
-    const { data: tags, error } = await query.order('name')
-
-    if (error) throw error
 
     return NextResponse.json(tags)
   } catch (error) {
-    console.error('Failed to fetch tags:', error)
+    console.error('Error fetching tags:', error)
     return NextResponse.json(
       { error: 'Failed to fetch tags' },
       { status: 500 }
@@ -53,7 +72,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient()
+    const supabase = await createClient(request)
     const tag: Tag = await request.json()
 
     // Validate required fields
@@ -98,7 +117,7 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
-    const supabase = await createClient()
+    const supabase = await createClient(request)
     const tag: Tag = await request.json()
 
     if (!tag.id) {
@@ -144,7 +163,7 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const supabase = await createClient()
+    const supabase = await createClient(request)
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
 
@@ -203,7 +222,7 @@ export async function DELETE(request: Request) {
 // Bulk operations endpoint
 export async function PATCH(request: Request) {
   try {
-    const supabase = await createClient()
+    const supabase = await createClient(request)
     const { operation, tagIds, ticketIds }: {
       operation: 'add' | 'remove'
       tagIds: string[]

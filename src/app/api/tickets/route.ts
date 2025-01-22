@@ -1,15 +1,9 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { sql, Transaction } from '@/lib/db'
-import { auth } from '@/lib/auth'
 import { TicketPriority, TicketStatus } from '@/types/ticket'
-import { NextRequest } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
+import type { NextRequest } from 'next/server'
 
 // Types
 interface CreateTicketResult {
@@ -43,6 +37,7 @@ const createTicketSchema = z.object({
 const ticketFiltersSchema = z.object({
   status: z.string().array().optional(),
   priority: z.string().array().optional(),
+  type: z.string().optional(),
   search: z.string().nullish(),
   dateFrom: z.string().nullish(),
   dateTo: z.string().nullish()
@@ -58,41 +53,89 @@ const sortingSchema = z.object({
   sortDirection: z.enum(['asc', 'desc']).default('desc')
 })
 
-// GET /api/tickets - List tickets with filtering
+const initSupabase = async () => {
+  const cookieStore = await cookies()
+  
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value
+        },
+        set(name: string, value: string, options: any) {
+          try {
+            cookieStore.set({ name, value, ...options })
+          } catch (error) {
+            // Handle cookie setting error
+          }
+        },
+        remove(name: string, options: any) {
+          try {
+            cookieStore.set({ name, value: '', ...options })
+          } catch (error) {
+            // Handle cookie removal error
+          }
+        },
+      },
+    }
+  )
+}
+
+// GET /api/tickets - Get tickets with optional filters
 export async function GET(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const supabase = await initSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+
+    if (userError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
     }
 
-    // Parse query parameters
-    const searchParams = new URL(request.url).searchParams
+    const { searchParams } = new URL(request.url)
+    
+    // Parse and validate filters
     const filters = ticketFiltersSchema.parse({
       status: searchParams.get('status')?.split(','),
       priority: searchParams.get('priority')?.split(','),
+      type: searchParams.get('type'),
       search: searchParams.get('search'),
-      dateFrom: searchParams.get('dateFrom') || undefined,
-      dateTo: searchParams.get('dateTo') || undefined
+      dateFrom: searchParams.get('dateFrom'),
+      dateTo: searchParams.get('dateTo')
     })
 
+    // Parse pagination with defaults
     const { page, pageSize } = paginationSchema.parse({
-      page: searchParams.get('page'),
-      pageSize: searchParams.get('pageSize')
+      page: searchParams.get('page') || '1',
+      pageSize: searchParams.get('pageSize') || '10'
     })
 
+    // Parse sorting with defaults
     const { sortField, sortDirection } = sortingSchema.parse({
-      sortField: searchParams.get('sortField'),
-      sortDirection: searchParams.get('sortDirection')
+      sortField: searchParams.get('sortField') || 'created_at',
+      sortDirection: searchParams.get('sortDirection') || 'desc'
     })
 
     // Convert camelCase to snake_case for sorting
     const dbSortField = sortField.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`)
 
-    // Build query
+    // Start building the query
     let query = supabase
       .from('tickets')
-      .select('*, customer:customers(*), assignee:agents!tickets_assignee_id_fkey(*)', { count: 'exact' })
+      .select(`
+        id,
+        title,
+        status,
+        priority,
+        created_at,
+        type,
+        customer:customers(*),
+        assignee:agents!tickets_assignee_id_fkey(*)
+      `, { count: 'exact' })
 
     // Apply filters
     if (filters.status?.length) {
@@ -100,6 +143,9 @@ export async function GET(request: NextRequest) {
     }
     if (filters.priority?.length) {
       query = query.in('priority', filters.priority)
+    }
+    if (filters.type) {
+      query = query.eq('type', filters.type)
     }
     if (filters.search) {
       query = query.ilike('title', `%${filters.search}%`)
@@ -112,43 +158,46 @@ export async function GET(request: NextRequest) {
     }
 
     // Apply pagination and sorting
-    const { data: tickets, count, error } = await query
+    const { data: tickets, count, error: ticketsError } = await query
       .order(dbSortField, { ascending: sortDirection === 'asc' })
       .range((page - 1) * pageSize, page * pageSize - 1)
 
-    if (error) {
-      throw error
+    if (ticketsError) {
+      console.error('Failed to fetch tickets:', ticketsError)
+      return NextResponse.json(
+        { error: 'Failed to fetch tickets' },
+        { status: 500 }
+      )
     }
 
-    // Transform the response to match our frontend's expected structure
-    const transformedTickets = tickets.map((ticket: any) => ({
-      ...ticket,
-      createdAt: ticket.created_at,
-      updatedAt: ticket.updated_at,
-      resolvedAt: ticket.resolved_at,
-      customer: ticket.customer,
-      assignee: ticket.assignee,
-      tags: ticket.tags || []
-    }))
-
     return NextResponse.json({
-      data: transformedTickets,
-      total: count || 0
+      data: tickets,
+      total: count || 0,
+      page,
+      pageSize
     })
   } catch (error) {
-    console.error('Failed to fetch tickets:', error)
+    console.error('Error fetching tickets:', error)
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Invalid parameters', details: error.errors },
+        { status: 400 }
+      )
+    }
     return NextResponse.json(
-      { error: 'Failed to fetch tickets', details: error },
+      { error: 'Failed to fetch tickets' },
       { status: 500 }
     )
   }
 }
 
 // POST /api/tickets - Create a new ticket
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const session = await auth()
-    if (!session) {
+    const supabase = await initSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+
+    if (userError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -175,7 +224,10 @@ export async function POST(request: Request) {
       .select()
       .single()
 
-    if (ticketError) throw ticketError
+    if (ticketError) {
+      console.error('Failed to create ticket:', ticketError)
+      throw ticketError
+    }
 
     // Add tags if provided
     if (body.tags?.length) {
@@ -187,19 +239,20 @@ export async function POST(request: Request) {
             tag_id: tagId
           }))
         )
-      if (tagsError) throw tagsError
+      if (tagsError) {
+        console.error('Failed to add tags:', tagsError)
+        throw tagsError
+      }
     }
 
     // Create audit log entry
     const { error: auditError } = await supabase
       .from('audit_logs')
       .insert({
-        entity_type: 'ticket',
-        entity_id: ticket.id,
+        ticket_id: ticket.id,
+        actor_id: user.id,
         action: 'create',
-        actor_id: session.id,
-        actor_type: session.type,
-        changes: {
+        metadata: {
           title: body.title,
           description: body.description,
           priority: body.priority,
@@ -209,7 +262,10 @@ export async function POST(request: Request) {
         }
       })
 
-    if (auditError) throw auditError
+    if (auditError) {
+      console.error('Failed to create audit log:', auditError)
+      // Don't throw since the ticket was created successfully
+    }
 
     return NextResponse.json({ data: ticket })
   } catch (error) {
@@ -221,7 +277,7 @@ export async function POST(request: Request) {
       )
     }
     return NextResponse.json(
-      { error: 'Failed to create ticket', details: error },
+      { error: 'Failed to create ticket' },
       { status: 500 }
     )
   }

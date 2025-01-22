@@ -47,12 +47,18 @@ export default function TicketAssigneePage() {
   useEffect(() => {
     const loadHistory = async () => {
       try {
-        const response = await fetch('/api/tickets/' + ticketId + '/assignment-history')
-        if (!response.ok) throw new Error('Failed to fetch assignment history')
+        const response = await fetch('/api/tickets/' + ticketId + '/assignment-history', {
+          credentials: 'include'
+        })
+        if (!response.ok) {
+          const error = await response.json()
+          throw new Error(error.error || 'Failed to fetch assignment history')
+        }
         const data = await response.json()
         setAssignmentHistory(data)
       } catch (error) {
         console.error('Failed to load assignment history:', error)
+        // TODO: Add toast notification here
       }
     }
     loadHistory()
@@ -75,12 +81,19 @@ export default function TicketAssigneePage() {
       const response = await fetch('/api/tickets/' + ticketId, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ assignee_id: selectedAgent }),
+        body: JSON.stringify({ assigneeId: selectedAgent }),
+        credentials: 'include'
       })
-      if (!response.ok) throw new Error('Failed to assign ticket')
+      
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to assign ticket')
+      }
+      
       router.refresh()
     } catch (error) {
       console.error('Failed to assign ticket:', error)
+      // TODO: Add toast notification here
     } finally {
       setIsAssigning(false)
     }
