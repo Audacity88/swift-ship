@@ -151,12 +151,22 @@ export const quoteService = {
         throw new Error('Unauthorized')
       }
 
+      // Get current ticket data first
+      const { data: ticket, error: ticketError } = await supabase
+        .from('tickets')
+        .select('metadata')
+        .eq('id', quoteId)
+        .single()
+
+      if (ticketError) throw ticketError
+
       // Update ticket status and add quoted price to metadata
       const { error: updateError } = await supabase
         .from('tickets')
         .update({
           status: 'in_progress',
           metadata: {
+            ...ticket.metadata,
             quotedPrice: price
           }
         })

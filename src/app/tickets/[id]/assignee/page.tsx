@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useTransition } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import Image from 'next/image'
 import { Search, UserPlus, History, Check, RefreshCw } from 'lucide-react'
@@ -9,11 +9,16 @@ import { useAuth } from '@/lib/hooks/useAuth'
 
 export default function TicketAssigneePage() {
   const { user } = useAuth()
+  const router = useRouter()
+  const params = useParams()
+  const [isPending, startTransition] = useTransition()
+  
   const [searchQuery, setSearchQuery] = useState('')
   const [agents, setAgents] = useState<Agent[]>([])
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null)
   const [isAssigning, setIsAssigning] = useState(false)
-  const [dataLoading, setDataLoading] = useState(false)
+  const [dataLoading, setDataLoading] = useState(true)
+  const [currentAssignee, setCurrentAssignee] = useState<Agent | null>(null)
   const [assignmentHistory, setAssignmentHistory] = useState<Array<{
     id: string
     agent: {
@@ -25,79 +30,15 @@ export default function TicketAssigneePage() {
     }
     assignedAt: string
   }>>([])
+  const [isSuccess, setIsSuccess] = useState(false)
 
-  const router = useRouter()
-  const params = useParams()
   const ticketId = params?.id as string
 
-  useEffect(() => {
-    const loadData = async () => {
-      if (!user) return // Don't load data if no user
-
-      try {
-        setDataLoading(true)
-
-        // Load agents
-        const loadAgents = async () => {
-          try {
-            const response = await fetch('/api/agents', {
-              credentials: 'include'
-            })
-            if (!response.ok) {
-              const error = await response.json()
-              throw new Error(error.error || 'Failed to fetch agents')
-            }
-            const data = await response.json()
-            setAgents(data)
-          } catch (error) {
-            console.error('Failed to load agents:', error)
-          }
-        }
-
-        // Load assignment history
-        const loadHistory = async () => {
-          try {
-            const response = await fetch('/api/tickets/' + ticketId + '/assignment-history', {
-              credentials: 'include'
-            })
-            if (!response.ok) {
-              const error = await response.json()
-              throw new Error(error.error || 'Failed to fetch assignment history')
-            }
-            const data = await response.json()
-            setAssignmentHistory(data)
-          } catch (error) {
-            console.error('Failed to load assignment history:', error)
-          }
-        }
-
-        // Load data in parallel
-        await Promise.all([loadAgents(), loadHistory()])
-      } catch (error) {
-        console.error('Failed to initialize data:', error)
-      } finally {
-        setDataLoading(false)
-      }
-    }
-
-    loadData()
-  }, [user, ticketId]) // Remove router from dependencies
-
-  // Filter
-  const filteredAgents = agents.filter((agent) => {
-    if (!searchQuery) return true
-    const query = searchQuery.toLowerCase()
-    return (
-      agent.name.toLowerCase().includes(query) ||
-      agent.email.toLowerCase().includes(query)
-    )
-  })
-
   const handleAssign = async () => {
-    if (!selectedAgent) return
+    if (!selectedAgent || isAssigning) return
+    
     setIsAssigning(true)
     try {
-      // 1. Update the ticket
       const response = await fetch('/api/tickets/' + ticketId, {
         method: 'PATCH',
         headers: { 
@@ -113,25 +54,112 @@ export default function TicketAssigneePage() {
         throw new Error(error.error || 'Failed to assign ticket')
       }
 
-      // 2. Get the updated ticket data
       const updatedTicket = await response.json()
-      console.log('Assignment successful:', updatedTicket)
+      
+      // Update current assignee
+      const selectedAgentData = agents.find(agent => agent.id === selectedAgent)
+      if (selectedAgentData) {
+        setCurrentAssignee(selectedAgentData)
+      }
 
-      // 3. Clear the selection immediately
-      setSelectedAgent(null)
+      // Refresh the assignment history
+      const historyResponse = await fetch('/api/tickets/' + ticketId + '/assignment-history', {
+        credentials: 'include'
+      })
+      
+      if (historyResponse.ok) {
+        const newHistory = await historyResponse.json()
+        setAssignmentHistory(newHistory)
+      }
 
-      // 4. Navigate back to the ticket page
-      router.push(`/tickets/${ticketId}`)
+      setIsSuccess(true)
+      setIsAssigning(false)
       
     } catch (error) {
       console.error('Failed to assign ticket:', error)
-      alert(error instanceof Error ? error.message : 'Failed to assign ticket')
-    } finally {
       setIsAssigning(false)
+      alert(error instanceof Error ? error.message : 'Failed to assign ticket')
     }
   }
 
-  // Show loading state while checking auth
+  useEffect(() => {
+    let mounted = true
+
+    const loadData = async () => {
+      if (!user) {
+        if (mounted) setDataLoading(false)
+        return
+      }
+
+      try {
+        // Fetch all required data in parallel
+        const [agentsResponse, historyResponse, ticketResponse] = await Promise.all([
+          fetch('/api/agents', { credentials: 'include' }),
+          fetch('/api/tickets/' + ticketId + '/assignment-history', { credentials: 'include' }),
+          fetch('/api/tickets/' + ticketId, { 
+            method: 'GET',
+            headers: {
+              'Accept': 'application/json'
+            },
+            credentials: 'include'
+          })
+        ])
+
+        if (!mounted) return
+
+        if (!agentsResponse.ok || !historyResponse.ok || !ticketResponse.ok) {
+          throw new Error('Failed to fetch data')
+        }
+
+        const [agentsData, historyData, ticketData] = await Promise.all([
+          agentsResponse.json(),
+          historyResponse.json(),
+          ticketResponse.json()
+        ])
+
+        if (mounted) {
+          setAgents(agentsData)
+          setAssignmentHistory(historyData)
+          
+          // Set current assignee from ticket data
+          if (ticketData.ticket?.assignee_id) {
+            const currentAssignee = agentsData.find(
+              (agent: Agent) => agent.id === ticketData.ticket.assignee_id
+            )
+            setCurrentAssignee(currentAssignee || null)
+            // Also set the selected agent to match current assignee
+            setSelectedAgent(ticketData.ticket.assignee_id)
+          } else {
+            setCurrentAssignee(null)
+            setSelectedAgent(null)
+          }
+        }
+      } catch (error) {
+        console.error('Failed to initialize data:', error)
+      } finally {
+        if (mounted) {
+          setDataLoading(false)
+        }
+      }
+    }
+
+    void loadData()
+    return () => { mounted = false }
+  }, [user, ticketId])
+
+  const filteredAgents = agents.filter((agent) => {
+    if (!searchQuery) return true
+    const query = searchQuery.toLowerCase()
+    return (
+      agent.name.toLowerCase().includes(query) ||
+      agent.email.toLowerCase().includes(query)
+    )
+  })
+
+  if (!user) {
+    return null
+  }
+
   if (dataLoading) {
     return (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -144,34 +172,40 @@ export default function TicketAssigneePage() {
     )
   }
 
-  // Don't render anything if no user
-  if (!user) {
-    return null
-  }
-
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       {/* Agent Selection */}
       <div className="lg:col-span-2 space-y-6">
         <div className="bg-white border border-gray-200 rounded-lg p-6">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-medium text-gray-900">Assign Ticket</h2>
-            <button
-              onClick={handleAssign}
-              disabled={!selectedAgent || isAssigning}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white \
-                bg-primary rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
-              style={{ backgroundColor: '#0052CC' }}
-            >
-              {isAssigning ? (
-                'Assigning...'
-              ) : (
-                <>
-                  <UserPlus className="w-4 h-4" />
-                  Assign
-                </>
+            <div>
+              <h2 className="text-lg font-medium text-gray-900">Assign Ticket</h2>
+              {currentAssignee && (
+                <p className="text-sm text-gray-600 mt-1">
+                  Currently assigned to: <span className="font-medium">{currentAssignee.name}</span>
+                </p>
               )}
-            </button>
+            </div>
+            {isSuccess ? (
+              <div className="text-green-600 font-medium">✓ Successfully assigned</div>
+            ) : (
+              <button
+                onClick={handleAssign}
+                disabled={!selectedAgent || isAssigning}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white \
+                  bg-primary rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
+                style={{ backgroundColor: '#0052CC' }}
+              >
+                {isAssigning ? (
+                  'Assigning...'
+                ) : (
+                  <>
+                    <UserPlus className="w-4 h-4" />
+                    Assign
+                  </>
+                )}
+              </button>
+            )}
           </div>
 
           {/* Search */}
@@ -259,4 +293,4 @@ export default function TicketAssigneePage() {
       </div>
     </div>
   )
-} 
+}

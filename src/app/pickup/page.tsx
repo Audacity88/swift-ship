@@ -21,7 +21,7 @@ const TIME_SLOTS: TimeSlot[] = [
   { start: '05:00 PM', end: '07:00 PM', available: false },
 ]
 
-export default function PickupPage() {
+export default function PickupPage(): JSX.Element {
   const { user } = useAuth()
   const [isLoading, setIsLoading] = useState(true)
   const [tickets, setTickets] = useState<PickupTicket[]>([])
@@ -177,4 +177,160 @@ export default function PickupPage() {
                             isSameDay(date, selectedDate) ? 'bg-primary text-white' : 
                             'hover:bg-gray-100'
                           }
-                        `
+                        `}
+                        style={isSameDay(date, selectedDate) ? { backgroundColor: COLORS.primary } : {}}
+                      >
+                        {format(date, 'd')}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Time Slots */}
+                <div className="mt-6">
+                  <h3 className="text-sm font-medium text-gray-700 mb-2">Available Time Slots</h3>
+                  <div className="space-y-2">
+                    {TIME_SLOTS.map((slot, index) => (
+                      <button
+                        key={index}
+                        onClick={() => setSelectedTimeSlot(slot.start)}
+                        disabled={!slot.available}
+                        className={`
+                          w-full p-2 text-left rounded-lg text-sm
+                          ${slot.available 
+                            ? selectedTimeSlot === slot.start
+                              ? 'bg-primary text-white'
+                              : 'hover:bg-gray-100'
+                            : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                          }
+                        `}
+                        style={selectedTimeSlot === slot.start ? { backgroundColor: COLORS.primary } : {}}
+                      >
+                        {slot.start} - {slot.end}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Form Section */}
+              <div>
+                <h2 className="text-lg font-semibold mb-4">Pickup Details</h2>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Pickup Address
+                    </label>
+                    <input
+                      type="text"
+                      value={address}
+                      onChange={(e) => setAddress(e.target.value)}
+                      className="w-full p-2 border border-gray-300 rounded-lg"
+                      placeholder="Enter pickup address"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Package Type
+                    </label>
+                    <select
+                      value={packageType}
+                      onChange={(e) => setPackageType(e.target.value)}
+                      className="w-full p-2 border border-gray-300 rounded-lg"
+                    >
+                      <option value="full_truckload">Full Truckload</option>
+                      <option value="less_than_truckload">Less than Truckload</option>
+                      <option value="parcel">Parcel</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Weight (optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={weight}
+                      onChange={(e) => setWeight(e.target.value)}
+                      className="w-full p-2 border border-gray-300 rounded-lg"
+                      placeholder="Enter weight in kg"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Quantity
+                    </label>
+                    <input
+                      type="number"
+                      value={quantity}
+                      onChange={(e) => setQuantity(e.target.value)}
+                      min="1"
+                      className="w-full p-2 border border-gray-300 rounded-lg"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Additional Notes (optional)
+                    </label>
+                    <textarea
+                      value={additionalNotes}
+                      onChange={(e) => setAdditionalNotes(e.target.value)}
+                      rows={3}
+                      className="w-full p-2 border border-gray-300 rounded-lg"
+                      placeholder="Any special instructions or requirements"
+                    />
+                  </div>
+
+                  <button
+                    onClick={createPickup}
+                    className="w-full py-2 px-4 bg-primary text-white rounded-lg text-sm font-medium"
+                    style={{ backgroundColor: COLORS.primary }}
+                  >
+                    Schedule Pickup
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* List of Pickups */}
+        <div className="flex-1 overflow-auto">
+          {tickets.length === 0 ? (
+            <div className="p-6 text-center text-gray-500">
+              No pickups scheduled yet
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-200">
+              {tickets.map((ticket) => (
+                <div key={ticket.id} className="p-6 hover:bg-gray-50">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="flex items-center gap-2 text-sm text-gray-500">
+                        <Calendar className="w-4 h-4" />
+                        <span>{format(new Date(ticket.pickupDateTime), 'PPp')}</span>
+                      </div>
+                      <div className="mt-2 flex items-center gap-2">
+                        <MapPin className="w-4 h-4 text-gray-400" />
+                        <span className="text-gray-900">{ticket.address}</span>
+                      </div>
+                    </div>
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                      {ticket.status}
+                    </span>
+                  </div>
+                  {ticket.additionalNotes && (
+                    <p className="mt-2 text-sm text-gray-500">{ticket.additionalNotes}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}

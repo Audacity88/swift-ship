@@ -296,7 +296,8 @@ export async function POST(
     // Update ticket status
     const updates: any = {
       status: body.status,
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
+      updated_by: user.id
     }
 
     // Set resolved_at if status is being changed to resolved

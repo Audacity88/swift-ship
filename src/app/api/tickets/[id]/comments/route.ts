@@ -101,7 +101,9 @@ export async function POST(request: Request, props: { params: Promise<{ id: stri
       // Update ticket updated_at
       await tx.execute(sql`
         UPDATE tickets 
-        SET updated_at = NOW()
+        SET 
+          updated_at = NOW(),
+          updated_by = ${user.id}
         WHERE id = ${params.id}
       `)
 

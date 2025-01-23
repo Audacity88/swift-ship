@@ -11,6 +11,7 @@ import { COLORS } from '@/lib/constants'
 import { TicketStatus, TicketPriority } from '@/types/ticket'
 import type { Ticket, TicketComment, TicketType } from '@/types/ticket'
 import type { User } from '@/types/user'
+import type { QuoteRequest } from '@/types/quote'
 import { 
   TypeDropdown, 
   PriorityDropdown, 
@@ -25,9 +26,11 @@ import {
   slaService,
   authService,
   ticketService,
+  quoteService,
   type Ticket as TicketData 
 } from '@/lib/services'
 import { TicketConversation } from '@/components/features/tickets/TicketConversation'
+import { QuoteDetailView } from '@/components/features/quotes/QuoteDetailView'
 import type { ServerContext } from '@/lib/supabase-client'
 import { getServerSupabase } from '@/lib/supabase-client'
 
@@ -52,6 +55,8 @@ export default function TicketPage() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [slaStatus, setSlaStatus] = useState<any>(null)
+  const [isQuoteTicket, setIsQuoteTicket] = useState(false)
+  const [quoteData, setQuoteData] = useState<QuoteRequest | null>(null)
 
   // Dropdown visibility states
   const [showTypeDropdown, setShowTypeDropdown] = useState(false)
@@ -114,11 +119,36 @@ export default function TicketPage() {
           setIsLoading(false)
           return
         }
+
         setTicket(ticketData)
         setSelectedType((ticketData.metadata as any)?.type || 'problem')
         setSelectedPriority(ticketData.priority)
         setSelectedAssignee(ticketData.assignee?.id || null)
         setTags((ticketData.metadata as any)?.tags || [])
+
+        // Check if this is a quote ticket
+        const metadata = ticketData.metadata as any
+        const isQuote = ticketData.type === 'task' && 
+          metadata?.destination && 
+          metadata?.packageDetails &&
+          !metadata?.quotedPrice // Only show quotes without a price
+
+        setIsQuoteTicket(isQuote)
+        if (isQuote) {
+          const quoteMetadata = metadata as unknown as QuoteRequest['metadata']
+          setQuoteData({
+            id: ticketData.id,
+            title: ticketData.title,
+            status: ticketData.status,
+            customer: {
+              id: ticketData.customerId,
+              name: ticketData.customer.name,
+              email: ticketData.customer.email
+            },
+            metadata: quoteMetadata,
+            created_at: ticketData.createdAt
+          })
+        }
       } catch (error) {
         console.error('Error fetching ticket:', error)
         setError(error instanceof Error ? error.message : 'Failed to fetch ticket')
@@ -130,7 +160,7 @@ export default function TicketPage() {
     if (isAuthenticated === true) {
       void fetchTicket()
     }
-  }, [ticketId, isAuthenticated])
+  }, [ticketId, isAuthenticated, tags])
 
   // Add SLA status fetch
   useEffect(() => {
@@ -268,6 +298,8 @@ export default function TicketPage() {
         updatedAt: new Date().toISOString()
       })
 
+      if (!updatedTicket) return
+      
       setTicket(updatedTicket)
     } catch (error) {
       console.error('Failed to update status:', error)
@@ -294,6 +326,81 @@ export default function TicketPage() {
       setSlaStatus(status)
     } catch (error) {
       console.error('Error resuming SLA:', error)
+    }
+  }
+
+  // Add quote-specific handlers
+  const handleSubmitQuote = async (quoteId: string, price: number) => {
+    try {
+      await quoteService.submitQuote(undefined, quoteId, price)
+      // Refresh ticket data
+      const updatedTicket = await ticketService.getTicket(undefined, ticketId)
+      if (!updatedTicket) return
+      
+      setTicket(updatedTicket)
+      const updatedMetadata = updatedTicket.metadata as unknown as QuoteRequest['metadata']
+      setQuoteData({
+        id: updatedTicket.id,
+        title: updatedTicket.title,
+        status: updatedTicket.status,
+        customer: {
+          id: updatedTicket.customerId,
+          name: updatedTicket.customer.name,
+          email: updatedTicket.customer.email
+        },
+        metadata: updatedMetadata,
+        created_at: updatedTicket.createdAt
+      })
+    } catch (error) {
+      console.error('Error submitting quote:', error)
+    }
+  }
+
+  const handleCreateShipment = async (quoteId: string) => {
+    if (!quoteData) return
+
+    try {
+      const shipmentData = {
+        quote_id: quoteId,
+        type: 'standard',
+        origin: quoteData.metadata.destination.from,
+        destination: quoteData.metadata.destination.to,
+        scheduled_pickup: quoteData.metadata.destination.pickupDate,
+        estimated_delivery: quoteData.metadata.destination.pickupDate
+      }
+      
+      const response = await fetch('/api/shipments', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(shipmentData)
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to create shipment')
+      }
+
+      // Refresh ticket data after shipment creation
+      const updatedTicket = await ticketService.getTicket(undefined, ticketId)
+      if (!updatedTicket) return
+      
+      setTicket(updatedTicket)
+      const updatedMetadata = updatedTicket.metadata as unknown as QuoteRequest['metadata']
+      setQuoteData({
+        id: updatedTicket.id,
+        title: updatedTicket.title,
+        status: updatedTicket.status,
+        customer: {
+          id: updatedTicket.customerId,
+          name: updatedTicket.customer.name,
+          email: updatedTicket.customer.email
+        },
+        metadata: updatedMetadata,
+        created_at: updatedTicket.createdAt
+      })
+    } catch (error) {
+      console.error('Error creating shipment:', error)
     }
   }
 
@@ -346,7 +453,19 @@ export default function TicketPage() {
             </div>
           </div>
 
-          {/* Replace old comments section with TicketConversation */}
+          {/* Quote Detail View */}
+          {isQuoteTicket && quoteData && (
+            <div className="mb-6">
+              <QuoteDetailView
+                quote={quoteData}
+                onSubmitQuote={handleSubmitQuote}
+                onCreateShipment={handleCreateShipment}
+                mode={quoteData.status === 'open' ? 'pending' : 'quoted'}
+              />
+            </div>
+          )}
+
+          {/* Conversation View */}
           <TicketConversation
             ticketId={ticket.id}
             currentUserId={currentUserId || ''}

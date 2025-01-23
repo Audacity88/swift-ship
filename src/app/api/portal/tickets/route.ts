@@ -111,7 +111,9 @@ export async function POST(request: Request) {
         status: TicketStatus.NEW,
         customer_id: user.id,
         created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        created_by: user.id,
+        updated_by: user.id
       })
       .select()
       .single();
