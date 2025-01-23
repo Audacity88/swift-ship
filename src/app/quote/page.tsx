@@ -18,6 +18,8 @@ import {
 import { COLORS } from '@/lib/constants'
 import { quoteService, shipmentService, ticketService } from '@/lib/services'
 import { useAuth } from '@/lib/hooks/useAuth'
+import { QuoteDetailView } from '@/components/features/quotes/QuoteDetailView'
+import { TIME_SLOTS } from '@/types/time-slots'
 
 type Step = 'package' | 'destination' | 'service' | 'summary' | 'done'
 
@@ -35,6 +37,7 @@ interface Destination {
   from: string
   to: string
   pickupDate: string
+  pickupTimeSlot: string
 }
 
 interface ServiceOption {
@@ -59,6 +62,24 @@ interface Quote {
   }
 }
 
+interface QuoteRequest {
+  id: string
+  title: string
+  status: string
+  customer: {
+    id: string
+    name: string
+    email: string
+  }
+  metadata: {
+    packageDetails: PackageDetails
+    destination: Destination
+    selectedService: string
+    quotedPrice?: number
+  }
+  created_at: string
+}
+
 const initialPackageDetails: PackageDetails = {
   type: 'full_truckload',
   weight: '',
@@ -73,6 +94,7 @@ const initialDestination: Destination = {
   from: '',
   to: '',
   pickupDate: '',
+  pickupTimeSlot: '',
 }
 
 const serviceOptions: ServiceOption[] = [
@@ -131,16 +153,31 @@ export default function QuotePage() {
       try {
         setIsLoadingQuotes(true)
         const fetchedQuotes = await quoteService.fetchQuotes(undefined)
-        // Transform QuoteRequest to Quote, ensuring selectedService is always present
+        // Transform QuoteRequest to Quote, ensuring all required fields are present
         const transformedQuotes = fetchedQuotes.map(quote => ({
           id: quote.id,
           title: quote.title,
           status: quote.status,
           createdAt: new Date(quote.created_at).toISOString(),
-          is_archived: quote.is_archived,
+          is_archived: quote.is_archived || false,
           metadata: {
-            ...quote.metadata,
-            selectedService: quote.metadata.selectedService || ''  // Ensure it's never undefined
+            packageDetails: {
+              type: quote.metadata.packageDetails.type,
+              weight: quote.metadata.packageDetails.weight,
+              volume: quote.metadata.packageDetails.volume,
+              containerSize: quote.metadata.packageDetails.containerSize,
+              palletCount: quote.metadata.packageDetails.palletCount,
+              hazardous: quote.metadata.packageDetails.hazardous,
+              specialRequirements: quote.metadata.packageDetails.specialRequirements
+            },
+            destination: {
+              from: quote.metadata.destination.from,
+              to: quote.metadata.destination.to,
+              pickupDate: quote.metadata.destination.pickupDate,
+              pickupTimeSlot: quote.metadata.destination.pickupTimeSlot || ''
+            },
+            selectedService: quote.metadata.selectedService || '',
+            quotedPrice: quote.metadata.quotedPrice
           }
         }))
         setQuotes(transformedQuotes)
@@ -155,6 +192,31 @@ export default function QuotePage() {
   }, [user])
 
   const handleNext = () => {
+    // Validate current step
+    if (currentStep === 'package') {
+      if (!packageDetails.type || !packageDetails.weight || !packageDetails.volume) {
+        setError('Please fill in all required package details')
+        return
+      }
+    } else if (currentStep === 'destination') {
+      if (!destination.from || !destination.to || !destination.pickupDate || !destination.pickupTimeSlot) {
+        setError('Please fill in all destination details and select a pickup time slot')
+        return
+      }
+      // Validate that selected time slot is available
+      const selectedSlot = TIME_SLOTS.find(slot => slot.id === destination.pickupTimeSlot)
+      if (!selectedSlot?.available) {
+        setError('Please select an available time slot')
+        return
+      }
+    } else if (currentStep === 'service') {
+      if (!selectedService) {
+        setError('Please select a service option')
+        return
+      }
+    }
+
+    setError(null)
     const stepOrder: Step[] = ['package', 'destination', 'service', 'summary', 'done']
     const currentIndex = stepOrder.indexOf(currentStep)
     if (currentIndex < stepOrder.length - 1) {
@@ -271,6 +333,54 @@ export default function QuotePage() {
     return delivery.toISOString().split('T')[0]
   }
 
+  // Transform quote to QuoteRequest type
+  const transformQuoteToQuoteRequest = (quote: Quote): QuoteRequest => {
+    return {
+      id: quote.id,
+      title: quote.title,
+      status: quote.status,
+      customer: {
+        id: user?.id || '',
+        name: user?.name || '',
+        email: user?.email || ''
+      },
+      metadata: {
+        ...quote.metadata,
+        // Add any missing required fields with defaults
+        packageDetails: {
+          type: quote.metadata.packageDetails.type,
+          weight: quote.metadata.packageDetails.weight,
+          volume: quote.metadata.packageDetails.volume,
+          containerSize: quote.metadata.packageDetails.containerSize,
+          palletCount: quote.metadata.packageDetails.palletCount,
+          hazardous: quote.metadata.packageDetails.hazardous,
+          specialRequirements: quote.metadata.packageDetails.specialRequirements
+        },
+        destination: {
+          from: quote.metadata.destination.from,
+          to: quote.metadata.destination.to,
+          pickupDate: quote.metadata.destination.pickupDate,
+          pickupTimeSlot: quote.metadata.destination.pickupTimeSlot || ''
+        },
+        selectedService: quote.metadata.selectedService || '',
+        quotedPrice: quote.metadata.quotedPrice
+      },
+      created_at: quote.createdAt
+    }
+  }
+
+  // Handle create shipment from quote
+  const handleCreateShipment = async (quoteId: string) => {
+    if (!user) return
+
+    try {
+      await shipmentService.createFromQuote(undefined, quoteId, user.id)
+      void router.refresh()
+    } catch (error) {
+      console.error('Error creating shipment:', error)
+    }
+  }
+
   if (isLoadingQuotes) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
@@ -320,83 +430,22 @@ export default function QuotePage() {
                   return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
                 })
                 .map((quote) => (
-                  <div
+                  <QuoteDetailView
                     key={quote.id}
-                    className="bg-white rounded-lg border border-gray-200 p-4 hover:border-primary transition-colors"
-                  >
-                    <div className="flex justify-between items-start mb-4">
-                      <div>
-                        <h3 className="font-medium text-gray-900">{quote.title}</h3>
-                        <p className="text-sm text-gray-500">
-                          From {quote.metadata.destination.from} to {quote.metadata.destination.to}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {quote.status === 'in_progress' && (
-                          <button
-                            onClick={() => router.push(`/shipments/new?quoteId=${quote.id}`)}
-                            className="px-3 py-1 rounded-lg bg-green-500 hover:bg-green-600 text-white text-sm font-medium transition-colors"
-                          >
-                            Select Pickup
-                          </button>
-                        )}
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium
-                          ${quote.status === 'open' ? 'bg-blue-100 text-blue-800' :
-                            quote.status === 'in_progress' ? 'bg-green-100 text-green-800' :
-                            'bg-gray-100 text-gray-800'}`}
-                        >
-                          {quote.status.charAt(0).toUpperCase() + quote.status.slice(1)}
-                        </span>
-                        <div className="flex items-center gap-2">
-                          {quote.status === 'open' && (
-                            <>
-                              <button
-                                onClick={() => handleEditQuote(quote)}
-                                className="p-1 rounded-lg hover:bg-gray-100"
-                                title="Edit quote"
-                              >
-                                <Pencil className="w-4 h-4 text-gray-500" />
-                              </button>
-                              <button
-                                onClick={() => handleDeleteQuote(quote.id)}
-                                className="p-1 rounded-lg hover:bg-gray-100"
-                                title="Delete quote"
-                                disabled={isDeleting}
-                              >
-                                <Trash2 className="w-4 h-4 text-red-500" />
-                              </button>
-                            </>
-                          )}
-                          {quote.status === 'in_progress' && (
-                            <button
-                              onClick={() => handleDeleteQuote(quote.id)}
-                              className="p-1 rounded-lg hover:bg-gray-100"
-                              title="Delete quote"
-                              disabled={isDeleting}
-                            >
-                              <Trash2 className="w-4 h-4 text-red-500" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-3 gap-4 text-sm">
-                      <div className="flex items-center gap-2 text-gray-500">
-                        <Package className="w-4 h-4" />
-                        {quote.metadata.packageDetails.type.replace(/_/g, ' ').toUpperCase()}
-                      </div>
-                      <div className="flex items-center gap-2 text-gray-500">
-                        <Clock className="w-4 h-4" />
-                        {format(new Date(quote.createdAt), 'MMM d, yyyy')}
-                      </div>
-                      {quote.metadata.quotedPrice && (
-                        <div className="flex items-center gap-2 text-gray-500">
-                          <DollarSign className="w-4 h-4" />
-                          ${quote.metadata.quotedPrice.toLocaleString()}
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                    quote={transformQuoteToQuoteRequest(quote)}
+                    onCreateShipment={quote.status === 'in_progress' ? handleCreateShipment : undefined}
+                    onEditQuote={quote.status === 'open' ? () => {
+                      setSelectedQuote(quote)
+                      setShowNewQuoteForm(true)
+                      setPackageDetails(quote.metadata.packageDetails)
+                      setDestination(quote.metadata.destination)
+                      setSelectedService(quote.metadata.selectedService || '')
+                      setCurrentStep('package')
+                    } : undefined}
+                    onDeleteQuote={handleDeleteQuote}
+                    mode={quote.metadata.quotedPrice ? 'quoted' : 'pending'}
+                    isDeleting={isDeleting}
+                  />
                 ))
             )}
           </div>
@@ -571,38 +620,58 @@ export default function QuotePage() {
                 <div className="grid grid-cols-1 gap-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Pickup Address
+                      Pickup Location
                     </label>
                     <input
                       type="text"
                       value={destination.from}
                       onChange={(e) => setDestination({ ...destination, from: e.target.value })}
                       className="w-full p-2 border border-gray-200 rounded-lg"
-                      placeholder="Enter pickup zip code (or country if outside US)"
+                      placeholder="Enter pickup location"
                     />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Delivery Address
+                      Delivery Location
                     </label>
                     <input
                       type="text"
                       value={destination.to}
                       onChange={(e) => setDestination({ ...destination, to: e.target.value })}
                       className="w-full p-2 border border-gray-200 rounded-lg"
-                      placeholder="Enter delivery zip code (or country if outside US)"
+                      placeholder="Enter delivery location"
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Planned Pickup Date
-                    </label>
-                    <input
-                      type="date"
-                      value={destination.pickupDate}
-                      onChange={(e) => setDestination({ ...destination, pickupDate: e.target.value })}
-                      className="w-full p-2 border border-gray-200 rounded-lg"
-                    />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Pickup Date
+                      </label>
+                      <input
+                        type="date"
+                        value={destination.pickupDate}
+                        onChange={(e) => setDestination({ ...destination, pickupDate: e.target.value })}
+                        className="w-full p-2 border border-gray-200 rounded-lg"
+                        min={format(new Date(), 'yyyy-MM-dd')}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Pickup Time
+                      </label>
+                      <select
+                        value={destination.pickupTimeSlot}
+                        onChange={(e) => setDestination({ ...destination, pickupTimeSlot: e.target.value })}
+                        className="w-full p-2 border border-gray-200 rounded-lg"
+                      >
+                        <option value="">Select a time slot</option>
+                        {TIME_SLOTS.map((slot) => (
+                          <option key={slot.id} value={slot.id}>
+                            {slot.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -653,59 +722,56 @@ export default function QuotePage() {
 
             {currentStep === 'summary' && (
               <div className="space-y-6">
-                <h2 className="text-xl font-semibold">Quote Summary</h2>
-                <div className="space-y-4">
-                  <div className="p-4 bg-gray-50 rounded-lg">
-                    <h3 className="font-medium mb-2">Cargo Details</h3>
-                    <div className="grid grid-cols-2 gap-2 text-sm">
-                      <span className="text-gray-500">Type:</span>
-                      <span>{packageDetails.type.replace(/_/g, ' ').toUpperCase()}</span>
-                      <span className="text-gray-500">Weight:</span>
-                      <span>{packageDetails.weight} metric tons</span>
-                      <span className="text-gray-500">Volume:</span>
-                      <span>{packageDetails.volume} m³</span>
-                      {packageDetails.containerSize && (
-                        <>
-                          <span className="text-gray-500">Container:</span>
-                          <span>{packageDetails.containerSize.replace('_', ' ').toUpperCase()}</span>
-                        </>
-                      )}
-                      {packageDetails.palletCount && (
-                        <>
-                          <span className="text-gray-500">Pallets:</span>
-                          <span>{packageDetails.palletCount}</span>
-                        </>
-                      )}
-                      <span className="text-gray-500">Hazardous:</span>
-                      <span>{packageDetails.hazardous ? 'Yes' : 'No'}</span>
-                    </div>
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-4">Package Details</h3>
+                  <div className="bg-gray-50 p-4 rounded-lg space-y-2">
+                    <p><span className="font-medium">Type:</span> {packageDetails.type}</p>
+                    <p><span className="font-medium">Weight:</span> {packageDetails.weight}</p>
+                    <p><span className="font-medium">Volume:</span> {packageDetails.volume}</p>
+                    {packageDetails.containerSize && (
+                      <p><span className="font-medium">Container Size:</span> {packageDetails.containerSize}</p>
+                    )}
+                    {packageDetails.palletCount && (
+                      <p><span className="font-medium">Pallet Count:</span> {packageDetails.palletCount}</p>
+                    )}
+                    <p><span className="font-medium">Hazardous:</span> {packageDetails.hazardous ? 'Yes' : 'No'}</p>
+                    {packageDetails.specialRequirements && (
+                      <p><span className="font-medium">Special Requirements:</span> {packageDetails.specialRequirements}</p>
+                    )}
                   </div>
-                  
-                  <div className="p-4 bg-gray-50 rounded-lg">
-                    <h3 className="font-medium mb-2">Shipping Details</h3>
-                    <div className="grid grid-cols-2 gap-2 text-sm">
-                      <span className="text-gray-500">From:</span>
-                      <span>{destination.from}</span>
-                      <span className="text-gray-500">To:</span>
-                      <span>{destination.to}</span>
-                      <span className="text-gray-500">Pickup Date:</span>
-                      <span>{destination.pickupDate}</span>
-                    </div>
-                  </div>
+                </div>
 
-                  <div className="p-4 bg-gray-50 rounded-lg">
-                    <h3 className="font-medium mb-2">Selected Service</h3>
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-4">Destination Details</h3>
+                  <div className="bg-gray-50 p-4 rounded-lg space-y-2">
+                    <p><span className="font-medium">From:</span> {destination.from}</p>
+                    <p><span className="font-medium">To:</span> {destination.to}</p>
+                    <p><span className="font-medium">Pickup Date:</span> {format(new Date(destination.pickupDate), 'PPP')}</p>
+                    <p>
+                      <span className="font-medium">Pickup Time:</span>{' '}
+                      {TIME_SLOTS.find(slot => slot.id === destination.pickupTimeSlot)?.label || 'Not selected'}
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-4">Selected Service</h3>
+                  <div className="bg-gray-50 p-4 rounded-lg space-y-2">
                     {selectedService && (
-                      <div className="grid grid-cols-2 gap-2 text-sm">
-                        <span className="text-gray-500">Service:</span>
-                        <span>{serviceOptions.find(s => s.id === selectedService)?.name}</span>
-                        <span className="text-gray-500">Duration:</span>
-                        <span>{serviceOptions.find(s => s.id === selectedService)?.duration}</span>
-                        <span className="text-gray-500">Price:</span>
-                        <span className="font-medium">
-                          ${serviceOptions.find(s => s.id === selectedService)?.price}
-                        </span>
-                      </div>
+                      <>
+                        <p>
+                          <span className="font-medium">Service:</span>{' '}
+                          {serviceOptions.find(option => option.id === selectedService)?.name}
+                        </p>
+                        <p>
+                          <span className="font-medium">Duration:</span>{' '}
+                          {serviceOptions.find(option => option.id === selectedService)?.duration}
+                        </p>
+                        <p>
+                          <span className="font-medium">Price:</span> $
+                          {serviceOptions.find(option => option.id === selectedService)?.price.toFixed(2)}
+                        </p>
+                      </>
                     )}
                   </div>
                 </div>

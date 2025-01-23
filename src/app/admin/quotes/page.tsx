@@ -6,12 +6,16 @@ import { Input } from '@/components/ui/input'
 import { useToast } from '@/components/ui/use-toast'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { quoteService } from '@/lib/services/quote-service'
+import { ticketService } from '@/lib/services'
 import { QuoteDetailView } from '@/components/features/quotes/QuoteDetailView'
+import { useRouter } from 'next/navigation'
 
 export default function QuotesPage() {
+  const router = useRouter()
   const { toast } = useToast()
   const [activeTab, setActiveTab] = useState('pending')
   const [searchTerm, setSearchTerm] = useState('')
+  const [isDeleting, setIsDeleting] = useState(false)
 
   // Fetch quote requests
   const { data: quotes, isLoading, refetch } = useQuery({
@@ -45,62 +49,37 @@ export default function QuotesPage() {
     }
   }
 
-  // Create shipment from quote
-  const handleCreateShipment = async (quoteId: string) => {
+  // Handle edit quote
+  const handleEditQuote = (quote: any) => {
+    router.push(`/admin/quotes/${quote.id}/edit`)
+  }
+
+  // Handle delete quote
+  const handleDeleteQuote = async (quoteId: string) => {
+    if (!confirm('Are you sure you want to delete this quote request?')) return
+
     try {
-      const quote = quotes?.find(q => q.id === quoteId)
-      if (!quote) throw new Error('Quote not found')
-
-      const shipmentData = {
-        quote_id: quoteId,
-        type: 'standard', // Or get from quote metadata
-        origin: quote.metadata.destination.from,
-        destination: quote.metadata.destination.to,
-        scheduled_pickup: quote.metadata.destination.pickupDate,
-        estimated_delivery: quote.metadata.destination.pickupDate // TODO: Calculate based on service level
-      }
-      
-      console.log('Sending shipment creation request:', shipmentData)
-      
-      const response = await fetch('/api/shipments', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(shipmentData)
+      setIsDeleting(true)
+      await ticketService.updateTicket({}, quoteId, {
+        status: 'closed',
+        is_archived: true
       })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        console.error('Failed to create shipment:', {
-          status: response.status,
-          statusText: response.statusText,
-          error: errorData
-        })
-        toast({
-          title: 'Error',
-          description: 'Failed to create shipment. Please try again.',
-          variant: 'destructive'
-        })
-        return
-      }
-
-      const shipment = await response.json()
-      console.log('Shipment created successfully:', shipment)
+      
       toast({
-        title: 'Success',
-        description: 'Shipment created successfully!'
+        title: 'Quote deleted',
+        description: 'The quote has been archived.',
       })
-      
-      // Refresh quotes list
-      await refetch()
+
+      refetch()
     } catch (error) {
-      console.error('Error creating shipment:', error)
+      console.error('Error deleting quote:', error)
       toast({
         title: 'Error',
-        description: 'An error occurred while creating the shipment.',
-        variant: 'destructive'
+        description: 'Failed to delete quote. Please try again.',
+        variant: 'destructive',
       })
+    } finally {
+      setIsDeleting(false)
     }
   }
 
@@ -136,7 +115,11 @@ export default function QuotesPage() {
                 key={quote.id}
                 quote={quote}
                 onSubmitQuote={handleSubmitQuote}
+                onEditQuote={handleEditQuote}
+                onDeleteQuote={handleDeleteQuote}
                 mode="pending"
+                isAdmin={true}
+                isDeleting={isDeleting}
               />
             ))
           )}
@@ -154,8 +137,11 @@ export default function QuotesPage() {
               <QuoteDetailView
                 key={quote.id}
                 quote={quote}
-                onCreateShipment={handleCreateShipment}
+                onEditQuote={handleEditQuote}
+                onDeleteQuote={handleDeleteQuote}
                 mode="quoted"
+                isAdmin={true}
+                isDeleting={isDeleting}
               />
             ))
           )}

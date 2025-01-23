@@ -96,7 +96,7 @@ export const quoteService = {
       // Ensure the quote tag exists
       const { data: existingTag } = await supabase
         .from('tags')
-        .select('*')
+        .select('id, name')
         .eq('name', 'quote')
         .single()
 
@@ -107,7 +107,7 @@ export const quoteService = {
         const { data: newTag, error: createTagError } = await supabase
           .from('tags')
           .insert({ name: 'quote', color: '#FF5722' })
-          .select()
+          .select('id')
           .single()
 
         if (createTagError || !newTag) {

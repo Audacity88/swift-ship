@@ -6,14 +6,18 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
 import { format } from 'date-fns'
-import { Package, MapPin, Calendar, DollarSign, Truck } from 'lucide-react'
+import { Package, MapPin, Calendar, DollarSign, Truck, Pencil, Trash2 } from 'lucide-react'
 import type { QuoteRequest } from '@/types/quote'
 
 interface QuoteDetailViewProps {
   quote: QuoteRequest
   onSubmitQuote?: (quoteId: string, price: number) => Promise<void>
   onCreateShipment?: (quoteId: string) => Promise<void>
+  onEditQuote?: (quote: QuoteRequest) => void
+  onDeleteQuote?: (quoteId: string) => Promise<void>
   mode?: 'pending' | 'quoted'
+  isAdmin?: boolean
+  isDeleting?: boolean
 }
 
 // Utility function to safely parse dates
@@ -48,10 +52,39 @@ export function QuoteDetailView({
   quote, 
   onSubmitQuote, 
   onCreateShipment,
-  mode = 'pending' 
+  onEditQuote,
+  onDeleteQuote,
+  mode = 'pending',
+  isAdmin = false,
+  isDeleting = false
 }: QuoteDetailViewProps) {
   return (
-    <Card className="p-6">
+    <Card className="p-6 relative">
+      {/* Action Buttons - Show for admins or when edit/delete handlers are provided */}
+      {(isAdmin || onEditQuote || onDeleteQuote) && (quote.status === 'open' || quote.status === 'in_progress') && (
+        <div className="absolute top-4 right-4 flex items-center gap-2">
+          {quote.status === 'open' && onEditQuote && (
+            <button
+              onClick={() => onEditQuote(quote)}
+              className="p-1 rounded-lg hover:bg-gray-100"
+              title="Edit quote"
+            >
+              <Pencil className="w-4 h-4 text-gray-500" />
+            </button>
+          )}
+          {onDeleteQuote && (
+            <button
+              onClick={() => onDeleteQuote(quote.id)}
+              className="p-1 rounded-lg hover:bg-gray-100"
+              title="Delete quote"
+              disabled={isDeleting}
+            >
+              <Trash2 className="w-4 h-4 text-red-500" />
+            </button>
+          )}
+        </div>
+      )}
+
       <div className="grid grid-cols-3 gap-6">
         {/* Quote Details */}
         <div className="space-y-4">
