@@ -17,7 +17,7 @@ export const quoteService = {
         throw new Error('Unauthorized')
       }
 
-      const { data, error } = await supabase
+      let query = supabase
         .from('tickets')
         .select(`
           id,
@@ -32,7 +32,14 @@ export const quoteService = {
           )
         `)
         .eq('type', 'task')
-        .eq('status', options?.status || 'open')
+        .neq('status', 'closed')
+
+      // If specific status is requested, filter by it
+      if (options?.status) {
+        query = query.eq('status', options.status)
+      }
+
+      const { data, error } = await query
 
       if (error) throw error
 

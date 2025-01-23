@@ -312,6 +312,13 @@ export default function QuotePage() {
             ) : (
               quotes
                 .filter(quote => !quote.is_archived)
+                .sort((a, b) => {
+                  // Sort in_progress quotes to the top
+                  if (a.status === 'in_progress' && b.status !== 'in_progress') return -1;
+                  if (a.status !== 'in_progress' && b.status === 'in_progress') return 1;
+                  // Then sort by creation date (newest first)
+                  return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+                })
                 .map((quote) => (
                   <div
                     key={quote.id}
@@ -325,22 +332,42 @@ export default function QuotePage() {
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
+                        {quote.status === 'in_progress' && (
+                          <button
+                            onClick={() => router.push(`/shipments/new?quoteId=${quote.id}`)}
+                            className="px-3 py-1 rounded-lg bg-green-500 hover:bg-green-600 text-white text-sm font-medium transition-colors"
+                          >
+                            Select Pickup
+                          </button>
+                        )}
                         <span className={`px-2 py-1 rounded-full text-xs font-medium
                           ${quote.status === 'open' ? 'bg-blue-100 text-blue-800' :
-                            quote.status === 'quoted' ? 'bg-green-100 text-green-800' :
+                            quote.status === 'in_progress' ? 'bg-green-100 text-green-800' :
                             'bg-gray-100 text-gray-800'}`}
                         >
                           {quote.status.charAt(0).toUpperCase() + quote.status.slice(1)}
                         </span>
-                        {quote.status === 'open' && (
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => handleEditQuote(quote)}
-                              className="p-1 rounded-lg hover:bg-gray-100"
-                              title="Edit quote"
-                            >
-                              <Pencil className="w-4 h-4 text-gray-500" />
-                            </button>
+                        <div className="flex items-center gap-2">
+                          {quote.status === 'open' && (
+                            <>
+                              <button
+                                onClick={() => handleEditQuote(quote)}
+                                className="p-1 rounded-lg hover:bg-gray-100"
+                                title="Edit quote"
+                              >
+                                <Pencil className="w-4 h-4 text-gray-500" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteQuote(quote.id)}
+                                className="p-1 rounded-lg hover:bg-gray-100"
+                                title="Delete quote"
+                                disabled={isDeleting}
+                              >
+                                <Trash2 className="w-4 h-4 text-red-500" />
+                              </button>
+                            </>
+                          )}
+                          {quote.status === 'in_progress' && (
                             <button
                               onClick={() => handleDeleteQuote(quote.id)}
                               className="p-1 rounded-lg hover:bg-gray-100"
@@ -349,8 +376,8 @@ export default function QuotePage() {
                             >
                               <Trash2 className="w-4 h-4 text-red-500" />
                             </button>
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </div>
                     </div>
                     <div className="grid grid-cols-3 gap-4 text-sm">
