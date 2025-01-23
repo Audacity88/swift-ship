@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -63,95 +63,78 @@ export function PasswordReset() {
     }
   };
 
-  return (
-    <div className="space-y-6">
-      <div className="space-y-2">
-        <Button
-          variant="ghost"
-          className="mb-4"
-          onClick={() => router.push('/auth/signin')}
-        >
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to Sign In
-        </Button>
-
-        <h1 className="text-2xl font-semibold tracking-tight">
-          {isResetMode ? 'Reset Your Password' : 'Forgot Password'}
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          {isResetMode
+  return React.createElement(React.Fragment, null,
+    React.createElement('div', { className: 'space-y-6' },
+      React.createElement('div', { className: 'space-y-2' },
+        React.createElement(Button, {
+          variant: 'ghost',
+          className: 'mb-4',
+          onClick: () => router.push('/auth/signin')
+        },
+          React.createElement(ArrowLeft, { className: 'mr-2 h-4 w-4' }),
+          'Back to Sign In'
+        ),
+        React.createElement('h1', { className: 'text-2xl font-semibold tracking-tight' },
+          isResetMode ? 'Reset Your Password' : 'Forgot Password'
+        ),
+        React.createElement('p', { className: 'text-sm text-muted-foreground' },
+          isResetMode
             ? 'Enter your new password below'
-            : 'Enter your email and we'll send you reset instructions'}
-        </p>
-      </div>
-
-      <form onSubmit={handleSubmit} className="space-y-4">
-        {!isResetMode && (
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              type="email"
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              required
-            />
-          </div>
-        )}
-
-        {isResetMode && (
-          <>
-            <div className="space-y-2">
-              <Label htmlFor="password">New Password</Label>
-              <Input
-                id="password"
-                type="password"
-                value={formData.password}
-                onChange={(e) =>
-                  setFormData({ ...formData, password: e.target.value })
-                }
-                required
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="confirmPassword">Confirm Password</Label>
-              <Input
-                id="confirmPassword"
-                type="password"
-                value={formData.confirmPassword}
-                onChange={(e) =>
-                  setFormData({ ...formData, confirmPassword: e.target.value })
-                }
-                required
-              />
-            </div>
-          </>
-        )}
-
-        {error && (
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-
-        {success && (
-          <Alert>
-            <AlertDescription>{success}</AlertDescription>
-          </Alert>
-        )}
-
-        <Button type="submit" className="w-full" disabled={loading}>
-          {loading ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              {isResetMode ? 'Resetting Password...' : 'Sending Instructions...'}
-            </>
+            : 'Enter your email and we will send you reset instructions'
+        )
+      ),
+      React.createElement('form', { onSubmit: handleSubmit, className: 'space-y-4' },
+        !isResetMode && React.createElement('div', { className: 'space-y-2' },
+          React.createElement(Label, { htmlFor: 'email' }, 'Email'),
+          React.createElement(Input, {
+            id: 'email',
+            type: 'email',
+            value: formData.email,
+            onChange: (e) => setFormData({ ...formData, email: e.target.value }),
+            required: true
+          })
+        ),
+        isResetMode && React.createElement(React.Fragment, null,
+          React.createElement('div', { className: 'space-y-2' },
+            React.createElement(Label, { htmlFor: 'password' }, 'New Password'),
+            React.createElement(Input, {
+              id: 'password',
+              type: 'password',
+              value: formData.password,
+              onChange: (e) => setFormData({ ...formData, password: e.target.value }),
+              required: true
+            })
+          ),
+          React.createElement('div', { className: 'space-y-2' },
+            React.createElement(Label, { htmlFor: 'confirmPassword' }, 'Confirm Password'),
+            React.createElement(Input, {
+              id: 'confirmPassword',
+              type: 'password',
+              value: formData.confirmPassword,
+              onChange: (e) => setFormData({ ...formData, confirmPassword: e.target.value }),
+              required: true
+            })
+          )
+        ),
+        error && React.createElement(Alert, { variant: 'destructive' },
+          React.createElement(AlertDescription, null, error)
+        ),
+        success && React.createElement(Alert, null,
+          React.createElement(AlertDescription, null, success)
+        ),
+        React.createElement(Button, {
+          type: 'submit',
+          className: 'w-full',
+          disabled: loading
+        },
+          loading ? React.createElement(React.Fragment, null,
+            React.createElement(Loader2, { className: 'mr-2 h-4 w-4 animate-spin' }),
+            isResetMode ? 'Resetting Password...' : 'Sending Instructions...'
           ) : (
             isResetMode ? 'Reset Password' : 'Send Instructions'
-          )}
-        </Button>
-      </form>
-    </div>
+          )
+        )
+      )
+    )
   );
 } 
