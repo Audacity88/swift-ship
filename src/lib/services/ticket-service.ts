@@ -2,6 +2,20 @@ import type { Ticket, TicketListItem, TicketStatus, TicketPriority } from '@/typ
 import type { SearchRequest } from '@/types/search'
 import { getServerSupabase, type ServerContext } from '@/lib/supabase-client'
 
+export interface TicketRelationship {
+  related_ticket_id: string
+  relationship_type: string
+  related_ticket: {
+    id: string
+    title: string
+    status: string
+    priority: string
+    created_at: string
+    updated_at: string
+    metadata: Record<string, unknown>
+  }
+}
+
 // Individual function exports with context
 export const fetchTickets = async (
   context: ServerContext,
@@ -426,6 +440,142 @@ export const ticketService = {
       }
     } catch (error) {
       console.error('Error in updateTicketStatus:', error)
+      throw error
+    }
+  },
+
+  async getLinkedProblems(
+    context: ServerContext,
+    ticketId: string
+  ): Promise<TicketRelationship[]> {
+    try {
+      const supabase = getServerSupabase(context)
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (!session) {
+        throw new Error('Unauthorized')
+      }
+
+      const { data, error } = await supabase
+        .from('ticket_relationships')
+        .select(`
+          related_ticket_id,
+          relationship_type,
+          related_ticket:tickets!ticket_relationships_related_ticket_id_fkey (
+            id,
+            title,
+            status,
+            priority,
+            created_at,
+            updated_at,
+            metadata
+          )
+        `)
+        .eq('ticket_id', ticketId)
+        .eq('relationship_type', 'problem')
+        .returns<TicketRelationship[]>()
+
+      if (error) {
+        console.error('Failed to get linked problems:', error)
+        throw error
+      }
+
+      return data || []
+    } catch (error) {
+      console.error('Error in getLinkedProblems:', error)
+      throw error
+    }
+  },
+
+  async linkProblem(
+    context: ServerContext,
+    ticketId: string,
+    problemTicketId: string
+  ): Promise<void> {
+    try {
+      const supabase = getServerSupabase(context)
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (!session) {
+        throw new Error('Unauthorized')
+      }
+
+      // First check if the problem ticket exists
+      const { data: problemTicket, error: problemError } = await supabase
+        .from('tickets')
+        .select('id')
+        .eq('id', problemTicketId)
+        .single()
+
+      if (problemError || !problemTicket) {
+        throw new Error('Problem ticket not found')
+      }
+
+      // Check if the relationship already exists
+      const { data: existing, error: existingError } = await supabase
+        .from('ticket_relationships')
+        .select('id')
+        .eq('ticket_id', ticketId)
+        .eq('related_ticket_id', problemTicketId)
+        .eq('relationship_type', 'problem')
+        .maybeSingle()
+
+      if (existingError) {
+        console.error('Failed to check existing relationship:', existingError)
+        throw existingError
+      }
+
+      if (existing) {
+        throw new Error('Relationship already exists')
+      }
+
+      // Create the relationship
+      const { error } = await supabase
+        .from('ticket_relationships')
+        .insert({
+          ticket_id: ticketId,
+          related_ticket_id: problemTicketId,
+          relationship_type: 'problem',
+          created_by: session.user.id,
+          created_at: new Date().toISOString()
+        })
+
+      if (error) {
+        console.error('Failed to create relationship:', error)
+        throw error
+      }
+    } catch (error) {
+      console.error('Error in linkProblem:', error)
+      throw error
+    }
+  },
+
+  async unlinkProblem(
+    context: ServerContext,
+    ticketId: string,
+    problemTicketId: string
+  ): Promise<void> {
+    try {
+      const supabase = getServerSupabase(context)
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (!session) {
+        throw new Error('Unauthorized')
+      }
+
+      const { error } = await supabase
+        .from('ticket_relationships')
+        .delete()
+        .eq('ticket_id', ticketId)
+        .eq('related_ticket_id', problemTicketId)
+        .eq('relationship_type', 'problem')
+
+      if (error) {
+        console.error('Failed to delete relationship:', error)
+        throw error
+      }
+    } catch (error) {
+      console.error('Error in unlinkProblem:', error)
       throw error
     }
   }

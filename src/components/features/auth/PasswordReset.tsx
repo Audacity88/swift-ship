@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Loader2, ArrowLeft } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { useSupabase } from '@/app/providers';
+import { authService } from '@/lib/services';
 
 interface ResetFormData {
   email: string;
@@ -22,7 +22,6 @@ export function PasswordReset() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
-  const supabase = useSupabase();
 
   // Check if we're in reset mode (have a token)
   const token = searchParams.get('token');
@@ -46,24 +45,14 @@ export function PasswordReset() {
         }
 
         // Update password
-        const { error } = await supabase.auth.updateUser({
-          password: formData.password
-        });
-
-        if (error) throw error;
-
+        await authService.resetPassword({}, formData.password);
         setSuccess('Password has been reset successfully');
         setTimeout(() => {
           router.push('/auth/signin');
         }, 2000);
       } else {
         // Send reset email
-        const { error } = await supabase.auth.resetPasswordForEmail(formData.email, {
-          redirectTo: `${window.location.origin}/auth/reset-password`
-        });
-
-        if (error) throw error;
-
+        await authService.resetPassword({}, formData.email);
         setSuccess('Password reset instructions have been sent to your email');
       }
     } catch (err) {

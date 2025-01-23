@@ -1,19 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useSupabase } from '@/app/providers'
 import { Package, MapPin, Calendar, Plus } from 'lucide-react'
 import { COLORS } from '@/lib/constants'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay } from 'date-fns'
-
-interface PickupTicket {
-  id: string
-  title: string
-  description: string
-  status: string
-  createdAt: string
-  metadata: any
-}
+import { pickupService, authService, type PickupTicket } from '@/lib/services'
 
 interface TimeSlot {
   start: string
@@ -30,7 +21,6 @@ const TIME_SLOTS: TimeSlot[] = [
 ]
 
 export default function PickupPage() {
-  const supabase = useSupabase()
   const [isLoading, setIsLoading] = useState(true)
   const [tickets, setTickets] = useState<PickupTicket[]>([])
   const [showForm, setShowForm] = useState(false)
@@ -48,25 +38,8 @@ export default function PickupPage() {
     setIsLoading(true)
     setError(null)
     try {
-      const { data, error } = await supabase
-        .from('tickets')
-        .select(`
-          *,
-          ticket_tags!inner(
-            tags!inner(name)
-          )
-        `)
-        .eq('ticket_tags.tags.name', 'pickup')
-        .order('created_at', { ascending: false })
-
-      if (error) {
-        throw error
-      }
-      if (!data) {
-        setTickets([])
-      } else {
-        setTickets(data)
-      }
+      const pickups = await pickupService.getPickups({})
+      setTickets(pickups)
     } catch (err: any) {
       setError(err.message)
     } finally {
@@ -83,8 +56,7 @@ export default function PickupPage() {
     setError(null)
     setIsLoading(true)
     try {
-      const sessionRes = await supabase.auth.getSession()
-      const session = sessionRes.data.session
+      const session = await authService.getSession({})
       if (!session?.user?.id) {
         throw new Error('Must be logged in')
       }
@@ -92,46 +64,15 @@ export default function PickupPage() {
       const formattedDate = format(selectedDate, 'yyyy-MM-dd')
       const pickupDateTime = `${formattedDate} ${selectedTimeSlot}`
 
-      const { data, error } = await supabase
-        .from('tickets')
-        .insert({
-          title: 'New Pickup Request',
-          description: `Shipment pickup at ${address} on ${pickupDateTime}`,
-          status: 'open',
-          priority: 'medium',
-          type: 'task',
-          customer_id: session.user.id,
-          source: 'web',
-          metadata: {
-            address,
-            pickupDateTime,
-            packageType,
-            weight,
-            quantity,
-            additionalNotes
-          }
-        })
-        .select()
-        .single()
-
-      if (error) throw error
-
-      const ticketId = data.id
-      await supabase
-        .from('ticket_tags')
-        .insert({
-          ticket_id: ticketId,
-          tag_id: (await ensureTag('pickup')).id
-        })
-
-      await supabase
-        .from('messages')
-        .insert({
-          ticket_id: ticketId,
-          content: 'Your pickup request has been received!',
-          author_type: 'agent',
-          author_id: '00000000-0000-0000-0000-000000000000'
-        })
+      await pickupService.createPickup({}, {
+        address,
+        pickupDateTime,
+        packageType,
+        weight,
+        quantity,
+        additionalNotes,
+        customerId: session.user.id
+      })
 
       setShowForm(false)
       resetForm()
@@ -151,27 +92,6 @@ export default function PickupPage() {
     setWeight('')
     setQuantity('1')
     setAdditionalNotes('')
-  }
-
-  const ensureTag = async (tagName: string) => {
-    const { data, error } = await supabase
-      .from('tags')
-      .select('*')
-      .eq('name', tagName)
-      .single()
-
-    if (data) return data
-
-    const { data: newTag, error: createError } = await supabase
-      .from('tags')
-      .insert({ name: tagName, color: '#FFC107' })
-      .select()
-      .single()
-
-    if (createError || !newTag) {
-      throw new Error('Failed to ensure tag: ' + tagName)
-    }
-    return newTag
   }
 
   const getDaysInMonth = () => {

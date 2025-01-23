@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { TicketPriority, TicketStatus } from '@/types/ticket'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
 import type { NextRequest } from 'next/server'
+import { authService, ticketService } from '@/lib/services'
 
 // Types
 interface CreateTicketResult {
@@ -53,43 +52,12 @@ const sortingSchema = z.object({
   sortDirection: z.enum(['asc', 'desc']).default('desc')
 })
 
-const initSupabase = async () => {
-  const cookieStore = await cookies()
-  
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value
-        },
-        set(name: string, value: string, options: any) {
-          try {
-            cookieStore.set({ name, value, ...options })
-          } catch (error) {
-            // Handle cookie setting error
-          }
-        },
-        remove(name: string, options: any) {
-          try {
-            cookieStore.set({ name, value: '', ...options })
-          } catch (error) {
-            // Handle cookie removal error
-          }
-        },
-      },
-    }
-  )
-}
-
 // GET /api/tickets - Get tickets with optional filters
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await initSupabase()
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-
-    if (userError || !user) {
+    // Check authentication
+    const session = await authService.getSession({})
+    if (!session?.user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -120,59 +88,16 @@ export async function GET(request: NextRequest) {
       sortDirection: searchParams.get('sortDirection') || 'desc'
     })
 
-    // Convert camelCase to snake_case for sorting
-    const dbSortField = sortField.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`)
-
-    // Start building the query
-    let query = supabase
-      .from('tickets')
-      .select(`
-        id,
-        title,
-        status,
-        priority,
-        created_at,
-        type,
-        customer:customers(*),
-        assignee:agents!tickets_assignee_id_fkey(*)
-      `, { count: 'exact' })
-
-    // Apply filters
-    if (filters.status?.length) {
-      query = query.in('status', filters.status)
-    }
-    if (filters.priority?.length) {
-      query = query.in('priority', filters.priority)
-    }
-    if (filters.type) {
-      query = query.eq('type', filters.type)
-    }
-    if (filters.search) {
-      query = query.ilike('title', `%${filters.search}%`)
-    }
-    if (filters.dateFrom) {
-      query = query.gte('created_at', filters.dateFrom)
-    }
-    if (filters.dateTo) {
-      query = query.lte('created_at', filters.dateTo)
-    }
-
-    // Apply pagination and sorting
-    const { data: tickets, count, error: ticketsError } = await query
-      .order(dbSortField, { ascending: sortDirection === 'asc' })
-      .range((page - 1) * pageSize, page * pageSize - 1)
-
-    if (ticketsError) {
-      console.error('Failed to fetch tickets:', ticketsError)
-      return NextResponse.json(
-        { error: 'Failed to fetch tickets' },
-        { status: 500 }
-      )
-    }
+    // Fetch tickets using the service
+    const { data: tickets, total } = await ticketService.fetchTickets({}, {
+      filters,
+      pagination: { page, pageSize },
+      sort: { field: sortField, direction: sortDirection }
+    })
 
     return NextResponse.json({
       data: tickets,
-      total: count || 0,
+      total,
       page,
       pageSize
     })
@@ -194,10 +119,9 @@ export async function GET(request: NextRequest) {
 // POST /api/tickets - Create a new ticket
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await initSupabase()
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-
-    if (userError || !user) {
+    // Check authentication
+    const session = await authService.getSession({})
+    if (!session?.user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -207,72 +131,23 @@ export async function POST(request: NextRequest) {
     const json = await request.json()
     const body = createTicketSchema.parse(json)
 
-    // Create the ticket
-    const { data: ticket, error: ticketError } = await supabase
-      .from('tickets')
-      .insert({
-        title: body.title,
-        description: body.description,
-        status: TicketStatus.OPEN,
-        priority: body.priority,
-        customer_id: body.customerId,
-        assignee_id: body.assigneeId || null,
-        metadata: body.metadata || {},
-        type: 'question', // Default type
-        source: 'web' // Default source
-      })
-      .select()
-      .single()
+    // Create the ticket using the service
+    const ticket = await ticketService.createTicket({}, {
+      title: body.title,
+      description: body.description,
+      priority: body.priority,
+      customerId: body.customerId,
+      assigneeId: body.assigneeId,
+      tags: body.tags,
+      metadata: body.metadata
+    })
 
-    if (ticketError) {
-      console.error('Failed to create ticket:', ticketError)
-      throw ticketError
-    }
-
-    // Add tags if provided
-    if (body.tags?.length) {
-      const { error: tagsError } = await supabase
-        .from('ticket_tags')
-        .insert(
-          body.tags.map(tagId => ({
-            ticket_id: ticket.id,
-            tag_id: tagId
-          }))
-        )
-      if (tagsError) {
-        console.error('Failed to add tags:', tagsError)
-        throw tagsError
-      }
-    }
-
-    // Create audit log entry
-    const { error: auditError } = await supabase
-      .from('audit_logs')
-      .insert({
-        ticket_id: ticket.id,
-        actor_id: user.id,
-        action: 'create',
-        metadata: {
-          title: body.title,
-          description: body.description,
-          priority: body.priority,
-          customerId: body.customerId,
-          assigneeId: body.assigneeId,
-          tags: body.tags
-        }
-      })
-
-    if (auditError) {
-      console.error('Failed to create audit log:', auditError)
-      // Don't throw since the ticket was created successfully
-    }
-
-    return NextResponse.json({ data: ticket })
+    return NextResponse.json(ticket)
   } catch (error) {
-    console.error('Failed to create ticket:', error)
+    console.error('Error creating ticket:', error)
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Invalid request data', details: error.errors },
+        { error: 'Invalid parameters', details: error.errors },
         { status: 400 }
       )
     }

@@ -1,63 +1,33 @@
 'use client';
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { useSupabase } from '@/app/providers';
-import { RoleType } from '@/types/role';
-import { Icons } from '@/components/ui/icons';
+import { redirect } from 'next/navigation'
+import { authService, userService } from '@/lib/services'
 
-export default function AuthCallback() {
-  const router = useRouter();
-  const supabase = useSupabase();
+export default async function AuthCallback() {
+  try {
+    const session = await authService.getSession({})
+    if (!session) {
+      return redirect('/auth/sign-in')
+    }
 
-  useEffect(() => {
-    const handleCallback = async () => {
-      try {
-        const { data: { session }, error } = await supabase.auth.getSession();
-        if (error) throw error;
-        if (!session) throw new Error('No session');
+    // Check if user exists and get their type
+    const user = await userService.getCurrentUser({})
+    if (!user) {
+      // New user - redirect to welcome page
+      return redirect('/welcome')
+    }
 
-        // Check if user exists in customers table
-        const { data: customer } = await supabase
-          .from('customers')
-          .select('id')
-          .eq('id', session.user.id)
-          .single();
+    // Redirect based on user type
+    if (user.type === 'customer') {
+      return redirect('/portal')
+    } else if (user.type === 'agent') {
+      return redirect('/tickets/overview')
+    }
 
-        if (customer) {
-          router.push('/portal/dashboard');
-        } else {
-          // Check if user exists in agents table
-          const { data: agent } = await supabase
-            .from('agents')
-            .select('id')
-            .eq('id', session.user.id)
-            .single();
-
-          if (agent) {
-            router.push('/dashboard');
-          } else {
-            // New user - redirect to welcome page
-            router.push('/portal/welcome');
-          }
-        }
-      } catch (error) {
-        console.error('Error in auth callback:', error);
-        router.push('/auth/error');
-      }
-    };
-
-    handleCallback();
-  }, [router, supabase]);
-
-  return (
-    <div className="flex min-h-screen items-center justify-center">
-      <div className="text-center">
-        <Icons.spinner className="mx-auto h-8 w-8 animate-spin" />
-        <p className="mt-4 text-sm text-muted-foreground">
-          Completing authentication...
-        </p>
-      </div>
-    </div>
-  );
+    // Fallback redirect if something unexpected happens
+    return redirect('/welcome')
+  } catch (error) {
+    console.error('Auth callback error:', error)
+    return redirect('/auth/sign-in')
+  }
 } 

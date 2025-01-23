@@ -8,7 +8,8 @@ import {
   ArrowLeft
 } from 'lucide-react'
 import { COLORS } from '@/lib/constants'
-import { useSupabase } from '@/app/providers'
+import { quoteService, authService, shipmentService } from '@/lib/services'
+import type { ServerContext } from '@/lib/supabase-client'
 
 type Step = 'package' | 'destination' | 'service' | 'summary' | 'done'
 
@@ -78,7 +79,6 @@ const serviceOptions: ServiceOption[] = [
 
 export default function QuotePage() {
   const router = useRouter()
-  const supabase = useSupabase()
 
   const [currentStep, setCurrentStep] = useState<Step>('package')
   const [packageDetails, setPackageDetails] = useState<PackageDetails>(initialPackageDetails)
@@ -118,8 +118,8 @@ export default function QuotePage() {
     setSuccessMessage(null)
 
     try {
-      const sessionRes = await supabase.auth.getSession()
-      const session = sessionRes.data.session
+      const context: ServerContext = { headers: {} }
+      const session = await authService.getSession(context)
       if (!session?.user?.id) {
         throw new Error('You must be signed in to request a quote.')
       }
@@ -131,88 +131,16 @@ export default function QuotePage() {
         selectedService
       }
 
-      // Create ticket
-      const { data: ticket, error: createError } = await supabase
-        .from('tickets')
-        .insert({
-          title: 'Quote Request',
-          description: 'New quote request from customer portal',
-          priority: 'medium',
-          type: 'task',
-          customer_id: session.user.id,
-          source: 'web',
-          metadata,
-          status: 'open'
-        })
-        .select()
-        .single()
-
-      if (createError) {
-        throw createError
-      }
-      const ticketId = ticket.id
-
-      // Insert tag 'quote'
-      await supabase
-        .from('ticket_tags')
-        .insert({
-          ticket_id: ticketId,
-          tag_id: (await ensureTag('quote')).id
-        })
-
-      // Create shipment
-      const shipmentData = {
-        quote_id: ticketId,
-        type: packageDetails.type,
-        origin: destination.from,
-        destination: destination.to,
-        scheduled_pickup: destination.pickupDate ? new Date(destination.pickupDate).toISOString() : null,
-        estimated_delivery: selectedService ? calculateEstimatedDelivery(destination.pickupDate, selectedService) : null,
-        status: 'quote_requested',
-        customer_id: session.user.id,
-        metadata: {
-          weight: packageDetails.weight,
-          volume: packageDetails.volume,
-          container_size: packageDetails.containerSize,
-          pallet_count: packageDetails.palletCount,
-          hazardous: packageDetails.hazardous,
-          special_requirements: packageDetails.specialRequirements,
-          selected_service: selectedService
-        }
-      }
-
-      console.log('Creating shipment with data:', shipmentData)
-
-      const response = await fetch('/api/shipments', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(shipmentData),
+      // Create ticket with quote request
+      const ticket = await quoteService.createQuoteRequest(context, {
+        title: 'Quote Request',
+        description: 'New quote request from customer portal',
+        customerId: session.user.id,
+        metadata
       })
 
-      if (!response.ok) {
-        const errorData = await response.json()
-        console.error('Shipment creation failed:', {
-          status: response.status,
-          statusText: response.statusText,
-          error: errorData
-        })
-        throw new Error(errorData.message || 'Failed to create shipment')
-      }
-
-      const shipment = await response.json()
-      console.log('Shipment created successfully:', shipment)
-
-      // Insert a message with shipment details
-      await supabase
-        .from('messages')
-        .insert({
-          ticket_id: ticketId,
-          content: `Your quote request has been received! Your shipment tracking number is: ${shipment.tracking_number}`,
-          author_type: 'agent',
-          author_id: '00000000-0000-0000-0000-000000000000'
-        })
+      // Create shipment from quote
+      await shipmentService.createFromQuote(context, ticket.id, session.user.id)
 
       setSuccessMessage('Your quote request has been submitted.')
       setCurrentStep('done')
@@ -244,28 +172,6 @@ export default function QuotePage() {
     }
 
     return delivery.toISOString().split('T')[0]
-  }
-
-  const ensureTag = async (tagName: string) => {
-    // check if tag with name = tagName exists, else create
-    const { data, error } = await supabase
-      .from('tags')
-      .select('*')
-      .eq('name', tagName)
-      .single()
-
-    if (data) return data
-
-    const { data: newTag, error: createError } = await supabase
-      .from('tags')
-      .insert({ name: tagName, color: '#FF5722' })
-      .select()
-      .single()
-
-    if (createError || !newTag) {
-      throw new Error('Failed to ensure tag: ' + tagName)
-    }
-    return newTag
   }
 
   return (

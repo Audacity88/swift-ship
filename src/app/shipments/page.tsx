@@ -3,23 +3,16 @@
 import { useState, useEffect } from 'react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
-import { useSupabase } from '@/app/providers'
 import { Search, Filter, Download, MoreVertical, Package, Truck, MapPin, Calendar, ArrowUpDown, Plus } from 'lucide-react'
 import { COLORS } from '@/lib/constants'
-
-interface ShipmentTicket {
-  id: string
-  title: string
-  description: string
-  status: string
-  createdAt: string
-  metadata: any
-}
+import { authService, shipmentService } from '@/lib/services'
+import type { ServerContext } from '@/lib/supabase-client'
+import type { Shipment } from '@/types/shipment'
 
 export default function ShipmentsPage() {
-  const supabase = useSupabase()
   const [isLoading, setIsLoading] = useState(true)
-  const [tickets, setTickets] = useState<ShipmentTicket[]>([])
+  const [shipments, setShipments] = useState<Shipment[]>([])
+  const [totalShipments, setTotalShipments] = useState(0)
   const [showNew, setShowNew] = useState(false)
   const [origin, setOrigin] = useState('')
   const [destination, setDestination] = useState('')
@@ -29,25 +22,9 @@ export default function ShipmentsPage() {
     setIsLoading(true)
     setError(null)
     try {
-      const { data, error } = await supabase
-        .from('tickets')
-        .select(`
-          *,
-          ticket_tags!inner(
-            tags!inner(name)
-          )
-        `)
-        .eq('ticket_tags.tags.name', 'shipment')
-        .order('created_at', { ascending: false })
-
-      if (error) {
-        throw error
-      }
-      if (!data) {
-        setTickets([])
-      } else {
-        setTickets(data)
-      }
+      const response = await shipmentService.listShipments(undefined)
+      setShipments(response.data)
+      setTotalShipments(response.total)
     } catch (err: any) {
       setError(err.message)
     } finally {
@@ -59,47 +36,17 @@ export default function ShipmentsPage() {
     setError(null)
     setIsLoading(true)
     try {
-      // create a new ticket with tag=shipment
-      const sessionRes = await supabase.auth.getSession()
-      const session = sessionRes.data.session
+      const session = await authService.getSession(undefined)
       if (!session?.user?.id) {
         throw new Error('Must be logged in')
       }
-      const { data, error } = await supabase
-        .from('tickets')
-        .insert({
-          title: 'Shipment Request',
-          description: `Shipment from ${origin} to ${destination}`,
-          status: 'open',
-          priority: 'medium',
-          type: 'task',
-          customer_id: session.user.id,
-          source: 'web',
-          metadata: { origin, destination }
-        })
-        .select()
-        .single()
-      if (error) throw error
 
-      const ticketId = data.id
-
-      // Insert tag
-      await supabase
-        .from('ticket_tags')
-        .insert({
-          ticket_id: ticketId,
-          tag_id: (await ensureTag('shipment')).id
-        })
-
-      // Insert system message or user message
-      await supabase
-        .from('messages')
-        .insert({
-          ticket_id: ticketId,
-          content: 'Your shipment request has been received!',
-          author_type: 'agent',
-          author_id: '00000000-0000-0000-0000-000000000000'
-        })
+      await shipmentService.create(undefined, {
+        customerId: session.user.id,
+        origin,
+        destination,
+        status: 'pending'
+      })
 
       setShowNew(false)
       setOrigin('')
@@ -111,27 +58,6 @@ export default function ShipmentsPage() {
     } finally {
       setIsLoading(false)
     }
-  }
-
-  const ensureTag = async (tagName: string) => {
-    const { data, error } = await supabase
-      .from('tags')
-      .select('*')
-      .eq('name', tagName)
-      .single()
-
-    if (data) return data
-
-    const { data: newTag, error: createError } = await supabase
-      .from('tags')
-      .insert({ name: tagName, color: '#0EAD69' })
-      .select()
-      .single()
-
-    if (createError || !newTag) {
-      throw new Error('Failed to ensure tag: ' + tagName)
-    }
-    return newTag
   }
 
   useEffect(() => {
@@ -159,7 +85,10 @@ export default function ShipmentsPage() {
       {/* Shipments List */}
       <div className="flex-1 flex flex-col border-r border-gray-200 bg-white overflow-hidden">
         <div className="p-6 border-b border-gray-200 flex justify-between items-center">
-          <h1 className="text-2xl font-semibold text-gray-900">Shipments</h1>
+          <div>
+            <h1 className="text-2xl font-semibold text-gray-900">Shipments</h1>
+            <p className="text-sm text-gray-500 mt-1">Total: {totalShipments}</p>
+          </div>
           <button
             className="px-4 py-2 text-sm font-medium text-white rounded-lg"
             style={{ backgroundColor: COLORS.primary }}
@@ -202,20 +131,26 @@ export default function ShipmentsPage() {
         )}
 
         <div className="flex-1 overflow-auto">
-          {tickets.map(shipment => (
-            <div
-              key={shipment.id}
-              className="w-full p-4 text-left border-b border-gray-100 hover:bg-gray-50"
-            >
-              <h2 className="font-medium text-gray-900">{shipment.title}</h2>
-              <p className="text-sm text-gray-600">
-                {shipment.description}
-              </p>
-              <p className="text-xs text-gray-400 mt-1">
-                {new Date(shipment.createdAt).toLocaleString()}
-              </p>
+          {shipments.length === 0 ? (
+            <div className="p-6 text-center text-gray-500">
+              No shipments found
             </div>
-          ))}
+          ) : (
+            shipments.map(shipment => (
+              <div
+                key={shipment.id}
+                className="w-full p-4 text-left border-b border-gray-100 hover:bg-gray-50"
+              >
+                <h2 className="font-medium text-gray-900">{shipment.type}</h2>
+                <p className="text-sm text-gray-600">
+                  {shipment.origin} to {shipment.destination}
+                </p>
+                <p className="text-xs text-gray-400 mt-1">
+                  {new Date(shipment.created_at).toLocaleString()}
+                </p>
+              </div>
+            ))
+          )}
         </div>
       </div>
 

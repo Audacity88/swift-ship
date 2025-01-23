@@ -7,8 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Icons } from '@/components/ui/icons';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { useSupabase } from '@/app/providers';
-import { RoleType } from '@/types/role';
+import { authService } from '@/lib/services';
 import type { AuthError } from '@supabase/supabase-js';
 
 interface RegistrationData {
@@ -42,7 +41,6 @@ export function CustomerRegistration() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
-  const supabase = useSupabase();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,28 +48,12 @@ export function CustomerRegistration() {
     setLoading(true);
 
     try {
-      // Sign up the user
-      const { data: { user }, error: signUpError } = await supabase.auth.signUp({
+      await authService.registerCustomer({}, {
         email: formData.email,
         password: formData.password,
+        name: formData.name,
+        company: formData.company,
       });
-
-      if (signUpError) throw signUpError;
-      if (!user) throw new Error('Failed to create user');
-
-      // Create customer profile
-      const { error: profileError } = await supabase
-        .from('customers')
-        .insert({
-          id: user.id,
-          name: formData.name,
-          email: formData.email,
-          company: formData.company || null,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        });
-
-      if (profileError) throw profileError;
 
       // Redirect to confirmation page
       router.push('/auth/confirm-email');
@@ -85,13 +67,9 @@ export function CustomerRegistration() {
 
   const handleSocialLogin = async (provider: 'google' | 'github') => {
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider,
-        options: {
-          redirectTo: `${window.location.origin}/portal/auth/callback`,
-        },
+      await authService.signInWithProvider({}, provider, {
+        redirectTo: `${window.location.origin}/portal/auth/callback`,
       });
-      if (error) throw error;
     } catch (err) {
       const error = err as AuthError;
       setError(error.message || `Failed to sign in with ${provider}`);

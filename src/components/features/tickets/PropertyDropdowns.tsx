@@ -8,7 +8,7 @@ import {
   type LucideIcon, Loader2
 } from 'lucide-react'
 import type { TicketType } from '@/types/ticket'
-import { tagService, agentService } from '@/lib/services'
+import { tagService, userService } from '@/lib/services'
 
 interface DropdownProps {
   show: boolean
@@ -319,18 +319,18 @@ interface FollowersDropdownProps {
 }
 
 export function FollowersDropdown({ show, onClose, followers, onAdd, onRemove }: FollowersDropdownProps) {
-  const [searchQuery, setSearchQuery] = useState('')
-  const [suggestedFollowers, setSuggestedFollowers] = useState<{ id: string; name: string; email: string }[]>([])
-  const [loading, setLoading] = useState(true)
+  const [agents, setAgents] = useState<Array<{ id: string, name: string }>>([])
+  const [loading, setLoading] = useState(false)
+  const [searchTerm, setSearchTerm] = useState('')
 
   useEffect(() => {
     const fetchAgents = async () => {
       try {
-        const agents = await agentService.searchAgents({}, followers)
-        setSuggestedFollowers(agents)
+        setLoading(true)
+        const users = await userService.searchUsers({}, searchTerm, 'agent', followers)
+        setAgents(users.map(user => ({ id: user.id, name: user.name })))
       } catch (error) {
         console.error('Error fetching agents:', error)
-        setSuggestedFollowers([])
       } finally {
         setLoading(false)
       }
@@ -339,11 +339,10 @@ export function FollowersDropdown({ show, onClose, followers, onAdd, onRemove }:
     if (show) {
       fetchAgents()
     }
-  }, [show, followers])
+  }, [show, followers, searchTerm])
 
-  const filteredFollowers = suggestedFollowers.filter(user => 
-    user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    user.email.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredFollowers = agents.filter(user => 
+    user.name.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
   return (
@@ -376,8 +375,8 @@ export function FollowersDropdown({ show, onClose, followers, onAdd, onRemove }:
           <input
             type="search"
             placeholder="Search agents..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
           />
         </div>
@@ -410,7 +409,6 @@ export function FollowersDropdown({ show, onClose, followers, onAdd, onRemove }:
                 </div>
                 <div className="flex-1 text-left">
                   <p className="text-sm font-medium text-gray-900">{user.name}</p>
-                  <p className="text-xs text-gray-500">{user.email}</p>
                 </div>
               </button>
             ))

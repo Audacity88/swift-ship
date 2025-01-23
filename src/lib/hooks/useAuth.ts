@@ -83,73 +83,70 @@ export function useAuth() {
         }
 
         // First check if user is a customer since that's more likely
-        try {
-          const { data: customer, error: customerError } = await supabase
-            .from('customers')
-            .select('*')
-            .eq('id', authUser.id)
-            .single()
-          console.log('Customer check result:', { 
-            hasCustomer: !!customer, 
-            error: customerError?.message,
-            customerId: customer?.id 
+        const { data: customer, error: customerError } = await supabase
+          .from('customers')
+          .select('*')
+          .eq('id', authUser.id)
+          .single()
+        console.log('Customer check result:', { 
+          hasCustomer: !!customer, 
+          error: customerError?.message,
+          customerId: customer?.id 
+        })
+
+        if (customer && !customerError) {
+          console.log('Setting user as existing customer')
+          if (!mounted) return
+          setUser({
+            id: customer.id,
+            name: customer.name || authUser.email?.split('@')[0] || 'Customer',
+            email: customer.email || authUser.email,
+            role: RoleType.CUSTOMER,
+            isAgent: false,
+            avatar: customer.avatar
           })
+          setLoading(false)
+          setInitialized(true)
+          return
+        }
 
-          if (customer && !customerError) {
-            console.log('Setting user as existing customer')
-            if (mounted) {
-              setUser({
-                id: customer.id,
-                name: customer.name || authUser.email?.split('@')[0] || 'Customer',
-                email: customer.email || authUser.email,
-                role: RoleType.CUSTOMER,
-                isAgent: false,
-                avatar: customer.avatar
-              })
-              setLoading(false)
-              setInitialized(true)
-              return
-            }
-          }
+        // If not a customer, check if agent
+        const { data: agent, error: agentError } = await supabase
+          .from('agents')
+          .select('*')
+          .eq('id', authUser.id)
+          .single()
+        console.log('Agent check result:', { 
+          hasAgent: !!agent, 
+          error: agentError?.message,
+          agentId: agent?.id 
+        })
 
-          // If not a customer, check if agent
-          const { data: agent, error: agentError } = await supabase
-            .from('agents')
-            .select('*')
-            .eq('id', authUser.id)
-            .single()
-          console.log('Agent check result:', { 
-            hasAgent: !!agent, 
-            error: agentError?.message,
-            agentId: agent?.id 
+        if (agent && !agentError) {
+          console.log('Setting user as existing agent')
+          if (!mounted) return
+          setUser({
+            id: agent.id,
+            name: agent.name || authUser.email?.split('@')[0] || 'Agent',
+            email: agent.email || authUser.email,
+            role: agent.role || RoleType.AGENT,
+            isAgent: true,
+            avatar: agent.avatar
           })
+          setLoading(false)
+          setInitialized(true)
+          return
+        }
 
-          if (agent && !agentError) {
-            console.log('Setting user as existing agent')
-            if (mounted) {
-              setUser({
-                id: agent.id,
-                name: agent.name || authUser.email?.split('@')[0] || 'Agent',
-                email: agent.email || authUser.email,
-                role: agent.role || RoleType.AGENT,
-                isAgent: true,
-                avatar: agent.avatar
-              })
-              setLoading(false)
-              setInitialized(true)
-              return
-            }
-          }
-
-          // If we get here, the user exists in auth but not in our tables
+        // Only create a new customer if neither customer nor agent record exists
+        if ((!customer || customerError?.code === 'PGRST116') && (!agent || agentError?.code === 'PGRST116')) {
           console.log('User exists in auth but not in customers/agents tables:', authUser.id)
-          // If neither customer nor agent, create customer record
           console.log('Attempting to create new customer record')
           const { data: newCustomer, error: createError } = await supabase
             .from('customers')
             .insert({
               id: authUser.id,
-              name: authUser.user_metadata.name || authUser.email?.split('@')[0] || 'Customer',
+              name: authUser.user_metadata?.name || authUser.email?.split('@')[0] || 'Customer',
               email: authUser.email,
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString()
@@ -172,26 +169,17 @@ export function useAuth() {
             setInitialized(true)
             return
           }
-        } catch (error) {
-          console.error('Error in user type check:', error)
-        }
-
-        // If we get here, something went wrong
-        console.error('Failed to initialize user')
-        if (mounted) {
-          setUser(null)
-          setLoading(false)
-          setInitialized(true)
         }
       } catch (error) {
-        console.error('Error initializing auth:', error)
-        if (mounted) {
-          setUser(null)
-          setLoading(false)
-          setInitialized(true)
-        }
-      } finally {
-        initializationInProgress = false
+        console.error('Error in user type check:', error)
+      }
+
+      // If we get here, something went wrong
+      console.error('Failed to initialize user')
+      if (mounted) {
+        setUser(null)
+        setLoading(false)
+        setInitialized(true)
       }
     }
 

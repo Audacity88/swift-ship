@@ -5,9 +5,10 @@ import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { Search, Filter, Star, MessageSquare, Phone, Mail, Plus } from 'lucide-react'
 import { COLORS } from '@/lib/constants'
-import { useSupabase } from '@/app/providers'
+import { authService, conversationService } from '@/lib/services'
 import { ConversationView } from '@/components/features/inbox/ConversationView'
 import { format } from 'date-fns'
+import type { ServerContext } from '@/lib/supabase-client'
 
 // We assume: The "messages" table is joined to "tickets" for the conversation thread.
 // We'll fetch: all messages for the logged in user, either as the ticket's customer or as message author.
@@ -43,7 +44,6 @@ interface Ticket {
 }
 
 export default function InboxPage() {
-  const supabase = useSupabase()
   const [searchQuery, setSearchQuery] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [messages, setMessages] = useState<InboxMessage[]>([])
@@ -58,32 +58,8 @@ export default function InboxPage() {
     setIsLoading(true)
     setError(null)
     try {
-      // First get all tickets for the current user
-      const { data: tickets, error: ticketsError } = await supabase
-        .from('tickets')
-        .select(`
-          id,
-          title,
-          status,
-          created_at,
-          customer:customer_id (
-            id,
-            name,
-            email
-          ),
-          messages!inner (
-            id,
-            content,
-            created_at,
-            author_id,
-            author_type
-          )
-        `)
-        .or(`customer_id.eq.${userId},assignee_id.eq.${userId}`)
-        .order('created_at', { foreignTable: 'messages', ascending: false })
-        .limit(1, { foreignTable: 'messages' })
-
-      if (ticketsError) throw ticketsError
+      // Get all tickets with their messages
+      const tickets = await conversationService.getTicketsWithMessages(undefined, userId)
 
       // Map the tickets to the format we need
       const mappedTickets = tickets.map((ticket: Ticket) => ({
@@ -108,8 +84,7 @@ export default function InboxPage() {
     // On mount, get the logged in user, then fetch messages
     const init = async () => {
       try {
-        const sessionRes = await supabase.auth.getSession()
-        const session = sessionRes.data.session
+        const session = await authService.getSession(undefined)
         if (!session?.user?.id) {
           setError('Not authenticated')
           setIsLoading(false)
@@ -122,7 +97,7 @@ export default function InboxPage() {
       }
     }
     void init()
-  }, [supabase])
+  }, [])
 
   // Add a new useEffect to trigger loadMessages when userId changes
   useEffect(() => {

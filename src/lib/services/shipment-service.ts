@@ -1,5 +1,5 @@
 import { getServerSupabase, type ServerContext } from '@/lib/supabase-client'
-import { Shipment, ShipmentEvent, ShipmentStatus } from '@/types/shipment'
+import { Shipment, ShipmentEvent, ShipmentStatus, ShipmentType } from '@/types/shipment'
 import { generateTrackingNumber } from '@/lib/utils/tracking'
 
 export const shipmentService = {
@@ -263,5 +263,152 @@ export const shipmentService = {
     notes?: string
   ): Promise<void> {
     await this.updateStatus(context, shipmentId, 'cancelled', undefined, notes)
+  },
+
+  async listShipments(
+    context: ServerContext,
+    options?: {
+      customerId?: string
+      status?: ShipmentStatus[]
+      type?: ShipmentType
+      page?: number
+      limit?: number
+    }
+  ): Promise<{ data: Shipment[], total: number }> {
+    try {
+      const supabase = getServerSupabase(context)
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (!session) {
+        throw new Error('Unauthorized')
+      }
+
+      const page = options?.page || 1
+      const limit = options?.limit || 10
+      const from = (page - 1) * limit
+      const to = from + limit - 1
+
+      let query = supabase
+        .from('shipments')
+        .select('*', { count: 'exact' })
+
+      // Apply filters
+      if (options?.customerId) {
+        query = query.eq('customer_id', options.customerId)
+      }
+      if (options?.status?.length) {
+        query = query.in('status', options.status)
+      }
+      if (options?.type) {
+        query = query.eq('type', options.type)
+      }
+
+      // Apply pagination
+      query = query.range(from, to)
+        .order('created_at', { ascending: false })
+
+      const { data, count, error } = await query
+
+      if (error) {
+        console.error('Failed to list shipments:', error)
+        throw error
+      }
+
+      return { 
+        data: data || [], 
+        total: count || 0 
+      }
+    } catch (error) {
+      console.error('Error in listShipments:', error)
+      throw error
+    }
+  },
+
+  async createShipment(
+    context: ServerContext,
+    data: {
+      quote_id: string
+      type: ShipmentType
+      origin?: string
+      destination?: string
+      scheduled_pickup?: string
+      estimated_delivery?: string
+    }
+  ): Promise<Shipment> {
+    try {
+      const supabase = getServerSupabase(context)
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (!session) {
+        throw new Error('Unauthorized')
+      }
+
+      // Verify the quote exists
+      const { data: quote, error: quoteError } = await supabase
+        .from('tickets')
+        .select('id, customer_id, metadata, status')
+        .eq('id', data.quote_id)
+        .single()
+
+      if (quoteError || !quote) {
+        console.error('Failed to get quote:', quoteError)
+        throw new Error('Quote not found or invalid')
+      }
+
+      // Extract destination info from quote metadata if not provided
+      const quoteDestination = quote.metadata?.destination || {}
+      
+      const shipmentData = {
+        quote_id: data.quote_id,
+        customer_id: quote.customer_id,
+        type: data.type,
+        status: 'quote_requested' as ShipmentStatus,
+        origin: data.origin || quoteDestination.from || null,
+        destination: data.destination || quoteDestination.to || null,
+        scheduled_pickup: data.scheduled_pickup || (quoteDestination.pickupDate ? new Date(quoteDestination.pickupDate).toISOString() : null),
+        estimated_delivery: data.estimated_delivery || null,
+        tracking_number: generateTrackingNumber(),
+        metadata: {
+          quote_metadata: quote.metadata
+        },
+        created_by: session.user.id,
+        updated_by: session.user.id,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }
+
+      // Create the shipment
+      const { data: shipment, error: shipmentError } = await supabase
+        .from('shipments')
+        .insert(shipmentData)
+        .select()
+        .single()
+
+      if (shipmentError || !shipment) {
+        console.error('Failed to create shipment:', shipmentError)
+        throw new Error('Failed to create shipment')
+      }
+
+      // Create initial shipment event
+      const { error: eventError } = await supabase
+        .from('shipment_events')
+        .insert({
+          shipment_id: shipment.id,
+          status: 'quote_requested',
+          notes: 'Quote request submitted',
+          created_by: quote.customer_id,
+          created_at: new Date().toISOString()
+        })
+
+      if (eventError) {
+        console.error('Failed to create shipment event:', eventError)
+        // Don't fail the request, but log the error
+      }
+
+      return shipment
+    } catch (error) {
+      console.error('Error in createShipment:', error)
+      throw error
+    }
   }
 } 

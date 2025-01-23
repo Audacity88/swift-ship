@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useSupabase } from '@/app/providers'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,39 +12,25 @@ import { Card } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { format } from 'date-fns'
 import { Package, MapPin, Calendar, DollarSign, Truck } from 'lucide-react'
+import { quoteService } from '@/lib/services/quote-service'
+import type { QuoteRequest } from '@/types/quote'
 
-interface QuoteRequest {
-  id: string
-  title: string
-  customer: {
-    id: string
-    name: string
-    email: string
-  }
-  metadata: {
-    packageDetails: {
-      type: 'full_truckload' | 'less_than_truckload' | 'sea_container' | 'bulk_freight'
-      weight: string
-      volume: string
-      containerSize?: '20ft' | '40ft' | '40ft_hc'
-      palletCount?: string
-      hazardous: boolean
-      specialRequirements: string
+// Utility function to safely parse dates
+const formatDate = (dateString: string | null | undefined): string => {
+  if (!dateString) return 'Not specified'
+  try {
+    const date = new Date(dateString)
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+      return 'Invalid date'
     }
-    destination: {
-      from: string
-      to: string
-      pickupDate: string
-    }
-    selectedService?: string
-    quotedPrice?: number
+    return format(date, 'MMM d, yyyy')
+  } catch (error) {
+    return 'Invalid date'
   }
-  status: string
-  created_at: string
 }
 
 export default function QuotesPage() {
-  const supabase = useSupabase()
   const { toast } = useToast()
   const [activeTab, setActiveTab] = useState('pending')
   const [searchTerm, setSearchTerm] = useState('')
@@ -54,67 +39,18 @@ export default function QuotesPage() {
   const { data: quotes, isLoading, refetch } = useQuery({
     queryKey: ['quotes', activeTab, searchTerm],
     queryFn: async () => {
-      const query = supabase
-        .from('tickets')
-        .select(`
-          id,
-          title,
-          metadata,
-          status,
-          created_at,
-          customer:customer_id (
-            id,
-            name:raw_user_meta_data->name,
-            email
-          )
-        `)
-        .eq('type', 'task')
-        .filter('metadata->tags', 'cs', '["quote"]')
-
-      if (activeTab === 'pending') {
-        query.eq('status', 'open')
-      } else if (activeTab === 'quoted') {
-        query.eq('status', 'in_progress')
-      }
-
-      if (searchTerm) {
-        query.or(`customer.email.ilike.%${searchTerm}%,customer.raw_user_meta_data->name.ilike.%${searchTerm}%`)
-      }
-
-      const { data, error } = await query
-      if (error) throw error
-      return data as QuoteRequest[]
+      return quoteService.fetchQuotes({}, {
+        status: activeTab === 'pending' ? 'open' : 'in_progress',
+        searchTerm
+      })
     }
   })
 
   // Submit quote price
   const handleSubmitQuote = async (quoteId: string, price: number) => {
     try {
-      // Update ticket status and add quoted price to metadata
-      const { error: updateError } = await supabase
-        .from('tickets')
-        .update({
-          status: 'in_progress',
-          metadata: {
-            quotedPrice: price
-          }
-        })
-        .eq('id', quoteId)
-
-      if (updateError) throw updateError
-
-      // Add a message to notify the customer
-      const { error: messageError } = await supabase
-        .from('messages')
-        .insert({
-          ticket_id: quoteId,
-          content: `Your quote has been processed. The estimated price for your shipment is $${price}.`,
-          author_type: 'agent',
-          author_id: '00000000-0000-0000-0000-000000000000'
-        })
-
-      if (messageError) throw messageError
-
+      await quoteService.submitQuote({}, quoteId, price)
+      
       toast({
         title: 'Quote submitted',
         description: 'The customer has been notified of the quote.',
@@ -239,7 +175,7 @@ export default function QuotesPage() {
                       </div>
                       <div className="flex items-center gap-2 text-sm text-gray-600">
                         <Calendar className="w-4 h-4" />
-                        <span>Pickup: {format(new Date(quote.metadata.destination.pickupDate), 'MMM d, yyyy')}</span>
+                        <span>Pickup: {formatDate(quote.metadata.destination.pickupDate)}</span>
                       </div>
                     </div>
                   </div>
@@ -339,7 +275,7 @@ export default function QuotesPage() {
                       </div>
                       <div className="flex items-center gap-2 text-sm text-gray-600">
                         <Calendar className="w-4 h-4" />
-                        <span>Pickup: {format(new Date(quote.metadata.destination.pickupDate), 'MMM d, yyyy')}</span>
+                        <span>Pickup: {formatDate(quote.metadata.destination.pickupDate)}</span>
                       </div>
                       <div className="flex items-center gap-2 text-sm font-medium">
                         <DollarSign className="w-4 h-4" />

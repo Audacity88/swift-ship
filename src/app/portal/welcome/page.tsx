@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Icons } from '@/components/ui/icons';
 import { Card } from '@/components/ui/card';
-import { useSupabase } from '@/app/providers';
+import { authService, customerService } from '@/lib/services';
+import type { ServerContext } from '@/lib/supabase-client';
 
 interface User {
   name: string;
@@ -16,28 +17,25 @@ export default function WelcomePage() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
-  const supabase = useSupabase();
 
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession();
-        if (error) throw error;
+        const context: ServerContext = { headers: {} };
+        const session = await authService.getSession(context);
         if (!session) {
           router.push('/auth/signin');
           return;
         }
 
         // Get user details
-        const { data: customer, error: customerError } = await supabase
-          .from('customers')
-          .select('name, email')
-          .eq('id', session.user.id)
-          .single();
+        const customer = await customerService.getCustomer(context, session.user.id);
+        if (!customer) throw new Error('Customer not found');
 
-        if (customerError) throw customerError;
-
-        setUser(customer);
+        setUser({
+          name: customer.name,
+          email: customer.email
+        });
       } catch (error) {
         console.error('Error fetching user:', error);
         router.push('/auth/error');
@@ -47,7 +45,7 @@ export default function WelcomePage() {
     };
 
     fetchUser();
-  }, [router, supabase]);
+  }, [router]);
 
   if (loading) {
     return (

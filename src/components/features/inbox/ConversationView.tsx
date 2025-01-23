@@ -1,35 +1,13 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
-import { useSupabase } from '@/app/providers'
-import { format } from 'date-fns'
+import { format, isValid, parseISO } from 'date-fns'
 import { Loader2, Send, Paperclip } from 'lucide-react'
 import Image from 'next/image'
 import { COLORS } from '@/lib/constants'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-
-interface DatabaseMessage {
-  id: string
-  content: string
-  author_id: string
-  author_type: string
-  created_at: string
-  ticket_id: string
-}
-
-interface Message {
-  id: string
-  content: string
-  authorId: string
-  authorType: 'agent' | 'customer' | 'system'
-  createdAt: string
-  author?: {
-    name: string
-    email: string
-    avatar?: string | null
-  }
-}
+import { conversationService, type Message } from '@/lib/services'
 
 interface ConversationViewProps {
   ticketId: string | null
@@ -41,6 +19,21 @@ interface ConversationViewProps {
 
 const SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000000'
 
+const formatMessageDate = (dateString: string | undefined): string => {
+  if (!dateString) return 'Invalid date'
+  
+  try {
+    const date = parseISO(dateString)
+    if (!isValid(date)) {
+      return 'Invalid date'
+    }
+    return format(date, 'MMM d, h:mm a')
+  } catch (error) {
+    console.error('Error formatting date:', error)
+    return 'Invalid date'
+  }
+}
+
 export function ConversationView({ 
   ticketId, 
   currentUserId, 
@@ -48,7 +41,6 @@ export function ConversationView({
   isAgent = false,
   onInternalNoteChange
 }: ConversationViewProps) {
-  const supabase = useSupabase()
   const [messages, setMessages] = useState<Message[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -75,45 +67,8 @@ export function ConversationView({
       setIsLoading(true)
       setError(null)
       try {
-        const { data, error } = await supabase
-          .from('messages')
-          .select(`
-            id,
-            content,
-            author_id,
-            author_type,
-            created_at
-          `)
-          .eq('ticket_id', ticketId)
-          .order('created_at', { ascending: true })
-
-        if (error) throw error
-
-        // Fetch author details separately
-        const authorPromises = data.map(async (msg: DatabaseMessage) => {
-          const { data: authorData } = await supabase
-            .from('message_authors')
-            .select('name, email')
-            .eq('author_id', msg.author_id)
-            .eq('author_type', msg.author_type)
-            .single()
-          
-          return {
-            id: msg.id,
-            content: msg.content,
-            authorId: msg.author_id,
-            authorType: msg.author_type as Message['authorType'],
-            createdAt: msg.created_at,
-            author: authorData ? {
-              name: authorData.name,
-              email: authorData.email,
-              avatar: null
-            } : undefined
-          }
-        })
-
-        const mappedMessages = await Promise.all(authorPromises)
-        setMessages(mappedMessages)
+        const messages = await conversationService.getMessages({}, ticketId)
+        setMessages(messages)
       } catch (err: any) {
         console.error('Error loading conversation:', err)
         setError(err.message)
@@ -125,50 +80,29 @@ export function ConversationView({
     void loadConversation()
 
     // Set up real-time subscription
-    const subscription = supabase
-      .channel('messages')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `ticket_id=eq.${ticketId}`
-        },
-        async (payload: { new: DatabaseMessage }) => {
-          const newMessage = payload.new
-          
-          // Fetch author details separately for the new message
-          const { data: authorData } = await supabase
-            .from('message_authors')
-            .select('name, email')
-            .eq('author_id', newMessage.author_id)
-            .eq('author_type', newMessage.author_type)
-            .single()
+    let unsubscribe: (() => void) | undefined
 
-          setMessages(prev => [...prev, {
-            id: newMessage.id,
-            content: newMessage.content,
-            authorId: newMessage.author_id,
-            authorType: newMessage.author_type as Message['authorType'],
-            createdAt: newMessage.created_at,
-            author: authorData ? {
-              name: authorData.name,
-              email: authorData.email,
-              avatar: null
-            } : undefined
-          }])
-
+    const setupSubscription = async () => {
+      try {
+        unsubscribe = await conversationService.subscribeToMessages({}, ticketId, (newMessage) => {
+          setMessages(prev => [...prev, newMessage])
           // Scroll to bottom after adding new message
           setTimeout(scrollToBottom, 100)
-        }
-      )
-      .subscribe()
+        })
+      } catch (err: any) {
+        console.error('Error setting up subscription:', err)
+        setError(err.message)
+      }
+    }
+
+    void setupSubscription()
 
     return () => {
-      subscription.unsubscribe()
+      if (unsubscribe) {
+        unsubscribe()
+      }
     }
-  }, [ticketId, supabase])
+  }, [ticketId])
 
   const handleSendMessage = async () => {
     if (!ticketId || !newMessage.trim() || isSending) return
@@ -189,21 +123,10 @@ export function ConversationView({
     setIsSending(true)
     setError(null)
     try {
-      // Use the isAgent prop to determine author_type instead of querying the database
+      // Use the isAgent prop to determine author_type
       const authorType = isAgent ? 'agent' : 'customer'
 
-      const { error: insertError } = await supabase
-        .from('messages')
-        .insert({
-          ticket_id: ticketId,
-          content: newMessage.trim(),
-          author_id: currentUserId,
-          author_type: authorType,
-          created_at: new Date().toISOString(),
-          is_internal: isInternalNote
-        })
-
-      if (insertError) throw insertError
+      await conversationService.addMessage({}, ticketId, newMessage.trim(), authorType, attachments)
 
       setNewMessage('')
       setAttachments([])
@@ -274,8 +197,8 @@ export function ConversationView({
       <div className="flex-1 p-6 overflow-auto space-y-4">
         {messages.map((message) => {
           // For agents, show system messages as their own
-          const isOwnMessage = message.authorId === currentUserId || 
-            (isAgent && message.authorId === SYSTEM_USER_ID)
+          const isOwnMessage = message.author_id === currentUserId || 
+            (isAgent && message.author_id === SYSTEM_USER_ID)
           
           return (
             <div
@@ -284,8 +207,8 @@ export function ConversationView({
             >
               <div className="relative w-8 h-8 flex-shrink-0">
                 <Image
-                  src={message.author?.avatar || '/images/default-avatar.png'}
-                  alt={message.author?.name || 'User'}
+                  src="/images/default-avatar.png"
+                  alt="User"
                   fill
                   className="rounded-full object-cover"
                 />
@@ -297,14 +220,14 @@ export function ConversationView({
               >
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-sm font-medium">
-                    {message.authorId === SYSTEM_USER_ID
+                    {message.author_id === SYSTEM_USER_ID
                       ? 'System'
                       : isOwnMessage
                       ? 'You'
-                      : message.author?.name || 'Unknown User'}
+                      : 'User'}
                   </span>
                   <span className="text-xs text-gray-500">
-                    {format(new Date(message.createdAt), 'MMM d, h:mm a')}
+                    {formatMessageDate(message.created_at)}
                   </span>
                 </div>
                 <div

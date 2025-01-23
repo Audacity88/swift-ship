@@ -18,15 +18,17 @@ import {
   FollowersDropdown 
 } from '@/components/features/tickets/PropertyDropdowns'
 import { StatusTransition } from '@/components/features/tickets/StatusTransition'
-import { useSupabase } from '@/app/providers'
 import { 
   getTicket, 
   updateTicket, 
   updateTicketStatus, 
   slaService,
+  authService,
+  ticketService,
   type Ticket as TicketData 
 } from '@/lib/services'
 import { TicketConversation } from '@/components/features/tickets/TicketConversation'
+import type { ServerContext } from '@/lib/supabase-client'
 
 interface Tag {
   id: string
@@ -36,7 +38,6 @@ interface Tag {
 
 export default function TicketPage() {
   const params = useParams()
-  const supabase = useSupabase()
   const ticketId = params?.id as string
   const [ticket, setTicket] = useState<TicketData | null>(null)
   const [selectedType, setSelectedType] = useState<TicketType>('problem')
@@ -61,9 +62,8 @@ export default function TicketPage() {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession()
-        console.log('Auth status:', { session: session?.user?.id, error })
-        if (error) throw error
+        const session = await authService.getSession(undefined)
+        console.log('Auth status:', { session: session?.user?.id })
         setIsAuthenticated(!!session?.user)
         setCurrentUserId(session?.user?.id || null)
       } catch (error) {
@@ -73,7 +73,7 @@ export default function TicketPage() {
       }
     }
     void checkAuth()
-  }, [supabase])
+  }, [])
 
   // Only fetch ticket data after authentication is confirmed
   useEffect(() => {
@@ -99,17 +99,17 @@ export default function TicketPage() {
       }
       
       try {
-        const ticketData = await getTicket({}, ticketId)
+        const ticketData = await ticketService.getTicket(undefined, ticketId)
         if (!ticketData) {
           setError('Ticket not found')
           setIsLoading(false)
           return
         }
         setTicket(ticketData)
-        setSelectedType((ticketData.metadata?.type as TicketType) || 'problem')
+        setSelectedType((ticketData.metadata as any)?.type || 'problem')
         setSelectedPriority(ticketData.priority)
         setSelectedAssignee(ticketData.assignee?.id || null)
-        setTags((ticketData.metadata?.tags as Tag[]) || [])
+        setTags((ticketData.metadata as any)?.tags || [])
       } catch (error) {
         console.error('Error fetching ticket:', error)
         setError(error instanceof Error ? error.message : 'Failed to fetch ticket')
@@ -128,7 +128,7 @@ export default function TicketPage() {
     const fetchSlaStatus = async () => {
       if (!ticket) return
       try {
-        const status = await slaService.getTicketSLA({}, ticket.id)
+        const status = await slaService.getTicketSLA(undefined, ticket.id)
         setSlaStatus(status)
       } catch (error) {
         console.error('Error fetching SLA status:', error)
@@ -182,7 +182,7 @@ export default function TicketPage() {
         color: '#' + Math.floor(Math.random()*16777215).toString(16)
       }
 
-      const updatedTicket = await updateTicket(ticketId, {
+      await ticketService.updateTicket(undefined, ticketId, {
         metadata: {
           ...ticket.metadata,
           tags: [...tags, newTag]
@@ -199,7 +199,7 @@ export default function TicketPage() {
     if (!ticket) return
     
     try {
-      const updatedTicket = await updateTicket(ticketId, {
+      await ticketService.updateTicket(undefined, ticketId, {
         metadata: {
           ...ticket.metadata,
           tags: tags.filter(t => t.name !== tagName)
@@ -254,13 +254,12 @@ export default function TicketPage() {
     if (!ticket) return
     
     try {
-      const updatedTicket = await updateTicketStatus(ticketId, newStatus, reason)
-
-      setTicket(prev => prev ? {
-        ...prev,
+      const updatedTicket = await ticketService.updateTicket(undefined, ticketId, {
         status: newStatus,
         updatedAt: new Date().toISOString()
-      } : null)
+      })
+
+      setTicket(updatedTicket)
     } catch (error) {
       console.error('Failed to update status:', error)
     }
@@ -270,8 +269,8 @@ export default function TicketPage() {
   const handlePauseSla = async (reason: string) => {
     if (!ticket) return
     try {
-      await slaService.pauseSLA(ticket.id, reason)
-      const status = await slaService.getTicketSLA(ticket.id)
+      await slaService.pauseSLA(undefined, ticket.id, reason)
+      const status = await slaService.getTicketSLA(undefined, ticket.id)
       setSlaStatus(status)
     } catch (error) {
       console.error('Error pausing SLA:', error)
@@ -281,8 +280,8 @@ export default function TicketPage() {
   const handleResumeSla = async () => {
     if (!ticket) return
     try {
-      await slaService.resumeSLA(ticket.id)
-      const status = await slaService.getTicketSLA(ticket.id)
+      await slaService.resumeSLA(undefined, ticket.id)
+      const status = await slaService.getTicketSLA(undefined, ticket.id)
       setSlaStatus(status)
     } catch (error) {
       console.error('Error resuming SLA:', error)

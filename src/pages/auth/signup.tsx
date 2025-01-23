@@ -1,24 +1,21 @@
 'use client'
 
 import { useState } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
 import Link from 'next/link'
 import { useRouter } from 'next/router'
 import { COLORS } from '@/lib/constants'
+import { authService } from '@/lib/services'
 
 export default function SignUp() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [name, setName] = useState('')
+  const [company, setCompany] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
   const router = useRouter()
-
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -31,23 +28,23 @@ export default function SignUp() {
       return
     }
 
+    if (!name.trim()) {
+      setError('Name is required')
+      setLoading(false)
+      return
+    }
+
     try {
-      const { error } = await supabase.auth.signUp({
+      await authService.registerCustomer({}, {
         email,
         password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`
-        }
+        name,
+        company: company.trim() || undefined
       })
 
-      if (error) {
-        setError(error.message)
-        return
-      }
-
       setSuccess(true)
-    } catch (err) {
-      setError('An unexpected error occurred')
+    } catch (err: any) {
+      setError(err.message || 'An unexpected error occurred')
     } finally {
       setLoading(false)
     }
@@ -105,6 +102,26 @@ export default function SignUp() {
             )}
             
             <div>
+              <label htmlFor="name" className="block text-sm font-medium text-gray-700">
+                Full Name
+              </label>
+              <div className="mt-1">
+                <input
+                  id="name"
+                  name="name"
+                  type="text"
+                  autoComplete="name"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="block w-full appearance-none rounded-lg border border-gray-200 \
+                    px-3 py-2 placeholder-gray-400 focus:border-primary focus:outline-none \
+                    focus:ring-primary sm:text-sm"
+                />
+              </div>
+            </div>
+
+            <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700">
                 Email address
               </label>
@@ -117,6 +134,25 @@ export default function SignUp() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  className="block w-full appearance-none rounded-lg border border-gray-200 \
+                    px-3 py-2 placeholder-gray-400 focus:border-primary focus:outline-none \
+                    focus:ring-primary sm:text-sm"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="company" className="block text-sm font-medium text-gray-700">
+                Company (Optional)
+              </label>
+              <div className="mt-1">
+                <input
+                  id="company"
+                  name="company"
+                  type="text"
+                  autoComplete="organization"
+                  value={company}
+                  onChange={(e) => setCompany(e.target.value)}
                   className="block w-full appearance-none rounded-lg border border-gray-200 \
                     px-3 py-2 placeholder-gray-400 focus:border-primary focus:outline-none \
                     focus:ring-primary sm:text-sm"
