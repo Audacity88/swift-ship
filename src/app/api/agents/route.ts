@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase-client'
 import { z } from 'zod'
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
 
 // Define types for database responses
 type AgentRole = {
@@ -28,16 +30,16 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Verify the current user is an admin
+    // Verify the current user is an agent or admin
     const { data: currentAgent } = await supabase
       .from('agents')
       .select('role')
       .eq('id', user.id)
       .single<AgentRole>()
 
-    if (!currentAgent || currentAgent.role !== 'admin') {
+    if (!currentAgent || !['admin', 'agent'].includes(currentAgent.role)) {
       return NextResponse.json(
-        { error: 'Unauthorized - Admin access required' },
+        { error: 'Unauthorized - Agent or admin access required' },
         { status: 403 }
       )
     }
@@ -55,9 +57,6 @@ export async function POST(request: NextRequest) {
         name: validatedData.name,
         role: validatedData.role.toUpperCase(),
         isAgent: true
-      },
-      email_settings: {
-        template: 'invite',
       }
     })
 
@@ -122,39 +121,54 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const supabase = getServerSupabase()
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    // Create Supabase client with proper cookie handling
+    const cookieStore = await cookies()
+    
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
+            return cookieStore.get(name)?.value
+          },
+          set(name: string, value: string, options: Record<string, unknown>) {
+            try {
+              cookieStore.set(name, value, { ...options })
+            } catch (error) {
+              // Handle cookie setting error silently
+            }
+          },
+          remove(name: string, options: Record<string, unknown>) {
+            try {
+              cookieStore.delete(name)
+            } catch (error) {
+              // Handle cookie removal error silently
+            }
+          },
+        },
+      }
+    )
 
-    if (userError || !user) {
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+
+    if (sessionError || !session) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
       )
     }
 
-    // Verify the current user is an admin
-    const { data: currentAgent } = await supabase
-      .from('agents')
-      .select('role')
-      .eq('id', user.id)
-      .single<AgentRole>()
-
-    if (!currentAgent || currentAgent.role !== 'admin') {
-      return NextResponse.json(
-        { error: 'Unauthorized - Admin access required' },
-        { status: 403 }
-      )
-    }
-
     // Get all agents
-    const { data: agents, error: getAgentsError } = await supabase
+    const { data: agents, error } = await supabase
       .from('agents')
       .select('*')
-      .order('created_at', { ascending: false })
+      .order('name')
 
-    if (getAgentsError) {
+    if (error) {
+      console.error('Error fetching agents:', error)
       return NextResponse.json(
         { error: 'Failed to fetch agents' },
         { status: 500 }
@@ -171,7 +185,7 @@ export async function GET() {
   }
 }
 
-export async function DELETE(request: Request) {
+export async function DELETE(request: NextRequest) {
   try {
     const supabase = getServerSupabase()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
@@ -183,16 +197,16 @@ export async function DELETE(request: Request) {
       )
     }
 
-    // Verify the current user is an admin
+    // Verify the current user is an agent or admin
     const { data: currentAgent } = await supabase
       .from('agents')
       .select('role')
       .eq('id', user.id)
       .single<AgentRole>()
 
-    if (!currentAgent || currentAgent.role !== 'admin') {
+    if (!currentAgent || !['admin', 'agent'].includes(currentAgent.role)) {
       return NextResponse.json(
-        { error: 'Unauthorized - Admin access required' },
+        { error: 'Unauthorized - Agent or admin access required' },
         { status: 403 }
       )
     }

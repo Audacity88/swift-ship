@@ -3,17 +3,17 @@
 import { useState, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import Image from 'next/image'
-import { Search, UserPlus, History, Check } from 'lucide-react'
+import { Search, UserPlus, History, Check, RefreshCw } from 'lucide-react'
 import type { Agent } from '@/types/ticket'
-
-// Mock data - replace with actual API calls
-// We'll remove the mocks. We'll store agents in state and assignmentHistory in another state or skip it.
+import { useAuth } from '@/lib/hooks/useAuth'
 
 export default function TicketAssigneePage() {
+  const { user } = useAuth()
   const [searchQuery, setSearchQuery] = useState('')
   const [agents, setAgents] = useState<Agent[]>([])
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null)
   const [isAssigning, setIsAssigning] = useState(false)
+  const [dataLoading, setDataLoading] = useState(false)
   const [assignmentHistory, setAssignmentHistory] = useState<Array<{
     id: string
     agent: {
@@ -31,38 +31,57 @@ export default function TicketAssigneePage() {
   const ticketId = params?.id as string
 
   useEffect(() => {
-    const loadAgents = async () => {
-      try {
-        const response = await fetch('/api/agents')
-        if (!response.ok) throw new Error('Failed to fetch agents')
-        const data = await response.json()
-        setAgents(data)
-      } catch (error) {
-        console.error('Failed to load agents:', error)
-      }
-    }
-    loadAgents()
-  }, [])
+    const loadData = async () => {
+      if (!user) return // Don't load data if no user
 
-  useEffect(() => {
-    const loadHistory = async () => {
       try {
-        const response = await fetch('/api/tickets/' + ticketId + '/assignment-history', {
-          credentials: 'include'
-        })
-        if (!response.ok) {
-          const error = await response.json()
-          throw new Error(error.error || 'Failed to fetch assignment history')
+        setDataLoading(true)
+
+        // Load agents
+        const loadAgents = async () => {
+          try {
+            const response = await fetch('/api/agents', {
+              credentials: 'include'
+            })
+            if (!response.ok) {
+              const error = await response.json()
+              throw new Error(error.error || 'Failed to fetch agents')
+            }
+            const data = await response.json()
+            setAgents(data)
+          } catch (error) {
+            console.error('Failed to load agents:', error)
+          }
         }
-        const data = await response.json()
-        setAssignmentHistory(data)
+
+        // Load assignment history
+        const loadHistory = async () => {
+          try {
+            const response = await fetch('/api/tickets/' + ticketId + '/assignment-history', {
+              credentials: 'include'
+            })
+            if (!response.ok) {
+              const error = await response.json()
+              throw new Error(error.error || 'Failed to fetch assignment history')
+            }
+            const data = await response.json()
+            setAssignmentHistory(data)
+          } catch (error) {
+            console.error('Failed to load assignment history:', error)
+          }
+        }
+
+        // Load data in parallel
+        await Promise.all([loadAgents(), loadHistory()])
       } catch (error) {
-        console.error('Failed to load assignment history:', error)
-        // TODO: Add toast notification here
+        console.error('Failed to initialize data:', error)
+      } finally {
+        setDataLoading(false)
       }
     }
-    loadHistory()
-  }, [ticketId])
+
+    loadData()
+  }, [user, ticketId]) // Remove router from dependencies
 
   // Filter
   const filteredAgents = agents.filter((agent) => {
@@ -78,9 +97,13 @@ export default function TicketAssigneePage() {
     if (!selectedAgent) return
     setIsAssigning(true)
     try {
+      // 1. Update the ticket
       const response = await fetch('/api/tickets/' + ticketId, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
         body: JSON.stringify({ assigneeId: selectedAgent }),
         credentials: 'include'
       })
@@ -89,14 +112,41 @@ export default function TicketAssigneePage() {
         const error = await response.json()
         throw new Error(error.error || 'Failed to assign ticket')
       }
+
+      // 2. Get the updated ticket data
+      const updatedTicket = await response.json()
+      console.log('Assignment successful:', updatedTicket)
+
+      // 3. Clear the selection immediately
+      setSelectedAgent(null)
+
+      // 4. Navigate back to the ticket page
+      router.push(`/tickets/${ticketId}`)
       
-      router.refresh()
     } catch (error) {
       console.error('Failed to assign ticket:', error)
-      // TODO: Add toast notification here
+      alert(error instanceof Error ? error.message : 'Failed to assign ticket')
     } finally {
       setIsAssigning(false)
     }
+  }
+
+  // Show loading state while checking auth
+  if (dataLoading) {
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="col-span-full flex items-center justify-center h-64">
+          <div className="animate-spin">
+            <RefreshCw className="w-6 h-6 text-primary" />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Don't render anything if no user
+  if (!user) {
+    return null
   }
 
   return (

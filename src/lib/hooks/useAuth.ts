@@ -3,6 +3,25 @@ import { useRouter } from 'next/navigation'
 import { createBrowserClient } from '@supabase/ssr'
 import { RoleType } from '@/types/role'
 
+// Create Supabase client outside the hook to prevent recreation
+const supabase = createBrowserClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
+
+// Debug logger with consistent format
+const log = {
+  debug: (message: string, data?: any) => {
+    console.log(`${message}`, data ? data : '')
+  },
+  warn: (message: string, data?: any) => {
+    console.warn(`[Auth Warning] ${message}`, data ? data : '')
+  },
+  error: (message: string, error?: any) => {
+    console.error(`[Auth Error] ${message}`, error ? error : '')
+  }
+}
+
 export interface User {
   id: string
   name: string
@@ -18,16 +37,11 @@ export function useAuth() {
   const [initialized, setInitialized] = useState(false)
   const router = useRouter()
 
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
-
   // Add debug logging for slow auth
   useEffect(() => {
     const timeout = setTimeout(() => {
       if (loading) {
-        console.warn('Auth state still loading after 1 second. Debug info:', {
+        log.warn('Auth state still loading after 1 second', {
           user,
           loading,
           initialized,
@@ -46,23 +60,23 @@ export function useAuth() {
 
     const initializeAuth = async () => {
       if (!mounted || initialized || initializationInProgress) {
-        console.log('Skipping auth initialization:', { mounted, initialized, initializationInProgress })
+        log.debug('Skipping auth initialization', { mounted, initialized, initializationInProgress })
         return
       }
       initializationInProgress = true
+      log.debug('Starting auth initialization...')
 
-      console.log('Starting auth initialization...')
       try {
         // Get authenticated user data
         const { data: { user: authUser }, error: userError } = await supabase.auth.getUser()
-        console.log('User check result:', { 
+        log.debug('User check result', { 
           hasUser: !!authUser, 
           error: userError?.message,
           userId: authUser?.id 
         })
         
         if (!authUser || userError) {
-          console.log('No valid user found, setting user to null')
+          log.debug('No valid user found, setting user to null')
           if (mounted) {
             setUser(null)
             setLoading(false)
@@ -72,7 +86,7 @@ export function useAuth() {
         }
 
         if (!authUser?.id || !authUser?.email) {
-          console.log('Invalid auth user data:', { id: authUser?.id, email: authUser?.email })
+          log.debug('Invalid auth user data', { id: authUser?.id, email: authUser?.email })
           if (mounted) {
             setUser(null)
             setLoading(false)
@@ -87,14 +101,14 @@ export function useAuth() {
           .select('*')
           .eq('id', authUser.id)
           .maybeSingle()
-        console.log('Customer check result:', { 
+        log.debug('Customer check result', { 
           hasCustomer: !!customer, 
           error: customerError?.message,
           customerId: customer?.id 
         })
 
         if (customer && !customerError) {
-          console.log('Setting user as existing customer')
+          log.debug('Setting user as existing customer')
           if (!mounted) return
           setUser({
             id: customer.id,
@@ -115,14 +129,14 @@ export function useAuth() {
           .select('*')
           .eq('id', authUser.id)
           .maybeSingle()
-        console.log('Agent check result:', { 
+        log.debug('Agent check result', { 
           hasAgent: !!agent, 
           error: agentError?.message,
           agentId: agent?.id 
         })
 
         if (agent && !agentError) {
-          console.log('Setting user as existing agent')
+          log.debug('Setting user as existing agent')
           if (!mounted) return
           setUser({
             id: agent.id,
@@ -139,8 +153,7 @@ export function useAuth() {
 
         // Only create a new customer if neither customer nor agent record exists
         if (!customer && !customerError && !agent && !agentError) {
-          console.log('User exists in auth but not in customers/agents tables:', authUser.id)
-          console.log('Attempting to create new customer record')
+          log.debug('Creating new customer record', { userId: authUser.id })
           const { data: newCustomer, error: createError } = await supabase
             .from('customers')
             .insert({
@@ -152,10 +165,10 @@ export function useAuth() {
             })
             .select()
             .maybeSingle()
-          console.log('Customer creation result:', { customer: !!newCustomer, error: createError })
+          log.debug('Customer creation result', { success: !!newCustomer, error: createError })
 
           if (!createError && newCustomer && mounted) {
-            console.log('Setting user as new customer')
+            log.debug('Setting user as new customer')
             setUser({
               id: newCustomer.id,
               name: newCustomer.name,
@@ -170,11 +183,11 @@ export function useAuth() {
           }
         }
       } catch (error) {
-        console.error('Error in user type check:', error)
+        log.error('Error in user type check', error)
       }
 
       // If we get here, something went wrong
-      console.error('Failed to initialize user')
+      log.error('Failed to initialize user')
       if (mounted) {
         setUser(null)
         setLoading(false)
@@ -188,17 +201,17 @@ export function useAuth() {
     return () => {
       mounted = false
     }
-  }, [supabase, initialized])
+  }, [initialized]) // Only depend on initialized state
 
   // Handle auth state changes
   useEffect(() => {
     if (!initialized) return
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth state changed:', { event, session: !!session })
+      log.debug('Auth state changed', { event, hasSession: !!session })
       
       if (event === 'SIGNED_OUT') {
-        console.log('Processing sign out')
+        log.debug('Processing sign out')
         setUser(null)
         setLoading(false)
         router.replace('/auth/signin')
@@ -206,13 +219,13 @@ export function useAuth() {
       }
 
       if (event === 'SIGNED_IN') {
-        console.log('Processing sign in')
+        log.debug('Processing sign in')
         setLoading(true)
 
         try {
           const { data: { user: authUser }, error: userError } = await supabase.auth.getUser()
           if (!authUser || userError) {
-            console.log('Failed to get authenticated user:', userError)
+            log.error('Failed to get authenticated user', userError)
             setUser(null)
             setLoading(false)
             return
@@ -250,7 +263,7 @@ export function useAuth() {
             setUser({
               id: customer.id,
               name: customer.name || authUser.email?.split('@')[0] || 'Customer',
-              email: customer.email || authUser.email || '',
+              email: customer.email || authUser.email,
               role: RoleType.CUSTOMER,
               isAgent: false,
               avatar: customer.avatar
@@ -259,7 +272,7 @@ export function useAuth() {
             setUser(null)
           }
         } catch (error) {
-          console.error('Error processing sign in:', error)
+          log.error('Error handling auth state change', error)
           setUser(null)
         } finally {
           setLoading(false)
@@ -270,37 +283,7 @@ export function useAuth() {
     return () => {
       subscription.unsubscribe()
     }
-  }, [supabase, router, initialized])
+  }, [initialized, router])
 
-  return { 
-    user, 
-    loading,
-    signOut: async () => {
-      console.log('Starting sign out process')
-      // Clear local state immediately
-      setUser(null)
-      setLoading(false)
-
-      // Clear any auth cookies and local storage
-      document.cookie.split(';').forEach(cookie => {
-        document.cookie = cookie
-          .replace(/^ +/, '')
-          .replace(/=.*/, '=;expires=' + new Date().toUTCString() + ';path=/')
-      })
-      localStorage.clear()
-      sessionStorage.clear()
-
-      // Try to sign out from Supabase in the background
-      try {
-        await supabase.auth.signOut()
-      } catch (error) {
-        console.error('Error in Supabase signOut:', error)
-      }
-
-      console.log('Completing sign out process')
-      // Always redirect to sign in
-      router.replace('/auth/signin')
-      return true
-    }
-  }
+  return { user, loading, initialized }
 } 
