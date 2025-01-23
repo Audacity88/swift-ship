@@ -6,9 +6,9 @@ export const archiveService = {
   async archiveTicket(context: ServerContext, ticket: Ticket, currentAgent: Agent, reason: string): Promise<Ticket> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -25,7 +25,7 @@ export const archiveService = {
         .update({
           is_archived: true,
           metadata: updatedMetadata,
-          updated_by: session.user.id,
+          updated_by: user.id,
           updated_at: new Date().toISOString()
         })
         .eq('id', ticket.id)
@@ -50,9 +50,9 @@ export const archiveService = {
   async restoreTicket(context: ServerContext, ticket: Ticket, currentAgent: Agent): Promise<Ticket> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -69,7 +69,7 @@ export const archiveService = {
         .update({
           is_archived: false,
           metadata: updatedMetadata,
-          updated_by: session.user.id,
+          updated_by: user.id,
           updated_at: new Date().toISOString()
         })
         .eq('id', ticket.id)
@@ -94,9 +94,9 @@ export const archiveService = {
   async getTicketSnapshots(context: ServerContext, ticketId: string): Promise<TicketSnapshot[]> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -128,9 +128,9 @@ export const archiveService = {
   async restoreSnapshot(context: ServerContext, ticket: Ticket, snapshotId: string, currentAgent: Agent): Promise<Ticket> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -151,7 +151,7 @@ export const archiveService = {
         .from('tickets')
         .update({
           ...snapData.data,
-          updated_by: session.user.id,
+          updated_by: user.id,
           updated_at: new Date().toISOString()
         })
         .eq('id', ticket.id)
@@ -176,9 +176,9 @@ export const archiveService = {
   async createSnapshot(context: ServerContext, ticketData: any, agent: Agent, reason?: string) {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -191,7 +191,7 @@ export const archiveService = {
           data: ticketData,
           reason,
           triggered_by: agent.id,
-          created_by: session.user.id,
+          created_by: user.id,
           created_at: new Date().toISOString()
         })
 

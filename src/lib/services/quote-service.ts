@@ -11,9 +11,9 @@ export const quoteService = {
   ): Promise<QuoteRequest[]> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -145,9 +145,9 @@ export const quoteService = {
   ): Promise<void> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -171,7 +171,7 @@ export const quoteService = {
           ticket_id: quoteId,
           content: `Your quote has been processed. The estimated price for your shipment is $${price}.`,
           author_type: 'agent',
-          author_id: session.user.id
+          author_id: user.id
         })
 
       if (messageError) throw messageError

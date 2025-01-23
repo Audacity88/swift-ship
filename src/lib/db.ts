@@ -1,4 +1,4 @@
-import { PostgrestError } from '@supabase/supabase-js'
+import { PostgrestError, SupabaseClient } from '@supabase/supabase-js'
 
 // Types for database operations
 export type DbResult<T> = T extends PromiseLike<infer U> ? U : never
@@ -13,7 +13,13 @@ export function sql(strings: TemplateStringsArray, ...values: SqlValue[]) {
   return {
     strings,
     values,
-    text: strings.reduce((prev, curr, i) => prev + '$' + i + curr)
+    text: strings.reduce((prev, curr, i) => {
+      const value = values[i - 1]
+      if (value && typeof value === 'object' && '__dangerous__rawValue' in value) {
+        return prev + value.__dangerous__rawValue + curr
+      }
+      return prev + '$' + i + curr
+    })
   }
 }
 
@@ -47,30 +53,39 @@ sql.join = (queries: ReturnType<typeof sql>[], separator: string) => {
 }
 
 // Execute a query
-sql.execute = async <T = any>(query: ReturnType<typeof sql>): Promise<T[]> => {
-  const { data, error } = await db
-    .from('raw_query')
-    .select('*')
-    .eq('query', query.text)
-    .eq('values', query.values)
+sql.execute = async <T = any>(query: ReturnType<typeof sql>, supabase: SupabaseClient): Promise<T[]> => {
+  const { data, error } = await supabase
+    .rpc('execute_sql', {
+      query_text: query.text,
+      query_params: query.values
+    })
 
-  if (error) throw error
+  if (error) {
+    console.error('Database query error:', error)
+    throw new Error('Failed to execute database query')
+  }
+  
   return data as T[]
 }
 
 // Execute a transaction
 sql.transaction = async <T = any>(
-  callback: (tx: Transaction) => Promise<T>
+  callback: (tx: Transaction) => Promise<T>,
+  supabase: SupabaseClient
 ): Promise<T> => {
   const tx: Transaction = {
     execute: async <U = any>(query: ReturnType<typeof sql>): Promise<U[]> => {
-      const { data, error } = await db
-        .from('raw_query')
-        .select('*')
-        .eq('query', query.text)
-        .eq('values', query.values)
+      const { data, error } = await supabase
+        .rpc('execute_sql', {
+          query_text: query.text,
+          query_params: query.values
+        })
 
-      if (error) throw error
+      if (error) {
+        console.error('Database transaction error:', error)
+        throw new Error('Failed to execute database transaction')
+      }
+      
       return data as U[]
     }
   }

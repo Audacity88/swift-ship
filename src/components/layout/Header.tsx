@@ -7,7 +7,6 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState, useRef } from 'react'
 import { COLORS } from '@/lib/constants'
 import { useNotificationStore } from '@/lib/store/notifications'
-import { createBrowserClient } from '@supabase/ssr'
 import { useDebounce } from '@/lib/hooks/useDebounce'
 import { useSearch } from '@/lib/hooks/useSearch'
 import { useTicketStore } from '@/lib/store/tickets'
@@ -33,10 +32,6 @@ export function Header() {
   const router = useRouter()
   const isTicketRoute = pathname.startsWith('/tickets')
   const { user, signOut } = useAuth()
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
 
   useEffect(() => {
     setMounted(true)

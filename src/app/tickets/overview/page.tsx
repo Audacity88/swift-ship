@@ -203,28 +203,28 @@ export default function TicketsOverviewPage() {
   const statsConfig = [
     {
       label: 'Open Tickets',
-      value: stats?.openTickets.toString() || '0',
+      value: (stats?.openTickets ?? 0).toString(),
       change: '+12%',
       icon: BarChart3,
       color: '#0052CC',
     },
     {
       label: 'Avg Response Time',
-      value: stats?.avgResponseTime || '0h',
+      value: stats?.avgResponseTime ?? '0h',
       change: '-30m',
       icon: Clock,
       color: '#00B8D9',
     },
     {
       label: 'Customer Satisfaction',
-      value: `${stats?.customerSatisfaction || 0}%`,
+      value: `${stats?.customerSatisfaction ?? 0}%`,
       change: '+2%',
       icon: Users,
       color: '#36B37E',
     },
     {
       label: 'Total Conversations',
-      value: stats?.totalConversations.toLocaleString() || '0',
+      value: (stats?.totalConversations ?? 0).toLocaleString(),
       change: '+15%',
       icon: MessageSquare,
       color: '#6554C0',

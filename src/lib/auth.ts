@@ -1,45 +1,95 @@
-import { createServerClient } from '@supabase/ssr'
-import type { NextApiRequest, NextApiResponse } from 'next'
+import { getServerSupabase } from '@/lib/supabase-client'
 import type { GetServerSidePropsContext } from 'next'
-import { cookies } from 'next/headers'
+import type { NextApiRequest, NextApiResponse } from 'next'
 
 export async function auth(context?: GetServerSidePropsContext | { req: NextApiRequest; res: NextApiResponse }) {
-  const cookieStore = context ? {
-    get(name: string) {
-      return context.req.cookies[name]
-    },
-    set(name: string, value: string, options: any) {
-      context.res.setHeader('Set-Cookie', `${name}=${value}; Path=/; HttpOnly; SameSite=Lax`)
-    },
-    remove(name: string, options: any) {
-      context.res.setHeader('Set-Cookie', `${name}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`)
+  try {
+    const supabase = getServerSupabase()
+    const { data: { user }, error } = await supabase.auth.getUser()
+
+    if (error || !user) {
+      return null
     }
-  } : {
-    async get(name: string) {
-      const cookieStore = await cookies()
-      return cookieStore.get(name)?.value
-    },
-    async set(name: string, value: string, options: any) {
-      const cookieStore = await cookies()
-      cookieStore.set(name, value, options)
-    },
-    async remove(name: string, options: any) {
-      const cookieStore = await cookies()
-      cookieStore.delete(name)
-    }
+
+    return user
+  } catch (err) {
+    console.error('Auth error:', err)
+    return null
   }
+}
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: cookieStore
+export async function getUser() {
+  try {
+    const supabase = getServerSupabase()
+    const { data: { user }, error } = await supabase.auth.getUser()
+
+    if (error || !user) {
+      return null
     }
-  )
 
-  const {
-    data: { session },
-  } = await supabase.auth.getSession()
+    return user
+  } catch (err) {
+    console.error('Get user error:', err)
+    return null
+  }
+}
 
-  return session
+export async function getUserRole() {
+  try {
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+
+    if (userError || !user) {
+      return null
+    }
+
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+
+    if (agent) {
+      return agent.role
+    }
+
+    return 'customer'
+  } catch (err) {
+    console.error('Get user role error:', err)
+    return null
+  }
+}
+
+export async function getUserPermissions() {
+  try {
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+
+    if (userError || !user) {
+      return []
+    }
+
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+
+    if (!agent) {
+      return ['customer']
+    }
+
+    if (agent.role === 'admin') {
+      return ['admin', 'agent', 'customer']
+    }
+
+    if (agent.role === 'agent') {
+      return ['agent', 'customer']
+    }
+
+    return ['customer']
+  } catch (err) {
+    console.error('Get user permissions error:', err)
+    return []
+  }
 } 

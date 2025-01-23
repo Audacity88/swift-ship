@@ -29,9 +29,9 @@ export const customerTicketService = {
   async createTicket(context: ServerContext, data: CreateTicketData): Promise<Ticket> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -39,7 +39,7 @@ export const customerTicketService = {
       const { data: customer, error: customerError } = await supabase
         .from('users')
         .select('name')
-        .eq('id', session.user.id)
+        .eq('id', user.id)
         .single()
 
       if (customerError) throw customerError
@@ -51,9 +51,9 @@ export const customerTicketService = {
           description: data.description,
           status: 'open',
           priority: data.priority || 'medium',
-          customer_id: session.user.id,
-          created_by: session.user.id,
-          updated_by: session.user.id,
+          customer_id: user.id,
+          created_by: user.id,
+          updated_by: user.id,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
@@ -73,9 +73,9 @@ export const customerTicketService = {
   async getCustomerTickets(context: ServerContext, params: TicketListParams = {}): Promise<TicketListResponse> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -90,7 +90,7 @@ export const customerTicketService = {
       let query = supabase
         .from('tickets')
         .select('*', { count: 'exact' })
-        .eq('customer_id', session.user.id)
+        .eq('customer_id', user.id)
 
       if (status) {
         query = query.eq('status', status)
@@ -126,9 +126,9 @@ export const customerTicketService = {
   async addComment(context: ServerContext, ticketId: string, content: string): Promise<TicketComment> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -137,7 +137,7 @@ export const customerTicketService = {
         .from('tickets')
         .select('id')
         .eq('id', ticketId)
-        .eq('customer_id', session.user.id)
+        .eq('customer_id', user.id)
         .single()
 
       if (ticketError || !ticket) {
@@ -149,9 +149,9 @@ export const customerTicketService = {
         .insert({
           ticket_id: ticketId,
           content,
-          author_id: session.user.id,
-          created_by: session.user.id,
-          updated_by: session.user.id,
+          author_id: user.id,
+          created_by: user.id,
+          updated_by: user.id,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
@@ -171,9 +171,9 @@ export const customerTicketService = {
   async getTicketComments(context: ServerContext, ticketId: string): Promise<TicketComment[]> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -182,7 +182,7 @@ export const customerTicketService = {
         .from('tickets')
         .select('id')
         .eq('id', ticketId)
-        .eq('customer_id', session.user.id)
+        .eq('customer_id', user.id)
         .single()
 
       if (ticketError || !ticket) {

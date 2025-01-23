@@ -1,14 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { getServerSupabase } from '@/lib/supabase-client';
 import { ArticleStatus } from '@/types/knowledge';
 import { Permission } from '@/types/role';
 import { checkUserPermissions } from '@/lib/auth/check-permissions';
 import { z } from 'zod';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 const updateArticleSchema = z.object({
   title: z.string().min(1).optional(),
@@ -26,24 +21,24 @@ type RouteContext = {
 export async function GET(req: NextRequest, props: RouteContext) {
   const params = await props.params;
   try {
-    // Check permissions
-    const permissionCheck = await checkUserPermissions(Permission.VIEW_KNOWLEDGE_BASE);
-    if ('error' in permissionCheck) {
+    const supabase = getServerSupabase();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
       return NextResponse.json(
-        { error: permissionCheck.error },
-        { status: permissionCheck.status }
+        { error: 'Unauthorized' },
+        { status: 401 }
       );
     }
 
-    // Get article
+    // Get article with related data
     const { data: article, error } = await supabase
-      .from('articles')
+      .from('knowledge_articles')
       .select(`
         *,
-        category:categories (id, name),
-        tags:article_tags (
-          tag:tags (id, name, color)
-        )
+        category:category_id(*),
+        author:author_id(*),
+        feedback:article_feedback(*)
       `)
       .eq('id', params.id)
       .single();
@@ -51,16 +46,8 @@ export async function GET(req: NextRequest, props: RouteContext) {
     if (error) {
       console.error('Error fetching article:', error);
       return NextResponse.json(
-        { error: 'Article not found' },
-        { status: 404 }
-      );
-    }
-
-    // Check if customer can view article
-    if (permissionCheck.user.type === 'customer' && article.status !== ArticleStatus.PUBLISHED) {
-      return NextResponse.json(
-        { error: 'Article not found' },
-        { status: 404 }
+        { error: 'Failed to fetch article' },
+        { status: 500 }
       );
     }
 
@@ -78,16 +65,31 @@ export async function GET(req: NextRequest, props: RouteContext) {
 export async function PUT(req: NextRequest, props: RouteContext) {
   const params = await props.params;
   try {
-    // Check permissions
-    const permissionCheck = await checkUserPermissions(Permission.MANAGE_KNOWLEDGE_BASE);
-    if ('error' in permissionCheck) {
+    const supabase = getServerSupabase();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
       return NextResponse.json(
-        { error: permissionCheck.error },
-        { status: permissionCheck.status }
+        { error: 'Unauthorized' },
+        { status: 401 }
       );
     }
 
-    const { session } = permissionCheck;
+    // Get user role
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+
+    const isAdmin = agent?.role === 'admin';
+
+    if (!isAdmin) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Admin access required' },
+        { status: 403 }
+      );
+    }
 
     // Get request body
     const body = await req.json();
@@ -125,7 +127,7 @@ export async function PUT(req: NextRequest, props: RouteContext) {
         version: newVersion,
         title,
         content,
-        createdBy: session.user.id,
+        createdBy: user.id,
         createdAt: new Date().toISOString(),
         changeDescription
       });
@@ -194,18 +196,49 @@ export async function PUT(req: NextRequest, props: RouteContext) {
 export async function DELETE(req: NextRequest, props: RouteContext) {
   const params = await props.params;
   try {
-    // Check permissions
-    const permissionCheck = await checkUserPermissions(Permission.MANAGE_KNOWLEDGE_BASE);
-    if ('error' in permissionCheck) {
+    const supabase = getServerSupabase();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
       return NextResponse.json(
-        { error: permissionCheck.error },
-        { status: permissionCheck.status }
+        { error: 'Unauthorized' },
+        { status: 401 }
       );
     }
 
-    // Delete article
+    // Get user role
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+
+    const isAdmin = agent?.role === 'admin';
+
+    if (!isAdmin) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Admin access required' },
+        { status: 403 }
+      );
+    }
+
+    // Delete article feedback first
+    const { error: feedbackError } = await supabase
+      .from('article_feedback')
+      .delete()
+      .eq('article_id', params.id);
+
+    if (feedbackError) {
+      console.error('Error deleting article feedback:', feedbackError);
+      return NextResponse.json(
+        { error: 'Failed to delete article feedback' },
+        { status: 500 }
+      );
+    }
+
+    // Then delete the article
     const { error } = await supabase
-      .from('articles')
+      .from('knowledge_articles')
       .delete()
       .eq('id', params.id);
 
@@ -217,7 +250,7 @@ export async function DELETE(req: NextRequest, props: RouteContext) {
       );
     }
 
-    return new NextResponse(null, { status: 204 });
+    return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Error in DELETE /api/knowledge/articles/[id]:', error);
     return NextResponse.json(
@@ -231,39 +264,56 @@ export async function DELETE(req: NextRequest, props: RouteContext) {
 export async function PATCH(req: NextRequest, props: RouteContext) {
   const params = await props.params;
   try {
-    // Check permissions
-    const permissionCheck = await checkUserPermissions(Permission.MANAGE_KNOWLEDGE_BASE);
-    if ('error' in permissionCheck) {
+    const supabase = getServerSupabase();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
       return NextResponse.json(
-        { error: permissionCheck.error },
-        { status: permissionCheck.status }
+        { error: 'Unauthorized' },
+        { status: 401 }
       );
     }
 
-    // Parse and validate request body
-    const body = await req.json();
-    const validatedData = updateArticleSchema.parse(body);
+    const { id } = params;
+    const updates = await req.json();
+
+    // Get user role
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+
+    const isAdmin = agent?.role === 'admin';
+
+    if (!isAdmin) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Admin access required' },
+        { status: 403 }
+      );
+    }
 
     // Update article
-    const { data: updatedArticle, error: updateError } = await supabase
-      .from('articles')
-      .update(validatedData)
-      .eq('id', params.id)
+    const { data: updatedArticle, error } = await supabase
+      .from('knowledge_articles')
+      .update({
+        ...updates,
+        updated_at: new Date().toISOString(),
+        updated_by: user.id
+      })
+      .eq('id', id)
       .select()
       .single();
 
-    if (updateError) {
-      console.error('Error updating article:', updateError);
+    if (error) {
+      console.error('Error updating article:', error);
       return NextResponse.json(
         { error: 'Failed to update article' },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({
-      message: 'Article updated successfully',
-      article: updatedArticle
-    });
+    return NextResponse.json(updatedArticle);
   } catch (error) {
     console.error('Error in PATCH /api/knowledge/articles/[id]:', error);
     return NextResponse.json(

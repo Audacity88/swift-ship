@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+import { getServerSupabase } from '@/lib/supabase-client'
 import type { AuditLogFilters, AuditLogSort } from '@/types/audit'
 
 interface AuditLogRequest {
@@ -12,24 +11,18 @@ interface AuditLogRequest {
   }
 }
 
-const createClient = () => {
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        async get(name: string) {
-          const cookieStore = await cookies()
-          return cookieStore.get(name)?.value
-        },
-      },
-    }
-  )
-}
-
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient()
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
     const { filters = {}, sort = { field: 'created_at', direction: 'desc' }, pagination = { page: 1, per_page: 10 } }: AuditLogRequest = await request.json()
 
     // Build base query
@@ -160,31 +153,83 @@ export async function POST(request: Request) {
   }
 }
 
-// Get audit log retention settings
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const supabase = await createClient()
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
 
-    const { data, error } = await supabase.rpc('get_audit_retention_days')
+    const { searchParams } = new URL(request.url)
+    const entityType = searchParams.get('entity_type')
+    const entityId = searchParams.get('entity_id')
+    const page = parseInt(searchParams.get('page') || '1')
+    const limit = parseInt(searchParams.get('limit') || '20')
 
-    if (error) throw error
+    // Build query
+    let query = supabase
+      .from('audit_logs')
+      .select('*', { count: 'exact' })
+
+    // Apply filters
+    if (entityType) {
+      query = query.eq('entity_type', entityType)
+    }
+    if (entityId) {
+      query = query.eq('entity_id', entityId)
+    }
+
+    // Add pagination
+    const from = (page - 1) * limit
+    const to = from + limit - 1
+    query = query.range(from, to).order('created_at', { ascending: false })
+
+    // Execute query
+    const { data: logs, count, error } = await query
+
+    if (error) {
+      console.error('Error fetching audit logs:', error)
+      return NextResponse.json(
+        { error: 'Failed to fetch audit logs' },
+        { status: 500 }
+      )
+    }
 
     return NextResponse.json({
-      retention_days: data
+      logs: logs || [],
+      pagination: {
+        total: count || 0,
+        pages: Math.ceil((count || 0) / limit),
+        page,
+        limit
+      }
     })
   } catch (error) {
-    console.error('Failed to get audit retention settings:', error)
+    console.error('Error in GET /api/audit-logs:', error)
     return NextResponse.json(
-      { error: 'Failed to get audit retention settings' },
+      { error: 'Internal server error' },
       { status: 500 }
     )
   }
 }
 
-// Update audit log retention settings
 export async function PUT(request: Request) {
   try {
-    const supabase = await createClient()
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
     const { retention_days }: { retention_days: number } = await request.json()
 
     if (!retention_days || retention_days < 1) {

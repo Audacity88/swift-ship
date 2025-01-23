@@ -1,22 +1,6 @@
 import { NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+import { getServerSupabase } from '@/lib/supabase-client'
 import type { CustomFieldDefinition } from '@/types/custom-field'
-
-const createClient = () => {
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        async get(name: string) {
-          const cookieStore = await cookies()
-          return cookieStore.get(name)?.value
-        },
-      },
-    }
-  )
-}
 
 const mockCustomFields: CustomFieldDefinition[] = [
   {
@@ -56,16 +40,51 @@ const mockCustomFields: CustomFieldDefinition[] = [
 
 export async function GET() {
   try {
-    return NextResponse.json({ data: mockCustomFields })
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
+    const { data: fields, error } = await supabase
+      .from('custom_fields')
+      .select('*')
+      .order('name')
+
+    if (error) {
+      console.error('Error fetching custom fields:', error)
+      return NextResponse.json(
+        { error: 'Failed to fetch custom fields' },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json(fields)
   } catch (error) {
-    console.error('Failed to fetch custom fields:', error)
-    return new NextResponse('Internal Server Error', { status: 500 })
+    console.error('Error in GET /api/custom-fields:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient()
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
     const field: CustomFieldDefinition = await request.json()
 
     // Validate required fields
@@ -91,7 +110,8 @@ export async function POST(request: Request) {
       .insert({
         ...field,
         display_order: displayOrder,
-        is_active: true
+        is_active: true,
+        created_by: user.id
       })
       .select()
       .single()
@@ -110,7 +130,16 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
-    const supabase = await createClient()
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
     const field: CustomFieldDefinition = await request.json()
 
     if (!field.id) {
@@ -122,7 +151,10 @@ export async function PUT(request: Request) {
 
     const { data, error } = await supabase
       .from('custom_field_definitions')
-      .update(field)
+      .update({
+        ...field,
+        updated_at: new Date().toISOString()
+      })
       .eq('id', field.id)
       .select()
       .single()
@@ -141,7 +173,16 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const supabase = await createClient()
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
 
@@ -169,7 +210,11 @@ export async function DELETE(request: Request) {
     // Soft delete by setting is_active to false
     const { error } = await supabase
       .from('custom_field_definitions')
-      .update({ is_active: false })
+      .update({ 
+        is_active: false,
+        updated_at: new Date().toISOString(),
+        updated_by: user.id
+      })
       .eq('id', id)
 
     if (error) throw error

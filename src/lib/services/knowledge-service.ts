@@ -22,9 +22,9 @@ export const knowledgeService = {
   ): Promise<{ articles: Article[], total: number }> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -83,9 +83,9 @@ export const knowledgeService = {
   async createArticle(context: ServerContext, article: Partial<Article>): Promise<Article | null> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -98,10 +98,10 @@ export const knowledgeService = {
           status: article.status || 'draft',
           category_id: article.categoryId,
           tags: article.tags || [],
-          author: session.user,
+          author: user,
           metadata: article.metadata || {},
-          created_by: session.user.id,
-          updated_by: session.user.id,
+          created_by: user.id,
+          updated_by: user.id,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
@@ -123,9 +123,9 @@ export const knowledgeService = {
   async updateArticle(context: ServerContext, articleId: string, updates: Partial<Article>): Promise<boolean> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -138,7 +138,7 @@ export const knowledgeService = {
           status: updates.status,
           category_id: updates.categoryId,
           slug: updates.slug,
-          updated_by: session.user.id,
+          updated_by: user.id,
           updated_at: new Date().toISOString()
         })
         .eq('id', articleId)
@@ -158,9 +158,9 @@ export const knowledgeService = {
   async deleteArticle(context: ServerContext, articleId: string): Promise<boolean> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -184,9 +184,9 @@ export const knowledgeService = {
   async searchArticles(context: ServerContext, query: string): Promise<Article[]> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -212,9 +212,9 @@ export const knowledgeService = {
   async trackArticleView(context: ServerContext, articleId: string, userId?: string): Promise<void> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -222,7 +222,7 @@ export const knowledgeService = {
         .from('article_interactions')
         .insert([{
           article_id: articleId,
-          user_id: userId || session.user.id,
+          user_id: userId || user.id,
           type: 'view',
           created_at: new Date().toISOString()
         }])
@@ -242,9 +242,9 @@ export const knowledgeService = {
   async rateArticle(context: ServerContext, articleId: string, userId: string, isHelpful: boolean): Promise<void> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -274,9 +274,9 @@ export const knowledgeService = {
   async _updateArticleMetadata(context: ServerContext, articleId: string, type: 'views' | 'helpful' | 'not_helpful'): Promise<void> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 

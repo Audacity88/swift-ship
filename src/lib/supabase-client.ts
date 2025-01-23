@@ -1,52 +1,62 @@
-import { createServerClient } from '@supabase/ssr'
+import { createServerClient, createBrowserClient } from '@supabase/ssr'
 import type { GetServerSidePropsContext } from 'next'
 import type { NextApiRequest, NextApiResponse } from 'next'
+import type { Database } from '@/types/supabase'
 
 export type ServerContext = GetServerSidePropsContext | { req: NextApiRequest; res: NextApiResponse } | undefined
 
-let supabaseClient: ReturnType<typeof createServerClient> | null = null
+let supabaseClient: ReturnType<typeof createServerClient> | ReturnType<typeof createBrowserClient> | null = null
 
 export const getServerSupabase = (context?: ServerContext) => {
+  // Return existing client if already initialized
   if (supabaseClient) {
     return supabaseClient
   }
 
-  supabaseClient = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          if (context?.req?.cookies) {
+  // If we're in a server context (have req/res), create a server client
+  if (context?.req) {
+    supabaseClient = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
             return context.req.cookies[name]
-          }
-          // Fallback to document.cookie in client context
-          if (typeof document !== 'undefined') {
-            const cookies = document.cookie.split(';')
-            const cookie = cookies.find(c => c.trim().startsWith(`${name}=`))
-            return cookie ? cookie.split('=')[1] : undefined
-          }
-          return undefined
+          },
+          set(name: string, value: string, options: any) {
+            if (context.res) {
+              context.res.setHeader('Set-Cookie', `${name}=${value}; Path=/; HttpOnly; SameSite=Lax`)
+            }
+          },
+          remove(name: string, options: any) {
+            if (context.res) {
+              context.res.setHeader('Set-Cookie', `${name}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`)
+            }
+          },
         },
-        set(name: string, value: string, options: any) {
-          if (context?.res) {
-            context.res.setHeader('Set-Cookie', `${name}=${value}; Path=/; HttpOnly; SameSite=Lax`)
-          } else if (typeof document !== 'undefined') {
-            // Fallback to document.cookie in client context
-            document.cookie = `${name}=${value}; Path=/; SameSite=Lax`
-          }
+      }
+    )
+  } 
+  // If we're in a browser context, create a browser client
+  else if (typeof window !== 'undefined') {
+    supabaseClient = createBrowserClient<Database>(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: true,
+          flowType: 'pkce'
         },
-        remove(name: string, options: any) {
-          if (context?.res) {
-            context.res.setHeader('Set-Cookie', `${name}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`)
-          } else if (typeof document !== 'undefined') {
-            // Fallback to document.cookie in client context
-            document.cookie = `${name}=; Path=/; SameSite=Lax; Max-Age=0`
+        global: {
+          headers: {
+            'x-application-name': 'zendesk-clone'
           }
-        },
-      },
-    }
-  )
+        }
+      }
+    )
+  }
 
   return supabaseClient
 } 

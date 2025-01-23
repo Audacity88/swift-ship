@@ -1,38 +1,37 @@
 import { NextResponse } from 'next/server'
-import { authService, tagService } from '@/lib/services'
+import { getServerSupabase } from '@/lib/supabase-client'
+import { tagService } from '@/lib/services'
 import type { Tag } from '@/types/tag'
 
 // GET /api/tags - Get all tags
-export async function GET(request: Request) {
+export async function GET() {
   try {
-    // Check authentication
-    const session = await authService.getSession(undefined)
-    if (!session?.user) {
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
       )
     }
 
-    const { searchParams } = new URL(request.url)
-    const query = searchParams.get('query')
-    const ticketId = searchParams.get('ticket_id')
+    const { data: tags, error } = await supabase
+      .from('tags')
+      .select('*')
+      .order('name')
 
-    let tags
-    if (ticketId) {
-      // Get tag suggestions for a ticket
-      tags = await tagService.getSuggestions(undefined, ticketId)
-    } else if (query) {
-      // Search tags by name
-      tags = await tagService.searchTags(undefined, query)
-    } else {
-      // Get all tags
-      tags = await tagService.searchTags(undefined, '')
+    if (error) {
+      console.error('Error fetching tags:', error)
+      return NextResponse.json(
+        { error: 'Failed to fetch tags' },
+        { status: 500 }
+      )
     }
 
     return NextResponse.json(tags)
   } catch (error) {
-    console.error('Error in tags API:', error)
+    console.error('Error in GET /api/tags:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
@@ -40,75 +39,115 @@ export async function GET(request: Request) {
   }
 }
 
+// POST /api/tags - Create a new tag
 export async function POST(request: Request) {
   try {
-    // Check authentication
-    const session = await authService.getSession(undefined)
-    if (!session?.user) {
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
       )
     }
 
-    const { name, color } = await request.json()
+    const tag = await request.json()
 
-    // Validate required fields
-    if (!name) {
+    if (!tag.name) {
       return NextResponse.json(
-        { error: 'Name is required' },
+        { error: 'Tag name is required' },
         { status: 400 }
       )
     }
 
-    const tag = await tagService.createTag(undefined, name, color)
-    return NextResponse.json(tag)
-  } catch (error: any) {
-    console.error('Failed to create tag:', error)
+    const { data, error } = await supabase
+      .from('tags')
+      .insert({
+        ...tag,
+        created_by: user.id,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Error creating tag:', error)
+      return NextResponse.json(
+        { error: 'Failed to create tag' },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json(data)
+  } catch (error) {
+    console.error('Error in POST /api/tags:', error)
     return NextResponse.json(
-      { error: error.message || 'Internal server error' },
-      { status: error.status || 500 }
+      { error: 'Internal server error' },
+      { status: 500 }
     )
   }
 }
 
+// PUT /api/tags/:id - Update a tag
 export async function PUT(request: Request) {
   try {
-    // Check authentication
-    const session = await authService.getSession(undefined)
-    if (!session?.user) {
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
       )
     }
 
-    const { id, name, color } = await request.json()
+    const tag = await request.json()
 
-    // Validate required fields
-    if (!id || !name) {
+    if (!tag.id) {
       return NextResponse.json(
-        { error: 'ID and name are required' },
+        { error: 'Tag ID is required' },
         { status: 400 }
       )
     }
 
-    const tag = await tagService.updateTag(undefined, id, name, color)
-    return NextResponse.json(tag)
-  } catch (error: any) {
-    console.error('Failed to update tag:', error)
+    const { data, error } = await supabase
+      .from('tags')
+      .update({
+        ...tag,
+        updated_at: new Date().toISOString(),
+        updated_by: user.id
+      })
+      .eq('id', tag.id)
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Error updating tag:', error)
+      return NextResponse.json(
+        { error: 'Failed to update tag' },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json(data)
+  } catch (error) {
+    console.error('Error in PUT /api/tags:', error)
     return NextResponse.json(
-      { error: error.message || 'Internal server error' },
-      { status: error.status || 500 }
+      { error: 'Internal server error' },
+      { status: 500 }
     )
   }
 }
 
+// DELETE /api/tags/:id - Delete a tag
 export async function DELETE(request: Request) {
   try {
-    // Check authentication
-    const session = await authService.getSession(undefined)
-    if (!session?.user) {
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -125,13 +164,25 @@ export async function DELETE(request: Request) {
       )
     }
 
-    await tagService.deleteTag(undefined, id)
+    const { error } = await supabase
+      .from('tags')
+      .delete()
+      .eq('id', id)
+
+    if (error) {
+      console.error('Error deleting tag:', error)
+      return NextResponse.json(
+        { error: 'Failed to delete tag' },
+        { status: 500 }
+      )
+    }
+
     return NextResponse.json({ success: true })
-  } catch (error: any) {
-    console.error('Failed to delete tag:', error)
+  } catch (error) {
+    console.error('Error in DELETE /api/tags:', error)
     return NextResponse.json(
-      { error: error.message || 'Internal server error' },
-      { status: error.status || 500 }
+      { error: 'Internal server error' },
+      { status: 500 }
     )
   }
 }
@@ -140,8 +191,8 @@ export async function DELETE(request: Request) {
 export async function PATCH(request: Request) {
   try {
     // Check authentication
-    const session = await authService.getSession(undefined)
-    if (!session?.user) {
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (userError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }

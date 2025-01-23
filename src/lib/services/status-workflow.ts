@@ -52,9 +52,9 @@ export class StatusWorkflowService {
   ): Promise<StatusTransition[]> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -62,7 +62,7 @@ export class StatusWorkflowService {
       const { data: agent, error: agentError } = await supabase
         .from('agents')
         .select('*')
-        .eq('id', session.user.id)
+        .eq('id', user.id)
         .single()
 
       if (agentError) {
@@ -92,9 +92,9 @@ export class StatusWorkflowService {
   ): Promise<{ valid: boolean; message?: string }> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -157,9 +157,9 @@ export class StatusWorkflowService {
   ): Promise<void> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -207,9 +207,9 @@ export class StatusWorkflowService {
   async getStatusHistory(context: ServerContext, ticketId: string): Promise<StatusHistory[]> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -251,9 +251,9 @@ export class StatusWorkflowService {
   ): Promise<{ valid: boolean; message?: string }> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -311,9 +311,9 @@ export class StatusWorkflowService {
   ): Promise<void> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 

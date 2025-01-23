@@ -1,12 +1,14 @@
 import { NextResponse } from 'next/server'
 import { ShipmentStatus, ShipmentType } from '@/types/shipment'
-import { authService, shipmentService } from '@/lib/services'
+import { shipmentService } from '@/lib/services'
+import { getServerSupabase } from '@/lib/supabase-client'
 
 export async function GET(request: Request) {
   try {
-    // Check authentication
-    const session = await authService.getSession(undefined)
-    if (!session?.user) {
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -46,9 +48,10 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    // Check authentication
-    const session = await authService.getSession(undefined)
-    if (!session?.user) {
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }

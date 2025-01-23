@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authService, userService } from '@/lib/services'
+import { getServerSupabase } from '@/lib/supabase-client'
 
 export async function GET(
   request: NextRequest,
@@ -10,8 +11,10 @@ export async function GET(
     const { id } = await Promise.resolve((await context.params))
 
     // Check authentication
-    const session = await authService.getSession(undefined)
-    if (!session?.user) {
+    const supabase = getServerSupabase(undefined)
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -19,7 +22,7 @@ export async function GET(
     }
 
     // Only allow users to access their own data
-    if (session.user.id !== id) {
+    if (user.id !== id) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 403 }
@@ -27,21 +30,21 @@ export async function GET(
     }
 
     // Get user data
-    const user = await userService.getUserById(undefined, id)
+    const userData = await userService.getUserById(undefined, id)
 
     // If user not found in either agents or customers table, create a new customer
-    if (!user) {
+    if (!userData) {
       const newUser = await userService.createCustomer(undefined, {
-        id: session.user.id,
-        name: session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'Unknown',
-        email: session.user.email!,
-        avatar: session.user.user_metadata?.avatar_url
+        id: user.id,
+        name: user.user_metadata?.name || user.email?.split('@')[0] || 'Unknown',
+        email: user.email!,
+        avatar: user.user_metadata?.avatar_url
       })
 
       return NextResponse.json(newUser)
     }
 
-    return NextResponse.json(user)
+    return NextResponse.json(userData)
   } catch (error: any) {
     console.error('Error in users GET route:', error)
     return NextResponse.json(
@@ -60,8 +63,10 @@ export async function PUT(
     const { id } = await Promise.resolve((await context.params))
 
     // Check authentication
-    const session = await authService.getSession(undefined)
-    if (!session?.user) {
+    const supabase = getServerSupabase(undefined)
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -69,7 +74,7 @@ export async function PUT(
     }
 
     // Only allow users to update their own data
-    if (session.user.id !== id) {
+    if (user.id !== id) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 403 }

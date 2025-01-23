@@ -1,8 +1,8 @@
-import { NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
+import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
+import { createServerClient } from '@supabase/ssr'
+import { sql } from '@/lib/db'
 import { TicketPriority, TicketStatus } from '@/types/ticket'
-import type { NextApiRequest, NextApiResponse } from 'next'
 
 interface TicketCount {
   type: 'priority' | 'status'
@@ -40,243 +40,216 @@ interface AgentMetrics {
 }
 
 // GET /api/tickets/stats - Get ticket statistics
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
-    const cookieStore = cookies();
+    const cookieStore = await cookies()
+    
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         cookies: {
           get(name: string) {
-            return cookieStore.get(name)?.value;
+            return cookieStore.get(name)?.value
+          },
+          set(name: string, value: string, options: any) {
+            cookieStore.set(name, value, options)
+          },
+          remove(name: string, options: any) {
+            cookieStore.set(name, '', { ...options, maxAge: 0 })
           },
         },
       }
-    );
+    )
 
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
-      );
+      )
     }
 
     const { searchParams } = new URL(request.url)
-    const startDate = searchParams.get('from')
-    const endDate = searchParams.get('to')
+    // Support both naming conventions
+    const startDate = searchParams.get('startDate') || searchParams.get('from')
+    const endDate = searchParams.get('endDate') || searchParams.get('to')
 
-    // Default response object
-    const defaultResponse = {
-      openTickets: 0,
-      avgResponseTime: '0.0h',
-      customerSatisfaction: 0,
-      totalConversations: 0,
-      detailedStats: {
-        counts: {
-          priority: {
-            [TicketPriority.LOW]: 0,
-            [TicketPriority.MEDIUM]: 0,
-            [TicketPriority.HIGH]: 0,
-            [TicketPriority.URGENT]: 0
-          },
-          status: {
-            [TicketStatus.OPEN]: 0,
-            [TicketStatus.IN_PROGRESS]: 0,
-            [TicketStatus.AWAITING_RESPONSE]: 0,
-            [TicketStatus.RESOLVED]: 0,
-            [TicketStatus.CLOSED]: 0
-          }
-        },
-        resolutionTimes: {
-          [TicketPriority.LOW]: { avg: 0, min: 0, max: 0 },
-          [TicketPriority.MEDIUM]: { avg: 0, min: 0, max: 0 },
-          [TicketPriority.HIGH]: { avg: 0, min: 0, max: 0 },
-          [TicketPriority.URGENT]: { avg: 0, min: 0, max: 0 }
-        },
-        slaCompliance: {
-          [TicketPriority.LOW]: { total: 0, responseCompliance: 0, resolutionCompliance: 0 },
-          [TicketPriority.MEDIUM]: { total: 0, responseCompliance: 0, resolutionCompliance: 0 },
-          [TicketPriority.HIGH]: { total: 0, responseCompliance: 0, resolutionCompliance: 0 },
-          [TicketPriority.URGENT]: { total: 0, responseCompliance: 0, resolutionCompliance: 0 }
-        },
-        volumeTrends: [],
-        agentMetrics: []
-      }
+    if (!startDate || !endDate) {
+      return NextResponse.json(
+        { error: 'Missing date range parameters. Please provide either startDate/endDate or from/to parameters.' },
+        { status: 400 }
+      )
+    }
+
+    // Validate date formats
+    try {
+      new Date(startDate).toISOString()
+      new Date(endDate).toISOString()
+    } catch (e) {
+      return NextResponse.json(
+        { error: 'Invalid date format. Please provide dates in ISO format.' },
+        { status: 400 }
+      )
     }
 
     // Get ticket counts
-    const { data: ticketCounts, error: ticketCountsError } = await supabase
-      .rpc('get_ticket_counts', {
-        start_date: startDate,
-        end_date: endDate
-      })
-
-    if (ticketCountsError) {
-      console.error('Failed to get ticket counts:', ticketCountsError)
-      return NextResponse.json(defaultResponse)
-    }
+    const ticketCounts = await sql.execute(sql`
+      SELECT 
+        'status' as type,
+        status::text as key,
+        COUNT(*)::integer as count
+      FROM tickets 
+      WHERE created_at >= ${startDate}::timestamp
+      AND created_at <= ${endDate}::timestamp
+      GROUP BY status
+      UNION ALL
+      SELECT 
+        'priority' as type,
+        priority::text as key,
+        COUNT(*)::integer as count
+      FROM tickets 
+      WHERE created_at >= ${startDate}::timestamp
+      AND created_at <= ${endDate}::timestamp
+      GROUP BY priority
+    `, supabase)
 
     // Get resolution times
-    const { data: resolutionTimes, error: resolutionTimesError } = await supabase
-      .rpc('get_resolution_times', {
-        start_date: startDate,
-        end_date: endDate
-      })
-
-    if (resolutionTimesError) {
-      console.error('Failed to get resolution times:', resolutionTimesError)
-      return NextResponse.json(defaultResponse)
-    }
+    const resolutionTimes = await sql.execute(sql`
+      WITH resolution_history AS (
+        SELECT DISTINCT ON (ticket_id)
+          ticket_id,
+          created_at as resolved_at
+        FROM status_history
+        WHERE to_status = 'resolved'
+        ORDER BY ticket_id, created_at ASC
+      )
+      SELECT 
+        t.priority::text as priority,
+        ROUND(AVG(EXTRACT(EPOCH FROM (rh.resolved_at - t.created_at))/3600)::numeric, 2) as avg_hours,
+        ROUND(MIN(EXTRACT(EPOCH FROM (rh.resolved_at - t.created_at))/3600)::numeric, 2) as min_hours,
+        ROUND(MAX(EXTRACT(EPOCH FROM (rh.resolved_at - t.created_at))/3600)::numeric, 2) as max_hours
+      FROM tickets t
+      JOIN resolution_history rh ON t.id = rh.ticket_id
+      WHERE t.created_at >= ${startDate}::timestamp
+      AND t.created_at <= ${endDate}::timestamp
+      GROUP BY t.priority
+    `, supabase)
 
     // Get SLA stats
-    const { data: slaStats, error: slaStatsError } = await supabase
-      .rpc('get_sla_stats', {
-        start_date: startDate,
-        end_date: endDate
-      })
+    const slaStats = await sql.execute(sql`
+      WITH first_responses AS (
+        SELECT DISTINCT ON (ticket_id)
+          ticket_id,
+          created_at as first_response_time
+        FROM messages
+        WHERE author_type = 'agent'
+        ORDER BY ticket_id, created_at ASC
+      )
+      SELECT
+        t.priority::text as priority,
+        COUNT(*)::integer as total,
+        COUNT(*) FILTER (
+          WHERE fr.first_response_time > t.created_at + 
+            CASE t.priority 
+              WHEN 'urgent' THEN INTERVAL '1 hour'
+              WHEN 'high' THEN INTERVAL '4 hours'
+              WHEN 'medium' THEN INTERVAL '8 hours'
+              ELSE INTERVAL '24 hours'
+            END
+        )::integer as response_breached,
+        COUNT(*) FILTER (
+          WHERE t.status = 'resolved' AND EXISTS (
+            SELECT 1 FROM status_history sh 
+            WHERE sh.ticket_id = t.id 
+            AND sh.to_status = 'resolved'
+            AND sh.created_at > t.created_at + 
+              CASE t.priority
+                WHEN 'urgent' THEN INTERVAL '4 hours'
+                WHEN 'high' THEN INTERVAL '8 hours'
+                WHEN 'medium' THEN INTERVAL '24 hours'
+                ELSE INTERVAL '48 hours'
+              END
+          )
+        )::integer as resolution_breached
+      FROM tickets t
+      LEFT JOIN first_responses fr ON t.id = fr.ticket_id
+      WHERE t.created_at >= ${startDate}::timestamp
+      AND t.created_at <= ${endDate}::timestamp
+      GROUP BY t.priority
+    `, supabase)
 
-    if (slaStatsError) {
-      console.error('Failed to get SLA stats:', slaStatsError)
-      return NextResponse.json(defaultResponse)
-    }
-
-    // Get volume trends
-    const { data: volumeTrends, error: volumeTrendsError } = await supabase
-      .rpc('get_ticket_volume_trends', {
-        start_date: startDate,
-        end_date: endDate
-      })
-
-    if (volumeTrendsError) {
-      console.error('Failed to get volume trends:', volumeTrendsError)
-      return NextResponse.json(defaultResponse)
-    }
+    // Get ticket volume trends
+    const volumeTrends = await sql.execute(sql`
+      SELECT 
+        TO_CHAR(DATE_TRUNC('day', created_at), 'YYYY-MM-DD') as date,
+        COUNT(*) as created,
+        COUNT(*) FILTER (WHERE status = 'resolved') as resolved
+      FROM tickets
+      WHERE created_at >= ${startDate}::timestamp
+      AND created_at <= ${endDate}::timestamp
+      GROUP BY DATE_TRUNC('day', created_at)
+      ORDER BY DATE_TRUNC('day', created_at)
+    `, supabase)
 
     // Get agent metrics
-    const { data: agentMetrics, error: agentMetricsError } = await supabase
-      .rpc('get_agent_metrics', {
-        start_date: startDate,
-        end_date: endDate
-      })
+    const agentMetrics = await sql.execute(sql`
+      WITH resolution_history AS (
+        SELECT DISTINCT ON (ticket_id)
+          ticket_id,
+          created_at as resolved_at
+        FROM status_history
+        WHERE to_status = 'resolved'
+        ORDER BY ticket_id, created_at ASC
+      )
+      SELECT 
+        a.id::text as id,
+        a.name::text as name,
+        COUNT(t.id)::integer as total_assigned,
+        COUNT(rh.resolved_at)::integer as total_resolved,
+        ROUND(AVG(EXTRACT(EPOCH FROM (rh.resolved_at - t.created_at))/3600)::numeric, 2) as avg_resolution_hours,
+        COUNT(*) FILTER (
+          WHERE EXISTS (
+            SELECT 1 FROM status_history sh 
+            WHERE sh.ticket_id = t.id 
+            AND sh.to_status = 'resolved'
+            AND sh.created_at > t.created_at + 
+              CASE t.priority
+                WHEN 'urgent' THEN INTERVAL '4 hours'
+                WHEN 'high' THEN INTERVAL '8 hours'
+                WHEN 'medium' THEN INTERVAL '24 hours'
+                ELSE INTERVAL '48 hours'
+              END
+          )
+        )::integer as sla_breaches
+      FROM agents a
+      LEFT JOIN tickets t ON t.assignee_id = a.id
+      LEFT JOIN resolution_history rh ON t.id = rh.ticket_id
+      WHERE t.created_at >= ${startDate}::timestamp
+      AND t.created_at <= ${endDate}::timestamp
+      GROUP BY a.id, a.name
+      ORDER BY a.name
+    `, supabase)
 
-    if (agentMetricsError) {
-      console.error('Failed to get agent metrics:', agentMetricsError)
-      return NextResponse.json(defaultResponse)
-    }
-
-    // Calculate high-level stats
-    const statusCounts = ticketCounts?.filter((count: TicketCount) => count.type === 'status')
-      .reduce((acc: Record<string, number>, curr: TicketCount) => ({
-        ...acc,
-        [curr.key]: curr.count
-      }), {}) || {}
-
-    const avgResponseTime = resolutionTimes?.reduce((sum: number, curr: ResolutionTime) => 
-      sum + (curr.avg_hours || 0), 0
-    ) / (resolutionTimes?.length || 1)
-
-    const customerSatisfaction = slaStats?.reduce((acc: number, curr: SLAStats) => {
-      const total = curr.total || 1
-      const satisfied = total - (curr.response_breached || 0) - (curr.resolution_breached || 0)
-      return acc + (satisfied / total) * 100
-    }, 0) / (slaStats?.length || 1)
-
-    const totalConversations = volumeTrends?.reduce((sum: number, curr: VolumeTrend) => 
-      sum + (curr.created || 0), 0
-    ) || 0
-
-    // Format the response
-    const response = {
-      openTickets: statusCounts['OPEN'] || 0,
-      avgResponseTime: `${avgResponseTime?.toFixed(1) || '0.0'}h`,
-      customerSatisfaction: Math.round(customerSatisfaction || 0),
-      totalConversations: totalConversations || 0,
-      detailedStats: {
-        counts: {
-          priority: ticketCounts?.filter((count: TicketCount) => count.type === 'priority')
-            .reduce((acc: Record<string, number>, curr: TicketCount) => ({
-              ...acc,
-              [curr.key]: curr.count || 0
-            }), defaultResponse.detailedStats.counts.priority),
-          status: statusCounts || defaultResponse.detailedStats.counts.status
-        },
-        resolutionTimes: resolutionTimes?.reduce((acc: Record<string, any>, curr: ResolutionTime) => ({
-          ...acc,
-          [curr.priority]: {
-            avg: curr.avg_hours || 0,
-            min: curr.min_hours || 0,
-            max: curr.max_hours || 0
-          }
-        }), defaultResponse.detailedStats.resolutionTimes),
-        slaCompliance: slaStats?.reduce((acc: Record<string, any>, curr: SLAStats) => ({
-          ...acc,
-          [curr.priority]: {
-            total: curr.total || 0,
-            responseCompliance: ((curr.total - (curr.response_breached || 0)) / (curr.total || 1)) * 100,
-            resolutionCompliance: ((curr.total - (curr.resolution_breached || 0)) / (curr.total || 1)) * 100
-          }
-        }), defaultResponse.detailedStats.slaCompliance),
-        volumeTrends: volumeTrends?.map((trend: VolumeTrend) => ({
-          date: trend.date,
-          created: trend.created || 0,
-          resolved: trend.resolved || 0
-        })) || defaultResponse.detailedStats.volumeTrends,
-        agentMetrics: agentMetrics?.map((agent: AgentMetrics) => ({
-          id: agent.id,
-          name: agent.name,
-          metrics: {
-            totalAssigned: agent.total_assigned || 0,
-            totalResolved: agent.total_resolved || 0,
-            avgResolutionTime: agent.avg_resolution_hours || 0,
-            slaBreaches: agent.sla_breaches || 0
-          }
-        })) || defaultResponse.detailedStats.agentMetrics
+    // Format the response to ensure consistent types
+    return NextResponse.json({
+      ticket_counts: ticketCounts || [],
+      resolution_time: resolutionTimes || [],
+      sla_stats: slaStats || [],
+      volume_trends: volumeTrends || [],
+      agent_metrics: agentMetrics || []
+    }, {
+      headers: {
+        // Prevent date parsing issues by explicitly setting content type
+        'content-type': 'application/json; charset=utf-8'
       }
-    }
-
-    return NextResponse.json(response)
+    })
   } catch (error) {
-    console.error('Failed to get ticket stats:', error)
+    console.error('Error in GET /api/tickets/stats:', error)
     return NextResponse.json(
-      {
-        openTickets: 0,
-        avgResponseTime: '0.0h',
-        customerSatisfaction: 0,
-        totalConversations: 0,
-        detailedStats: {
-          counts: {
-            priority: {
-              [TicketPriority.LOW]: 0,
-              [TicketPriority.MEDIUM]: 0,
-              [TicketPriority.HIGH]: 0,
-              [TicketPriority.URGENT]: 0
-            },
-            status: {
-              [TicketStatus.OPEN]: 0,
-              [TicketStatus.IN_PROGRESS]: 0,
-              [TicketStatus.AWAITING_RESPONSE]: 0,
-              [TicketStatus.RESOLVED]: 0,
-              [TicketStatus.CLOSED]: 0
-            }
-          },
-          resolutionTimes: {
-            [TicketPriority.LOW]: { avg: 0, min: 0, max: 0 },
-            [TicketPriority.MEDIUM]: { avg: 0, min: 0, max: 0 },
-            [TicketPriority.HIGH]: { avg: 0, min: 0, max: 0 },
-            [TicketPriority.URGENT]: { avg: 0, min: 0, max: 0 }
-          },
-          slaCompliance: {
-            [TicketPriority.LOW]: { total: 0, responseCompliance: 0, resolutionCompliance: 0 },
-            [TicketPriority.MEDIUM]: { total: 0, responseCompliance: 0, resolutionCompliance: 0 },
-            [TicketPriority.HIGH]: { total: 0, responseCompliance: 0, resolutionCompliance: 0 },
-            [TicketPriority.URGENT]: { total: 0, responseCompliance: 0, resolutionCompliance: 0 }
-          },
-          volumeTrends: [],
-          agentMetrics: []
-        }
-      }
+      { error: 'Internal server error' },
+      { status: 500 }
     )
   }
 } 

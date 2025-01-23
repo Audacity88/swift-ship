@@ -5,11 +5,12 @@ import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { Search, Filter, Download, MoreVertical, Package, Truck, MapPin, Calendar, ArrowUpDown, Plus } from 'lucide-react'
 import { COLORS } from '@/lib/constants'
-import { authService, shipmentService } from '@/lib/services'
-import type { ServerContext } from '@/lib/supabase-client'
+import { shipmentService } from '@/lib/services'
+import { useAuth } from '@/lib/hooks/useAuth'
 import type { Shipment } from '@/types/shipment'
 
 export default function ShipmentsPage() {
+  const { user } = useAuth()
   const [isLoading, setIsLoading] = useState(true)
   const [shipments, setShipments] = useState<Shipment[]>([])
   const [totalShipments, setTotalShipments] = useState(0)
@@ -36,13 +37,12 @@ export default function ShipmentsPage() {
     setError(null)
     setIsLoading(true)
     try {
-      const session = await authService.getSession(undefined)
-      if (!session?.user?.id) {
+      if (!user) {
         throw new Error('Must be logged in')
       }
 
       await shipmentService.create(undefined, {
-        customerId: session.user.id,
+        customerId: user.id,
         origin,
         destination,
         status: 'pending'

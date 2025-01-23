@@ -8,8 +8,8 @@ import {
   ArrowLeft
 } from 'lucide-react'
 import { COLORS } from '@/lib/constants'
-import { quoteService, authService, shipmentService } from '@/lib/services'
-import type { ServerContext } from '@/lib/supabase-client'
+import { quoteService, shipmentService } from '@/lib/services'
+import { useAuth } from '@/lib/hooks/useAuth'
 
 type Step = 'package' | 'destination' | 'service' | 'summary' | 'done'
 
@@ -79,6 +79,7 @@ const serviceOptions: ServiceOption[] = [
 
 export default function QuotePage() {
   const router = useRouter()
+  const { user } = useAuth()
 
   const [currentStep, setCurrentStep] = useState<Step>('package')
   const [packageDetails, setPackageDetails] = useState<PackageDetails>(initialPackageDetails)
@@ -118,9 +119,7 @@ export default function QuotePage() {
     setSuccessMessage(null)
 
     try {
-      const context: ServerContext = { headers: {} }
-      const session = await authService.getSession(context)
-      if (!session?.user?.id) {
+      if (!user) {
         throw new Error('You must be signed in to request a quote.')
       }
 
@@ -132,15 +131,15 @@ export default function QuotePage() {
       }
 
       // Create ticket with quote request
-      const ticket = await quoteService.createQuoteRequest(context, {
+      const ticket = await quoteService.createQuoteRequest(undefined, {
         title: 'Quote Request',
         description: 'New quote request from customer portal',
-        customerId: session.user.id,
+        customerId: user.id,
         metadata
       })
 
       // Create shipment from quote
-      await shipmentService.createFromQuote(context, ticket.id, session.user.id)
+      await shipmentService.createFromQuote(undefined, ticket.id, user.id)
 
       setSuccessMessage('Your quote request has been submitted.')
       setCurrentStep('done')

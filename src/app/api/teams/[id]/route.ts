@@ -1,13 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { getServerSupabase } from '@/lib/supabase-client';
 import { Permission } from '@/types/role';
 import { checkUserPermissions } from '@/lib/auth/check-permissions';
 import { z } from 'zod';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 const updateTeamSchema = z.object({
   name: z.string().min(1).optional(),
@@ -15,48 +10,55 @@ const updateTeamSchema = z.object({
   status: z.enum(['active', 'inactive']).optional()
 });
 
-export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
-  const params = await props.params;
+export async function GET(
+  request: Request,
+  { params }: { params: { id: string } }
+) {
   try {
-    // Check permissions
-    const permissionCheck = await checkUserPermissions(Permission.VIEW_TEAMS);
-    if ('error' in permissionCheck) {
+    const supabase = getServerSupabase();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
       return NextResponse.json(
-        { error: permissionCheck.error },
-        { status: permissionCheck.status }
+        { error: 'Unauthorized' },
+        { status: 401 }
       );
     }
 
-    // Get team details with members
-    const { data: team, error } = await supabase
+    // Get user role
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+
+    const isAdmin = agent?.role === 'admin';
+
+    if (!isAdmin) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Admin access required' },
+        { status: 403 }
+      );
+    }
+
+    // Get team details
+    const { data: team, error: teamError } = await supabase
       .from('teams')
       .select(`
         *,
         members:team_members(
-          agent:agents(
-            id,
-            name,
-            email,
-            avatar_url
-          ),
-          role,
-          joined_at
-        )
+          agent:agent_id(*)
+        ),
+        schedule:team_schedules(*)
       `)
       .eq('id', params.id)
       .single();
 
-    if (error) {
-      if (error.code === 'PGRST116') {
-        return NextResponse.json(
-          { error: 'Team not found' },
-          { status: 404 }
-        );
-      }
-      console.error('Error fetching team:', error);
+    if (teamError || !team) {
+      console.error('Error fetching team:', teamError);
       return NextResponse.json(
-        { error: 'Failed to fetch team' },
-        { status: 500 }
+        { error: 'Team not found' },
+        { status: 404 }
       );
     }
 
@@ -70,53 +72,87 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
   }
 }
 
-export async function PATCH(request: NextRequest, props: { params: Promise<{ id: string }> }) {
-  const params = await props.params;
+export async function PUT(
+  request: Request,
+  { params }: { params: { id: string } }
+) {
   try {
-    // Check permissions
-    const permissionCheck = await checkUserPermissions(Permission.MANAGE_TEAMS);
-    if ('error' in permissionCheck) {
+    const supabase = getServerSupabase();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
       return NextResponse.json(
-        { error: permissionCheck.error },
-        { status: permissionCheck.status }
+        { error: 'Unauthorized' },
+        { status: 401 }
       );
     }
 
-    // Parse and validate request body
-    const body = await request.json();
-    const validatedData = updateTeamSchema.parse(body);
+    // Get user role
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+
+    const isAdmin = agent?.role === 'admin';
+
+    if (!isAdmin) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Admin access required' },
+        { status: 403 }
+      );
+    }
+
+    const { name, description, schedule } = await request.json();
+
+    if (!name) {
+      return NextResponse.json(
+        { error: 'Team name is required' },
+        { status: 400 }
+      );
+    }
 
     // Update team
-    const { data: team, error } = await supabase
+    const { data: team, error: teamError } = await supabase
       .from('teams')
       .update({
-        name: validatedData.name,
-        description: validatedData.description,
-        status: validatedData.status,
-        updated_at: new Date().toISOString()
+        name,
+        description,
+        updated_at: new Date().toISOString(),
+        updated_by: user.id
       })
       .eq('id', params.id)
       .select()
       .single();
 
-    if (error) {
-      console.error('Error updating team:', error);
+    if (teamError) {
+      console.error('Error updating team:', teamError);
       return NextResponse.json(
         { error: 'Failed to update team' },
         { status: 500 }
       );
     }
 
-    return NextResponse.json(team);
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Invalid request data', details: error.errors },
-        { status: 400 }
-      );
+    // Update schedule if provided
+    if (schedule) {
+      const { error: scheduleError } = await supabase
+        .from('team_schedules')
+        .upsert({
+          team_id: params.id,
+          ...schedule,
+          updated_at: new Date().toISOString(),
+          updated_by: user.id
+        });
+
+      if (scheduleError) {
+        console.error('Error updating team schedule:', scheduleError);
+        // Don't fail the request, just log the error
+      }
     }
 
-    console.error('Error in PATCH /api/teams/[id]:', error);
+    return NextResponse.json(team);
+  } catch (error) {
+    console.error('Error in PUT /api/teams/[id]:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
@@ -124,33 +160,66 @@ export async function PATCH(request: NextRequest, props: { params: Promise<{ id:
   }
 }
 
-export async function DELETE(request: NextRequest, props: { params: Promise<{ id: string }> }) {
-  const params = await props.params;
+export async function DELETE(
+  request: Request,
+  { params }: { params: { id: string } }
+) {
   try {
-    // Check permissions
-    const permissionCheck = await checkUserPermissions(Permission.MANAGE_TEAMS);
-    if ('error' in permissionCheck) {
+    const supabase = getServerSupabase();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
       return NextResponse.json(
-        { error: permissionCheck.error },
-        { status: permissionCheck.status }
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    // Get user role
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+
+    const isAdmin = agent?.role === 'admin';
+
+    if (!isAdmin) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Admin access required' },
+        { status: 403 }
+      );
+    }
+
+    // Check if team has any active tickets
+    const { count: activeTickets } = await supabase
+      .from('tickets')
+      .select('*', { count: 'exact' })
+      .eq('team_id', params.id)
+      .not('status', 'eq', 'closed');
+
+    if (activeTickets && activeTickets > 0) {
+      return NextResponse.json(
+        { error: 'Cannot delete team with active tickets' },
+        { status: 400 }
       );
     }
 
     // Delete team
-    const { error } = await supabase
+    const { error: deleteError } = await supabase
       .from('teams')
       .delete()
       .eq('id', params.id);
 
-    if (error) {
-      console.error('Error deleting team:', error);
+    if (deleteError) {
+      console.error('Error deleting team:', deleteError);
       return NextResponse.json(
         { error: 'Failed to delete team' },
         { status: 500 }
       );
     }
 
-    return new NextResponse(null, { status: 204 });
+    return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Error in DELETE /api/teams/[id]:', error);
     return NextResponse.json(

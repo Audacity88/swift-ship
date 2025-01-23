@@ -1,11 +1,21 @@
 import { getServerSupabase, type ServerContext } from '@/lib/supabase-client'
 
 export const authService = {
-  async getSession(context: ServerContext) {
-    const supabase = getServerSupabase(context)
-    const { data: { session }, error } = await supabase.auth.getSession()
-    if (error) throw error
-    return session
+  async getUser(context: ServerContext) {
+    try {
+      const supabase = getServerSupabase(context)
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      
+      if (userError) {
+        console.error('Auth error:', userError)
+        return { user: null, error: userError }
+      }
+
+      return { user, error: null }
+    } catch (error) {
+      console.error('Auth error:', error)
+      return { user: null, error }
+    }
   },
 
   async resetPassword(context: ServerContext, emailOrPassword: string) {

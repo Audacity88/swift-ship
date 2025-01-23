@@ -5,22 +5,22 @@ import { authService, userService } from '@/lib/services'
 
 export default async function AuthCallback() {
   try {
-    const session = await authService.getSession({})
-    if (!session) {
+    const { data: { user }, error: userError } = await authService.getUser({})
+    if (userError || !user) {
       return redirect('/auth/sign-in')
     }
 
     // Check if user exists and get their type
-    const user = await userService.getCurrentUser({})
-    if (!user) {
+    const userDetails = await userService.getCurrentUser({})
+    if (!userDetails) {
       // New user - redirect to welcome page
       return redirect('/welcome')
     }
 
     // Redirect based on user type
-    if (user.type === 'customer') {
+    if (userDetails.type === 'customer') {
       return redirect('/portal')
-    } else if (user.type === 'agent') {
+    } else if (userDetails.type === 'agent') {
       return redirect('/tickets/overview')
     }
 

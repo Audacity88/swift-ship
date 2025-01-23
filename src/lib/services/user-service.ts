@@ -1,58 +1,32 @@
 import { getServerSupabase, type ServerContext } from '@/lib/supabase-client'
-
-export interface User {
-  id: string
-  type: 'customer' | 'agent'
-  email: string
-  name: string
-  company?: string
-  avatar?: string
-  role?: string
-}
+import type { User } from '@/types/user'
 
 export const userService = {
   async getCurrentUser(context: ServerContext): Promise<User | null> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session }, error } = await supabase.auth.getSession()
-      if (error || !session?.user) return null
-
-      // First check if user is an agent
-      const { data: agentData } = await supabase
-        .from('agents')
-        .select('id, name')
-        .eq('id', session.user.id)
-        .single()
-
-      if (agentData) {
-        return {
-          id: session.user.id,
-          type: 'agent',
-          email: session.user.email!,
-          name: agentData.name,
-        }
+      const { data: { user }, error } = await supabase.auth.getUser()
+      
+      if (error || !user) {
+        console.error('Error getting current user:', error)
+        return null
       }
 
-      // If not an agent, check if user is a customer
-      const { data: customerData } = await supabase
-        .from('customers')
-        .select('id, name, company')
-        .eq('id', session.user.id)
+      // Get user details from the database
+      const { data: userData, error: dbError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', user.id)
         .single()
 
-      if (customerData) {
-        return {
-          id: session.user.id,
-          type: 'customer',
-          email: session.user.email!,
-          name: customerData.name,
-          company: customerData.company,
-        }
+      if (dbError) {
+        console.error('Error getting user data:', dbError)
+        return null
       }
 
-      return null
+      return userData
     } catch (error) {
-      console.error('Error getting current user:', error)
+      console.error('Error in getCurrentUser:', error)
       return null
     }
   },
@@ -181,117 +155,25 @@ export const userService = {
     }
   },
 
-  async createCustomer(
-    context: ServerContext,
-    data: {
-      id: string
-      name: string
-      email: string
-      company?: string
-      avatar?: string
-    }
-  ): Promise<User> {
+  async updateUser(context: ServerContext, userId: string, updates: Partial<User>): Promise<User | null> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
-      const { data: customer, error } = await supabase
-        .from('customers')
-        .insert({
-          id: data.id,
-          name: data.name,
-          email: data.email,
-          company: data.company,
-          avatar: data.avatar,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          created_by: session.user.id,
-          updated_by: session.user.id
-        })
-        .select()
-        .single()
-
-      if (error) {
-        console.error('Failed to create customer:', error)
-        throw error
-      }
-
-      return {
-        id: customer.id,
-        type: 'customer',
-        email: customer.email,
-        name: customer.name,
-        company: customer.company,
-        avatar: customer.avatar
-      }
-    } catch (error) {
-      console.error('Error in createCustomer:', error)
-      throw error
-    }
-  },
-
-  async updateUser(
-    context: ServerContext,
-    userId: string,
-    updates: Partial<{
-      name: string
-      company: string
-      avatar: string
-      role: string
-    }>
-  ): Promise<User> {
-    try {
-      const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
-      
-      if (!session) {
+      // Only allow users to update their own data unless they're an admin
+      if (user.id !== userId && user.role !== 'admin') {
         throw new Error('Unauthorized')
       }
 
-      // First check if user is an agent
-      const { data: agentData } = await supabase
-        .from('agents')
-        .select('id')
-        .eq('id', userId)
-        .single()
-
-      if (agentData) {
-        const { data: updatedAgent, error } = await supabase
-          .from('agents')
-          .update({
-            ...updates,
-            updated_by: session.user.id,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', userId)
-          .select()
-          .single()
-
-        if (error) {
-          console.error('Failed to update agent:', error)
-          throw error
-        }
-
-        return {
-          id: updatedAgent.id,
-          type: 'agent',
-          email: updatedAgent.email,
-          name: updatedAgent.name,
-          avatar: updatedAgent.avatar,
-          role: updatedAgent.role
-        }
-      }
-
-      // If not an agent, update customer
-      const { data: updatedCustomer, error } = await supabase
-        .from('customers')
+      const { data, error } = await supabase
+        .from('users')
         .update({
           ...updates,
-          updated_by: session.user.id,
+          updated_by: user.id,
           updated_at: new Date().toISOString()
         })
         .eq('id', userId)
@@ -299,20 +181,47 @@ export const userService = {
         .single()
 
       if (error) {
-        console.error('Failed to update customer:', error)
+        console.error('Error updating user:', error)
         throw error
       }
 
-      return {
-        id: updatedCustomer.id,
-        type: 'customer',
-        email: updatedCustomer.email,
-        name: updatedCustomer.name,
-        company: updatedCustomer.company,
-        avatar: updatedCustomer.avatar
-      }
+      return data
     } catch (error) {
       console.error('Error in updateUser:', error)
+      throw error
+    }
+  },
+
+  async createCustomer(context: ServerContext, data: Partial<User>): Promise<User | null> {
+    try {
+      const supabase = getServerSupabase(context)
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      
+      if (userError || !user) {
+        throw new Error('Unauthorized')
+      }
+
+      const { data: customer, error } = await supabase
+        .from('users')
+        .insert({
+          ...data,
+          role: 'customer',
+          created_by: user.id,
+          updated_by: user.id,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single()
+
+      if (error) {
+        console.error('Error creating customer:', error)
+        throw error
+      }
+
+      return customer
+    } catch (error) {
+      console.error('Error in createCustomer:', error)
       throw error
     }
   }

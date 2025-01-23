@@ -2,37 +2,28 @@ import { getServerSupabase, type ServerContext } from '@/lib/supabase-client'
 import type { Role, Permission } from '@/types/role'
 
 export const roleService = {
-  async getRoles(context: ServerContext): Promise<Role[]> {
+  async listRoles(context: ServerContext): Promise<Role[]> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
-      const { data: roles, error } = await supabase
+      const { data, error } = await supabase
         .from('roles')
-        .select(`
-          id,
-          name,
-          description,
-          permissions,
-          created_at,
-          updated_at,
-          created_by,
-          updated_by
-        `)
+        .select('*')
         .order('name')
 
       if (error) {
-        console.error('Failed to get roles:', error)
+        console.error('Failed to list roles:', error)
         throw error
       }
 
-      return roles || []
+      return data || []
     } catch (error) {
-      console.error('Error in getRoles:', error)
+      console.error('Error in listRoles:', error)
       throw error
     }
   },
@@ -40,24 +31,15 @@ export const roleService = {
   async getRole(context: ServerContext, roleId: string): Promise<Role | null> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
-      const { data: role, error } = await supabase
+      const { data, error } = await supabase
         .from('roles')
-        .select(`
-          id,
-          name,
-          description,
-          permissions,
-          created_at,
-          updated_at,
-          created_by,
-          updated_by
-        `)
+        .select('*')
         .eq('id', roleId)
         .single()
 
@@ -66,30 +48,28 @@ export const roleService = {
         throw error
       }
 
-      return role
+      return data
     } catch (error) {
       console.error('Error in getRole:', error)
       throw error
     }
   },
 
-  async createRole(context: ServerContext, data: { name: string; description?: string; permissions: Permission[] }): Promise<Role> {
+  async createRole(context: ServerContext, role: Partial<Role>): Promise<Role> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
-      const { data: role, error } = await supabase
+      const { data, error } = await supabase
         .from('roles')
         .insert({
-          name: data.name,
-          description: data.description,
-          permissions: data.permissions,
-          created_by: session.user.id,
-          updated_by: session.user.id,
+          ...role,
+          created_by: user.id,
+          updated_by: user.id,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
@@ -101,27 +81,27 @@ export const roleService = {
         throw error
       }
 
-      return role
+      return data
     } catch (error) {
       console.error('Error in createRole:', error)
       throw error
     }
   },
 
-  async updateRole(context: ServerContext, roleId: string, data: { name?: string; description?: string; permissions?: Permission[] }): Promise<Role> {
+  async updateRole(context: ServerContext, roleId: string, updates: Partial<Role>): Promise<Role> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
-      const { data: role, error } = await supabase
+      const { data, error } = await supabase
         .from('roles')
         .update({
-          ...data,
-          updated_by: session.user.id,
+          ...updates,
+          updated_by: user.id,
           updated_at: new Date().toISOString()
         })
         .eq('id', roleId)
@@ -133,7 +113,7 @@ export const roleService = {
         throw error
       }
 
-      return role
+      return data
     } catch (error) {
       console.error('Error in updateRole:', error)
       throw error
@@ -143,25 +123,26 @@ export const roleService = {
   async deleteRole(context: ServerContext, roleId: string): Promise<void> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
-      // First check if role is in use
-      const { count, error: countError } = await supabase
+      // Check if role is in use
+      const { data: usersWithRole, error: userCheckError } = await supabase
         .from('user_roles')
-        .select('*', { count: 'exact', head: true })
+        .select('user_id')
         .eq('role_id', roleId)
+        .limit(1)
 
-      if (countError) {
-        console.error('Failed to check role usage:', countError)
-        throw countError
+      if (userCheckError) {
+        console.error('Failed to check role usage:', userCheckError)
+        throw userCheckError
       }
 
-      if (count && count > 0) {
-        throw new Error('Cannot delete role that is still assigned to users')
+      if (usersWithRole?.length) {
+        throw new Error('Cannot delete role that is assigned to users')
       }
 
       const { error } = await supabase
@@ -182,18 +163,18 @@ export const roleService = {
   async assignRole(context: ServerContext, userId: string, roleId: string): Promise<void> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
       const { error } = await supabase
         .from('user_roles')
-        .insert({
+        .upsert({
           user_id: userId,
           role_id: roleId,
-          assigned_by: session.user.id,
+          assigned_by: user.id,
           assigned_at: new Date().toISOString()
         })
 
@@ -207,27 +188,28 @@ export const roleService = {
     }
   },
 
-  async removeRole(context: ServerContext, userId: string, roleId: string): Promise<void> {
+  async getRolePermissions(context: ServerContext, roleId: string): Promise<Permission[]> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
-      const { error } = await supabase
-        .from('user_roles')
-        .delete()
-        .eq('user_id', userId)
+      const { data, error } = await supabase
+        .from('role_permissions')
+        .select('permission')
         .eq('role_id', roleId)
 
       if (error) {
-        console.error('Failed to remove role:', error)
+        console.error('Failed to get role permissions:', error)
         throw error
       }
+
+      return data.map(p => p.permission)
     } catch (error) {
-      console.error('Error in removeRole:', error)
+      console.error('Error in getRolePermissions:', error)
       throw error
     }
   }

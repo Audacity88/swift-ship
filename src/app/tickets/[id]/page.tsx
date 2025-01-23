@@ -29,6 +29,7 @@ import {
 } from '@/lib/services'
 import { TicketConversation } from '@/components/features/tickets/TicketConversation'
 import type { ServerContext } from '@/lib/supabase-client'
+import { getServerSupabase } from '@/lib/supabase-client'
 
 interface Tag {
   id: string
@@ -62,10 +63,18 @@ export default function TicketPage() {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const session = await authService.getSession(undefined)
-        console.log('Auth status:', { session: session?.user?.id })
-        setIsAuthenticated(!!session?.user)
-        setCurrentUserId(session?.user?.id || null)
+        const supabase = getServerSupabase()
+        const { data: { user }, error: userError } = await supabase.auth.getUser()
+        
+        if (userError || !user) {
+          console.error('User verification failed:', userError)
+          setIsAuthenticated(false)
+          setCurrentUserId(null)
+          return
+        }
+
+        setIsAuthenticated(true)
+        setCurrentUserId(user.id)
       } catch (error) {
         console.error('Auth error:', error)
         setError('Authentication failed')

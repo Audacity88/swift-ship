@@ -112,6 +112,7 @@ export default function SignUp() {
                   type="text"
                   autoComplete="name"
                   required
+                  spellCheck="false"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className="block w-full appearance-none rounded-lg border border-gray-200 \
@@ -132,6 +133,7 @@ export default function SignUp() {
                   type="email"
                   autoComplete="email"
                   required
+                  spellCheck="false"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="block w-full appearance-none rounded-lg border border-gray-200 \
@@ -151,6 +153,7 @@ export default function SignUp() {
                   name="company"
                   type="text"
                   autoComplete="organization"
+                  spellCheck="false"
                   value={company}
                   onChange={(e) => setCompany(e.target.value)}
                   className="block w-full appearance-none rounded-lg border border-gray-200 \
@@ -171,6 +174,7 @@ export default function SignUp() {
                   type="password"
                   autoComplete="new-password"
                   required
+                  spellCheck="false"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="block w-full appearance-none rounded-lg border border-gray-200 \
@@ -191,6 +195,7 @@ export default function SignUp() {
                   type="password"
                   autoComplete="new-password"
                   required
+                  spellCheck="false"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   className="block w-full appearance-none rounded-lg border border-gray-200 \

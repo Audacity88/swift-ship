@@ -1,5 +1,5 @@
-import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { createServerClient } from '@supabase/ssr'
 import { isAuthorizedForRoute } from '@/lib/auth/permissions'
 
 // Define public routes that don't require authentication
@@ -102,170 +102,143 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
-  // Initialize response
-  let response = NextResponse.next()
+  try {
+    // Create a response to modify its headers
+    const response = NextResponse.next()
 
-  // Create Supabase client
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return request.cookies.get(name)?.value
+    // Create a new supabase client with cookies
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
+            return request.cookies.get(name)?.value
+          },
+          set(name: string, value: string, options: any) {
+            response.cookies.set({
+              name,
+              value,
+              ...options,
+            })
+          },
+          remove(name: string, options: any) {
+            response.cookies.set({
+              name,
+              value: '',
+              ...options,
+            })
+          },
         },
-        set(name: string, value: string, options: CookieOptions) {
-          request.cookies.set({
-            name,
-            value,
-            ...options,
-          })
-          response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
-          })
-          response.cookies.set({
-            name,
-            value,
-            ...options,
-          })
+      }
+    )
+
+    // Verify auth status using getUser
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+
+    // Require authentication for API routes except auth
+    if (request.nextUrl.pathname.startsWith('/api/') && !request.nextUrl.pathname.startsWith('/api/auth')) {
+      if (!user) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
+      
+      // Clone the request headers and add the user ID for verification
+      const requestHeaders = new Headers(request.headers)
+      requestHeaders.set('X-User-Id', user.id)
+
+      // Return a new response with the modified headers
+      return NextResponse.next({
+        request: {
+          headers: requestHeaders,
         },
-        remove(name: string, options: CookieOptions) {
-          request.cookies.set({
-            name,
-            value: '',
-            ...options,
-          })
-          response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
-          })
-          response.cookies.set({
-            name,
-            value: '',
-            ...options,
-          })
-        },
-      },
+      })
     }
-  )
 
-  // Verify auth status using getUser instead of getSession
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
+    // Allow access to public routes
+    if (PUBLIC_ROUTES.includes(request.nextUrl.pathname)) {
+      // If user is signed in and trying to access auth pages, redirect to home
+      if (user && request.nextUrl.pathname.startsWith('/auth/') && request.nextUrl.pathname !== '/auth/signout') {
+        return NextResponse.redirect(new URL('/home', request.url))
+      }
+      return NextResponse.next()
+    }
 
-  // Require authentication for API routes except auth
-  if (request.nextUrl.pathname.startsWith('/api/') && !request.nextUrl.pathname.startsWith('/api/auth')) {
+    // Require authentication for all other routes
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      // Don't redirect API routes, just return 401
+      if (request.nextUrl.pathname.startsWith('/api/')) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
+      return NextResponse.redirect(new URL('/auth/signin', request.url))
     }
-    
-    // Clone the request headers and add the user ID for verification
-    const requestHeaders = new Headers(request.headers)
-    requestHeaders.set('X-User-Id', user.id)
 
-    // Return a new response with the modified headers
-    return NextResponse.next({
-      request: {
-        headers: requestHeaders,
-      },
-    })
-  }
+    // Get user role
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('id, role')
+      .eq('id', user.id)
+      .single()
 
-  // Allow access to public routes
-  if (PUBLIC_ROUTES.includes(request.nextUrl.pathname)) {
-    // If user is signed in and trying to access auth pages, redirect to home
-    if (user && request.nextUrl.pathname.startsWith('/auth/') && request.nextUrl.pathname !== '/auth/signout') {
+    const isCustomer = !agent
+
+    // If user is admin, allow access to everything
+    if (agent?.role === 'admin') {
+      return NextResponse.next()
+    }
+
+    // Redirect customers to home page if trying to access dashboard
+    if (isCustomer && request.nextUrl.pathname === '/') {
       return NextResponse.redirect(new URL('/home', request.url))
     }
-    return response
-  }
 
-  // Require authentication for all other routes
-  if (!user) {
-    // Don't redirect API routes, just return 401
-    if (request.nextUrl.pathname.startsWith('/api/')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Allow access to default authenticated routes without permission check
+    if (DEFAULT_AUTHENTICATED_ROUTES.some(route => {
+      // Convert route pattern to regex to handle dynamic segments
+      const pattern = route.replace(/\[.*?\]/g, '[^/]+')
+      const regex = new RegExp(`^${pattern}$`)
+      return regex.test(request.nextUrl.pathname)
+    })) {
+      return NextResponse.next()
     }
-    return NextResponse.redirect(new URL('/auth/signin', request.url))
-  }
 
-  // Get user role
-  const { data: agent } = await supabase
-    .from('agents')
-    .select('id, role')
-    .eq('id', user.id)
-    .single()
+    // Check if the route is a customer route
+    const isCustomerRoute = CUSTOMER_ROUTES.some(route => {
+      // Convert route pattern to regex to handle dynamic segments
+      const pattern = route.replace(/\[.*?\]/g, '[^/]+')
+      const regex = new RegExp(`^${pattern}$`)
+      return regex.test(request.nextUrl.pathname)
+    })
 
-  const isCustomer = !agent
+    // Check if the route is an agent route
+    const isAgentRoute = AGENT_ROUTES.some(route => {
+      const pattern = route.replace(/\[.*?\]/g, '[^/]+')
+      const regex = new RegExp(`^${pattern}$`)
+      return regex.test(request.nextUrl.pathname)
+    })
 
-  // If user is admin, allow access to everything
-  if (agent?.role === 'admin') {
-    return response
-  }
+    // Check if the route is an admin route
+    const isAdminRoute = ADMIN_ROUTES.some(route => {
+      const pattern = route.replace(/\[.*?\]/g, '[^/]+')
+      const regex = new RegExp(`^${pattern}$`)
+      return regex.test(request.nextUrl.pathname)
+    })
 
-  // Redirect customers to home page if trying to access dashboard
-  if (isCustomer && request.nextUrl.pathname === '/') {
-    return NextResponse.redirect(new URL('/home', request.url))
-  }
-
-  // Allow access to default authenticated routes without permission check
-  if (DEFAULT_AUTHENTICATED_ROUTES.some(route => {
-    // Convert route pattern to regex to handle dynamic segments
-    const pattern = route.replace(/\[.*?\]/g, '[^/]+')
-    const regex = new RegExp(`^${pattern}$`)
-    return regex.test(request.nextUrl.pathname)
-  })) {
-    return response
-  }
-
-  // Check if the route is a customer route
-  const isCustomerRoute = CUSTOMER_ROUTES.some(route => {
-    // Convert route pattern to regex to handle dynamic segments
-    const pattern = route.replace(/\[.*?\]/g, '[^/]+')
-    const regex = new RegExp(`^${pattern}$`)
-    return regex.test(request.nextUrl.pathname)
-  })
-
-  // Check if the route is an agent route
-  const isAgentRoute = AGENT_ROUTES.some(route => {
-    const pattern = route.replace(/\[.*?\]/g, '[^/]+')
-    const regex = new RegExp(`^${pattern}$`)
-    return regex.test(request.nextUrl.pathname)
-  })
-
-  // Check if the route is an admin route
-  const isAdminRoute = ADMIN_ROUTES.some(route => {
-    const pattern = route.replace(/\[.*?\]/g, '[^/]+')
-    const regex = new RegExp(`^${pattern}$`)
-    return regex.test(request.nextUrl.pathname)
-  })
-
-  // If customer is trying to access agent/admin routes, deny access
-  if (isCustomer && (isAgentRoute || isAdminRoute)) {
-    return NextResponse.redirect(new URL('/403', request.url))
-  }
-
-  // If agent is trying to access admin routes, deny access
-  if (agent?.role === 'agent' && isAdminRoute) {
-    return NextResponse.redirect(new URL('/403', request.url))
-  }
-
-  // Check route authorization for protected routes
-  const isAuthorized = await isAuthorizedForRoute(request.nextUrl.pathname)
-  if (!isAuthorized) {
-    console.log(`Access denied to path: ${request.nextUrl.pathname}`)
-    // Add the 403 page to public routes to prevent redirect loop
-    if (!PUBLIC_ROUTES.includes('/403')) {
-      PUBLIC_ROUTES.push('/403')
+    // If customer is trying to access agent/admin routes, deny access
+    if (isCustomer && (isAgentRoute || isAdminRoute)) {
+      return NextResponse.redirect(new URL('/403', request.url))
     }
-    return NextResponse.redirect(
-      new URL(`/403?path=${encodeURIComponent(request.nextUrl.pathname)}`, request.url)
-    )
-  }
 
-  return response
+    // If agent is trying to access admin routes, deny access
+    if (agent?.role === 'agent' && isAdminRoute) {
+      return NextResponse.redirect(new URL('/403', request.url))
+    }
+
+    // Allow access to all other routes
+    return response
+  } catch (error) {
+    console.error('Middleware error:', error)
+    return NextResponse.redirect(new URL('/500', request.url))
+  }
 }
 
 export const config = {

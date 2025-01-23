@@ -53,16 +53,16 @@ export function useAuth() {
 
       console.log('Starting auth initialization...')
       try {
-        // Get initial session and user in one call
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-        console.log('Session check result:', { 
-          hasSession: !!session, 
-          error: sessionError?.message,
-          userId: session?.user?.id 
+        // Get authenticated user data
+        const { data: { user: authUser }, error: userError } = await supabase.auth.getUser()
+        console.log('User check result:', { 
+          hasUser: !!authUser, 
+          error: userError?.message,
+          userId: authUser?.id 
         })
         
-        if (!session || sessionError) {
-          console.log('No valid session found, setting user to null')
+        if (!authUser || userError) {
+          console.log('No valid user found, setting user to null')
           if (mounted) {
             setUser(null)
             setLoading(false)
@@ -71,7 +71,6 @@ export function useAuth() {
           return
         }
 
-        const authUser = session.user
         if (!authUser?.id || !authUser?.email) {
           console.log('Invalid auth user data:', { id: authUser?.id, email: authUser?.email })
           if (mounted) {
@@ -87,7 +86,7 @@ export function useAuth() {
           .from('customers')
           .select('*')
           .eq('id', authUser.id)
-          .single()
+          .maybeSingle()
         console.log('Customer check result:', { 
           hasCustomer: !!customer, 
           error: customerError?.message,
@@ -115,7 +114,7 @@ export function useAuth() {
           .from('agents')
           .select('*')
           .eq('id', authUser.id)
-          .single()
+          .maybeSingle()
         console.log('Agent check result:', { 
           hasAgent: !!agent, 
           error: agentError?.message,
@@ -139,7 +138,7 @@ export function useAuth() {
         }
 
         // Only create a new customer if neither customer nor agent record exists
-        if ((!customer || customerError?.code === 'PGRST116') && (!agent || agentError?.code === 'PGRST116')) {
+        if (!customer && !customerError && !agent && !agentError) {
           console.log('User exists in auth but not in customers/agents tables:', authUser.id)
           console.log('Attempting to create new customer record')
           const { data: newCustomer, error: createError } = await supabase
@@ -152,7 +151,7 @@ export function useAuth() {
               updated_at: new Date().toISOString()
             })
             .select()
-            .single()
+            .maybeSingle()
           console.log('Customer creation result:', { customer: !!newCustomer, error: createError })
 
           if (!createError && newCustomer && mounted) {
@@ -206,13 +205,14 @@ export function useAuth() {
         return
       }
 
-      if (event === 'SIGNED_IN' && session) {
+      if (event === 'SIGNED_IN') {
         console.log('Processing sign in')
         setLoading(true)
 
         try {
-          const { data: { user: authUser } } = await supabase.auth.getUser()
-          if (!authUser) {
+          const { data: { user: authUser }, error: userError } = await supabase.auth.getUser()
+          if (!authUser || userError) {
+            console.log('Failed to get authenticated user:', userError)
             setUser(null)
             setLoading(false)
             return
@@ -223,7 +223,7 @@ export function useAuth() {
             .from('agents')
             .select('*')
             .eq('id', authUser.id)
-            .single()
+            .maybeSingle()
 
           if (agent && !agentError) {
             const role = agent.role.toUpperCase() as keyof typeof RoleType
@@ -244,7 +244,7 @@ export function useAuth() {
             .from('customers')
             .select('*')
             .eq('id', authUser.id)
-            .single()
+            .maybeSingle()
 
           if (customer && !customerError) {
             setUser({
@@ -255,17 +255,13 @@ export function useAuth() {
               isAgent: false,
               avatar: customer.avatar
             })
-            setLoading(false)
-            return
+          } else {
+            setUser(null)
           }
-
-          // If we get here, something went wrong
-          console.error('Failed to load user on sign in:', { agentError, customerError })
-          setUser(null)
-          setLoading(false)
         } catch (error) {
           console.error('Error processing sign in:', error)
           setUser(null)
+        } finally {
           setLoading(false)
         }
       }

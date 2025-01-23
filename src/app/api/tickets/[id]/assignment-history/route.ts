@@ -8,8 +8,10 @@ export async function GET(
 ) {
   try {
     // Check authentication
-    const session = await authService.getSession(undefined)
-    if (!session?.user) {
+    const supabase = getServerSupabase({})
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -20,10 +22,10 @@ export async function GET(
     const { id } = await context.params
 
     // Get the Supabase client
-    const supabase = getServerSupabase({})
+    const supabaseClient = getServerSupabase({})
 
     // Get assignment history from audit logs
-    const { data: history, error } = await supabase
+    const { data: history, error } = await supabaseClient
       .from('audit_logs')
       .select(`
         id,

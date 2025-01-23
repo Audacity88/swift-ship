@@ -1,40 +1,9 @@
 import { NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+import { getServerSupabase } from '@/lib/supabase-client'
 import { TicketPriority, TicketStatus } from '@/types/ticket'
 import { z } from 'zod'
 import { Permission } from '@/types/role'
 import { getUserRole, hasAnyPermission } from '@/lib/auth/permissions'
-
-const createClient = async () => {
-  const cookieStore = await cookies()
-  
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value
-        },
-        set(name: string, value: string, options: Record<string, unknown>) {
-          try {
-            cookieStore.set({ name, value, ...options })
-          } catch {
-            // Handle cookie setting error silently
-          }
-        },
-        remove(name: string, options: Record<string, unknown>) {
-          try {
-            cookieStore.set({ name, value: '', ...options })
-          } catch {
-            // Handle cookie removal error silently
-          }
-        },
-      },
-    }
-  )
-}
 
 // Types
 interface TicketResult {
@@ -103,67 +72,32 @@ const updateTicketSchema = z.object({
 })
 
 // GET /api/tickets/[id] - Get a single ticket
-export async function GET(
-  request: Request,
-  context: { params: Promise<{ id: string }> }
-) {
-  const { id } = await Promise.resolve((await context.params))
-  
-  console.log('API route hit:', { 
-    url: request.url,
-    method: request.method,
-    id
-  })
-  
+export async function GET(request: Request, context: { params: { id: string } }) {
   try {
-    const supabase = await createClient()
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-
-    if (sessionError || !session) {
-      console.error('Auth error:', sessionError)
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
       return NextResponse.json(
-        { error: 'Not authenticated' },
+        { error: 'Unauthorized' },
         { status: 401 }
       )
     }
 
-    console.log('Authenticated as:', session.user.id)
+    const { id } = context.params
 
-    // Get current ticket using Supabase query builder
-    console.log('Fetching ticket:', id)
+    // Get ticket with all related data
     const { data: ticket, error: ticketError } = await supabase
       .from('tickets')
       .select(`
         *,
-        customer:customers(
-          id,
-          name,
-          email,
-          avatar,
-          company
-        ),
-        assignee:agents!tickets_assignee_id_fkey(
-          id,
-          name,
-          email,
-          avatar,
-          role
-        ),
-        tags:ticket_tags(
-          tag:tags(
-            id,
-            name,
-            color
-          )
-        ),
-        messages(
-          id,
-          content,
-          author_type,
-          author_id,
-          created_at,
-          updated_at
-        )
+        customer:customer_id(*),
+        assignee:assignee_id(*),
+        team:team_id(*),
+        comments:ticket_comments(*),
+        attachments:ticket_attachments(*),
+        custom_fields:ticket_custom_fields(*),
+        tags:ticket_tags(tag_id(*))
       `)
       .eq('id', id)
       .single()
@@ -171,159 +105,127 @@ export async function GET(
     if (ticketError) {
       console.error('Error fetching ticket:', ticketError)
       return NextResponse.json(
-        { error: 'Failed to fetch ticket: ' + ticketError.message },
+        { error: 'Failed to fetch ticket' },
         { status: 500 }
       )
     }
 
-    if (!ticket) {
-      console.error('Ticket not found:', id)
+    // Check if user has access to this ticket
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('role, team_id')
+      .eq('id', user.id)
+      .single()
+
+    const isCustomer = !agent
+    const isAdmin = agent?.role === 'admin'
+    const isAssignedAgent = ticket.assignee_id === user.id
+    const isTeamMember = agent?.team_id === ticket.team_id
+    const isTicketCustomer = ticket.customer_id === user.id
+
+    if (!isAdmin && !isAssignedAgent && !isTeamMember && !isTicketCustomer) {
       return NextResponse.json(
-        { error: 'Ticket not found' },
-        { status: 404 }
+        { error: 'Unauthorized' },
+        { status: 403 }
       )
     }
 
-    // Transform the response to match our frontend's expected structure
-    const transformedTicket = {
-      ...ticket,
-      createdAt: ticket.created_at,
-      updatedAt: ticket.updated_at,
-      resolvedAt: ticket.resolved_at,
-      customer: ticket.customer,
-      assignee: ticket.assignee,
-      comments: ticket.messages?.map((message: { 
-        id: string; 
-        content: string; 
-        created_at: string; 
-        updated_at: string;
-      }) => ({
-        id: message.id,
-        content: message.content,
-        isInternal: false,
-        user: {
-          name: 'Unknown',
-          email: 'unknown@example.com'
-        },
-        createdAt: message.created_at,
-        updatedAt: message.updated_at
-      })) || [],
-      tags: ticket.tags?.map((t: { tag: { id: string; name: string; color: string } }) => t.tag) || []
-    }
-
-    console.log('Ticket found, returning transformed data')
-    return NextResponse.json({ data: transformedTicket })
+    return NextResponse.json(ticket)
   } catch (error) {
-    console.error('Server error:', error)
+    console.error('Error in GET /api/tickets/[id]:', error)
     return NextResponse.json(
-      { error: 'Failed to fetch ticket: ' + (error instanceof Error ? error.message : 'Unknown error') },
+      { error: 'Internal server error' },
       { status: 500 }
     )
   }
 }
 
 // PATCH /api/tickets/[id] - Update a ticket
-export async function PATCH(request: Request, props: { params: Promise<{ id: string }> }) {
-  const params = await props.params;
+export async function PATCH(request: Request, context: { params: { id: string } }) {
   try {
-    const supabase = await createClient()
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-
-    if (sessionError || !session) {
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
       )
     }
 
-    const json = await request.json()
-    const body = updateTicketSchema.parse(json)
+    const { id } = context.params
+    const updates = await request.json()
 
-    // Get current ticket state
-    const { data: currentTicket, error: ticketError } = await supabase
-      .from('tickets')
-      .select('*')
-      .eq('id', params.id)
+    // Check if user has permission to update this ticket
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('role, team_id')
+      .eq('id', user.id)
       .single()
 
-    if (ticketError) {
-      return NextResponse.json(
-        { error: 'Failed to fetch current ticket state' },
-        { status: 500 }
-      )
-    }
+    const isAdmin = agent?.role === 'admin'
+    const isAgent = !!agent
 
-    if (!currentTicket) {
+    if (!isAdmin && !isAgent) {
       return NextResponse.json(
-        { error: 'Ticket not found' },
-        { status: 404 }
-      )
-    }
-
-    // Check if user has permission to update tickets
-    const userRole = await getUserRole(session.user.id)
-    if (!hasAnyPermission(userRole, [Permission.UPDATE_TICKETS])) {
-      return NextResponse.json(
-        { error: 'Permission denied' },
+        { error: 'Unauthorized - Agent access required' },
         { status: 403 }
       )
     }
 
-    // Prepare update data
-    const updateData: Record<string, any> = {
-      updated_at: new Date().toISOString()
-    }
-
-    if (body.title) updateData.title = body.title
-    if (body.description) updateData.description = body.description
-    if (body.priority) updateData.priority = body.priority
-    if (body.status) updateData.status = body.status
-    if (body.assigneeId !== undefined) updateData.assignee_id = body.assigneeId
-    if (body.metadata) updateData.metadata = body.metadata
-
-    // Update the ticket
-    const { data: updatedTicket, error: updateError } = await supabase
+    // Get current ticket state
+    const { data: ticket, error: ticketError } = await supabase
       .from('tickets')
-      .update(updateData)
-      .eq('id', params.id)
-      .select()
+      .select('*')
+      .eq('id', id)
       .single()
 
-    if (updateError) {
+    if (ticketError) {
+      console.error('Error fetching ticket:', ticketError)
       return NextResponse.json(
-        { error: 'Failed to update ticket: ' + updateError.message },
+        { error: 'Failed to fetch ticket' },
         { status: 500 }
       )
     }
 
-    // Create audit log for the update
-    const { error: auditError } = await supabase
-      .from('audit_logs')
-      .insert({
-        entity_type: 'ticket',
-        entity_id: params.id,
-        action: 'update',
-        changes: body,
-        actor_id: session.user.id,
-        actor_type: 'agent'
-      })
+    // Check if agent has access to this ticket
+    if (!isAdmin) {
+      const isAssignedAgent = ticket.assignee_id === user.id
+      const isTeamMember = agent?.team_id === ticket.team_id
 
-    if (auditError) {
-      console.error('Failed to create audit log:', auditError)
-      // Don't fail the request if audit log fails
+      if (!isAssignedAgent && !isTeamMember) {
+        return NextResponse.json(
+          { error: 'Unauthorized - Not assigned to ticket' },
+          { status: 403 }
+        )
+      }
     }
 
-    return NextResponse.json({ data: updatedTicket })
-  } catch (error) {
-    console.error('Error updating ticket:', error)
-    if (error instanceof z.ZodError) {
+    // Update ticket
+    const { data: updatedTicket, error: updateError } = await supabase
+      .from('tickets')
+      .update({
+        ...updates,
+        updated_at: new Date().toISOString(),
+        updated_by: user.id
+      })
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (updateError) {
+      console.error('Error updating ticket:', updateError)
       return NextResponse.json(
-        { error: 'Invalid request data', details: error.errors },
-        { status: 400 }
+        { error: 'Failed to update ticket' },
+        { status: 500 }
       )
     }
+
+    return NextResponse.json(updatedTicket)
+  } catch (error) {
+    console.error('Error in PATCH /api/tickets/[id]:', error)
     return NextResponse.json(
-      { error: 'Failed to update ticket' },
+      { error: 'Internal server error' },
       { status: 500 }
     )
   }

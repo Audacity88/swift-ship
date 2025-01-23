@@ -103,9 +103,9 @@ export const ticketService = {
   ): Promise<{ data: TicketListItem[], total: number }> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -191,9 +191,9 @@ export const ticketService = {
   ): Promise<any> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -212,8 +212,8 @@ export const ticketService = {
           },
           type: 'question',
           source: 'web',
-          created_by: session.user.id,
-          updated_by: session.user.id,
+          created_by: user.id,
+          updated_by: user.id,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
@@ -239,9 +239,9 @@ export const ticketService = {
   ): Promise<any> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -249,7 +249,7 @@ export const ticketService = {
         .from('tickets')
         .update({
           ...updates,
-          updated_by: session.user.id,
+          updated_by: user.id,
           updated_at: new Date().toISOString()
         })
         .eq('id', ticketId)
@@ -271,9 +271,9 @@ export const ticketService = {
   async getTicket(context: ServerContext, ticketId: string): Promise<Ticket | null> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -401,9 +401,9 @@ export const ticketService = {
   ): Promise<void> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -411,7 +411,7 @@ export const ticketService = {
         .from('tickets')
         .update({
           status: newStatus,
-          updated_by: session.user.id,
+          updated_by: user.id,
           updated_at: new Date().toISOString()
         })
         .eq('id', ticketId)
@@ -430,7 +430,7 @@ export const ticketService = {
           old_value: null, // We could fetch the old status first if needed
           new_value: newStatus,
           reason,
-          created_by: session.user.id,
+          created_by: user.id,
           created_at: new Date().toISOString()
         })
 
@@ -450,9 +450,9 @@ export const ticketService = {
   ): Promise<TicketRelationship[]> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -494,9 +494,9 @@ export const ticketService = {
   ): Promise<void> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -536,7 +536,7 @@ export const ticketService = {
           ticket_id: ticketId,
           related_ticket_id: problemTicketId,
           relationship_type: 'problem',
-          created_by: session.user.id,
+          created_by: user.id,
           created_at: new Date().toISOString()
         })
 
@@ -557,9 +557,9 @@ export const ticketService = {
   ): Promise<void> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 

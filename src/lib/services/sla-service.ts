@@ -15,9 +15,9 @@ export const slaService = {
   async getTicketSLA(context: ServerContext, ticketId: string): Promise<SLAState | null> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -151,9 +151,9 @@ export const slaService = {
   async pauseSLA(context: ServerContext, ticketId: string, reason: string): Promise<boolean> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -180,7 +180,7 @@ export const slaService = {
         .insert({
           ticket_id: ticketId,
           reason,
-          created_by: session.user.id,
+          created_by: user.id,
           created_at: new Date().toISOString()
         })
 
@@ -199,9 +199,9 @@ export const slaService = {
   async resumeSLA(context: ServerContext, ticketId: string): Promise<boolean> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -227,7 +227,7 @@ export const slaService = {
         .from('sla_pauses')
         .update({
           resumed_at: new Date().toISOString(),
-          resumed_by: session.user.id
+          resumed_by: user.id
         })
         .eq('id', activePause.id)
 

@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
 import { ArticleStatus } from '@/types/knowledge';
 import { Permission } from '@/types/role';
 import { checkUserPermissions } from '@/lib/auth/check-permissions';
+import { getServerSupabase } from '@/lib/supabase-client';
 import { z } from 'zod';
 
 const createArticleSchema = z.object({
@@ -17,158 +16,162 @@ const createArticleSchema = z.object({
 // GET /api/knowledge/articles - List articles with filtering
 export async function GET(request: NextRequest) {
   try {
-    const cookieStore = cookies();
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get(name: string) {
-            return cookieStore.get(name)?.value;
-          },
-        },
-      }
-    );
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
 
-    // Get query parameters
-    const searchParams = request.nextUrl.searchParams;
-    const category = searchParams.get('category');
-    const status = searchParams.get('status') as ArticleStatus | null;
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '10');
+    // Get user role
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+
+    const isAdmin = agent?.role === 'admin'
+
+    if (!isAdmin) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Admin access required' },
+        { status: 403 }
+      )
+    }
+
+    const { searchParams } = new URL(request.url)
+    const categoryId = searchParams.get('categoryId')
+    const status = searchParams.get('status') as ArticleStatus | null
+    const search = searchParams.get('search')
 
     // Build query
     let query = supabase
       .from('knowledge_articles')
-      .select('*, category:category_id(*), author:author_id(*)', { count: 'exact' });
+      .select(`
+        *,
+        category:category_id(*),
+        author:author_id(*),
+        feedback:article_feedback(*)
+      `)
 
     // Apply filters
-    if (category) {
-      query = query.eq('category_id', category);
+    if (categoryId) {
+      query = query.eq('category_id', categoryId)
     }
-
     if (status) {
-      query = query.eq('status', status);
-    } else {
-      // By default, only show published articles
-      query = query.eq('status', ArticleStatus.PUBLISHED);
+      query = query.eq('status', status)
     }
-
-    // Add pagination
-    const from = (page - 1) * limit;
-    const to = from + limit - 1;
-    query = query.range(from, to).order('created_at', { ascending: false });
+    if (search) {
+      query = query.ilike('title', `%${search}%`)
+    }
 
     // Execute query
-    const { data: articles, count, error } = await query;
+    const { data: articles, error } = await query.order('created_at', { ascending: false })
 
     if (error) {
-      console.error('Error fetching articles:', error);
+      console.error('Error fetching articles:', error)
       return NextResponse.json(
         { error: 'Failed to fetch articles' },
         { status: 500 }
-      );
+      )
     }
 
-    return NextResponse.json({
-      articles: articles || [],
-      pagination: {
-        total: count || 0,
-        pages: Math.ceil((count || 0) / limit),
-        page,
-        limit
-      }
-    });
+    return NextResponse.json(articles)
   } catch (error) {
-    console.error('Error in knowledge articles:', error);
+    console.error('Error in GET /api/knowledge/articles:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
-    );
+    )
   }
 }
 
 // POST /api/knowledge/articles - Create new article
 export async function POST(request: NextRequest) {
   try {
-    const cookieStore = cookies();
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get(name: string) {
-            return cookieStore.get(name)?.value;
-          },
-        },
-      }
-    );
-
-    // Get current user
-    const { data: { session }, error: authError } = await supabase.auth.getSession();
-    if (authError || !session) {
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
-      );
+      )
     }
 
-    // Parse and validate request body
-    const body = await request.json();
-    const validatedData = createArticleSchema.parse(body);
+    // Get user role
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+
+    const isAdmin = agent?.role === 'admin'
+
+    if (!isAdmin) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Admin access required' },
+        { status: 403 }
+      )
+    }
+
+    const { title, content, excerpt, categoryId, tags, status } = await request.json()
+
+    if (!title || !content || !categoryId) {
+      return NextResponse.json(
+        { error: 'Title, content and category ID are required' },
+        { status: 400 }
+      )
+    }
+
+    // Check if category exists
+    const { data: category, error: categoryError } = await supabase
+      .from('knowledge_categories')
+      .select('id')
+      .eq('id', categoryId)
+      .single()
+
+    if (categoryError || !category) {
+      return NextResponse.json(
+        { error: 'Category not found' },
+        { status: 404 }
+      )
+    }
 
     // Create article
-    const { data: article, error } = await supabase
+    const { data, error } = await supabase
       .from('knowledge_articles')
       .insert({
-        title: validatedData.title,
-        content: validatedData.content,
-        category_id: validatedData.categoryId,
-        status: validatedData.status || ArticleStatus.DRAFT,
-        author_id: session.user.id,
+        title,
+        content,
+        excerpt,
+        category_id: categoryId,
+        tags,
+        status: status || ArticleStatus.DRAFT,
+        author_id: user.id,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       })
       .select()
-      .single();
+      .single()
 
     if (error) {
-      console.error('Error creating article:', error);
+      console.error('Error creating article:', error)
       return NextResponse.json(
         { error: 'Failed to create article' },
         { status: 500 }
-      );
+      )
     }
 
-    // Add tags if provided
-    if (validatedData.tags?.length) {
-      const { error: tagError } = await supabase
-        .from('article_tags')
-        .insert(
-          validatedData.tags.map(tagId => ({
-            article_id: article.id,
-            tag_id: tagId
-          }))
-        );
-
-      if (tagError) {
-        console.error('Error adding tags:', tagError);
-      }
-    }
-
-    return NextResponse.json(article);
+    return NextResponse.json(data)
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Invalid request data', details: error.errors },
-        { status: 400 }
-      );
-    }
-
-    console.error('Error in POST /api/knowledge/articles:', error);
+    console.error('Error in POST /api/knowledge/articles:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
-    );
+    )
   }
 } 

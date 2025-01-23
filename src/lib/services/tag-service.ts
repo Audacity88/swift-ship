@@ -5,9 +5,9 @@ export const tagService = {
   async getSuggestions(context: ServerContext, ticketId: string): Promise<TagSuggestion[]> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -62,9 +62,9 @@ export const tagService = {
   async searchTags(context: ServerContext, query: string): Promise<Tag[]> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -107,9 +107,9 @@ export const tagService = {
   async createTag(context: ServerContext, name: string, color?: string): Promise<Tag> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -118,7 +118,7 @@ export const tagService = {
         .insert({
           name,
           color: color || '#666666',
-          created_by: session.user.id,
+          created_by: user.id,
           created_at: new Date().toISOString(),
           usage_count: 0
         })
@@ -148,9 +148,9 @@ export const tagService = {
   async updateTagUsage(context: ServerContext, tagId: string, increment: boolean = true): Promise<void> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -172,15 +172,15 @@ export const tagService = {
   async updateTag(context: ServerContext, id: string, name: string, color?: string): Promise<Tag> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
       const { data, error } = await supabase
         .from('tags')
-        .update({ name, color, updated_by: session.user.id })
+        .update({ name, color, updated_by: user.id })
         .eq('id', id)
         .select()
         .single()
@@ -208,9 +208,9 @@ export const tagService = {
   async deleteTag(context: ServerContext, id: string): Promise<void> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -259,9 +259,9 @@ export const tagService = {
   ): Promise<void> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -271,7 +271,7 @@ export const tagService = {
           tagIds.map(tagId => ({
             ticket_id: ticketId,
             tag_id: tagId,
-            created_by: session.user.id,
+            created_by: user.id,
             created_at: new Date().toISOString()
           }))
         )

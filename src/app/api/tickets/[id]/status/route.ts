@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { TicketStatus } from '@/types/ticket'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+import { getServerSupabase } from '@/lib/supabase-client'
 import type { User } from '@supabase/supabase-js'
 
 interface CustomSession {
@@ -10,36 +9,6 @@ interface CustomSession {
   role: 'agent' | 'admin'
   type: 'agent' | 'customer'
   id: string
-}
-
-const createClient = async () => {
-  const cookieStore = await cookies()
-  
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value
-        },
-        set(name: string, value: string, options: Record<string, unknown>) {
-          try {
-            cookieStore.set({ name, value, ...options })
-          } catch {
-            // Handle cookie setting error silently
-          }
-        },
-        remove(name: string, options: Record<string, unknown>) {
-          try {
-            cookieStore.set({ name, value: '', ...options })
-          } catch {
-            // Handle cookie removal error silently
-          }
-        },
-      },
-    }
-  )
 }
 
 // Types
@@ -190,16 +159,17 @@ export async function GET(
   const { id } = await Promise.resolve((await context.params))
   
   try {
-    const supabase = await createClient()
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) {
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
       )
     }
 
-    const customSession = session as unknown as CustomSession
+    const customSession = user as unknown as CustomSession
 
     // Get current ticket status
     const { data: ticket, error: ticketError } = await supabase
@@ -290,16 +260,17 @@ export async function POST(
   const { id } = await Promise.resolve((await context.params))
   
   try {
-    const supabase = await createClient()
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) {
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
       )
     }
 
-    const customSession = session as unknown as CustomSession
+    const customSession = user as unknown as CustomSession
 
     const json = await request.json()
     const body = updateStatusSchema.parse(json)

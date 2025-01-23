@@ -4,9 +4,9 @@ export const searchService = {
   async getSearchAnalytics(context: ServerContext, timeRange: string): Promise<any> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -32,9 +32,9 @@ export const searchService = {
   async getTopSearchTerms(context: ServerContext, timeRange: string, limit: number): Promise<Array<{ term: string; count: number }>> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -56,9 +56,9 @@ export const searchService = {
   async getSearchesByDay(context: ServerContext, timeRange: string): Promise<Array<{ date: string; count: number }>> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -80,9 +80,9 @@ export const searchService = {
   async getFailedSearches(context: ServerContext, timeRange: string): Promise<any[]> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -110,4 +110,68 @@ export const searchService = {
       return []
     }
   },
+
+  async searchArticles(context: ServerContext, query: string) {
+    try {
+      const supabase = getServerSupabase(context)
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      
+      if (userError || !user) {
+        throw new Error('Unauthorized')
+      }
+
+      // ... rest of the function ...
+    } catch (error) {
+      console.error('Error in searchArticles:', error)
+      throw error
+    }
+  },
+
+  async searchTickets(context: ServerContext, query: string) {
+    try {
+      const supabase = getServerSupabase(context)
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      
+      if (userError || !user) {
+        throw new Error('Unauthorized')
+      }
+
+      // ... rest of the function ...
+    } catch (error) {
+      console.error('Error in searchTickets:', error)
+      throw error
+    }
+  },
+
+  async searchCustomers(context: ServerContext, query: string) {
+    try {
+      const supabase = getServerSupabase(context)
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      
+      if (userError || !user) {
+        throw new Error('Unauthorized')
+      }
+
+      // ... rest of the function ...
+    } catch (error) {
+      console.error('Error in searchCustomers:', error)
+      throw error
+    }
+  },
+
+  async searchAll(context: ServerContext, query: string) {
+    try {
+      const supabase = getServerSupabase(context)
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      
+      if (userError || !user) {
+        throw new Error('Unauthorized')
+      }
+
+      // ... rest of the function ...
+    } catch (error) {
+      console.error('Error in searchAll:', error)
+      throw error
+    }
+  }
 }

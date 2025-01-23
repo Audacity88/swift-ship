@@ -5,10 +5,10 @@ import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { Search, Filter, Star, MessageSquare, Phone, Mail, Plus } from 'lucide-react'
 import { COLORS } from '@/lib/constants'
-import { authService, conversationService } from '@/lib/services'
+import { conversationService } from '@/lib/services'
 import { ConversationView } from '@/components/features/inbox/ConversationView'
 import { format } from 'date-fns'
-import type { ServerContext } from '@/lib/supabase-client'
+import { useAuth } from '@/lib/hooks/useAuth'
 
 // We assume: The "messages" table is joined to "tickets" for the conversation thread.
 // We'll fetch: all messages for the logged in user, either as the ticket's customer or as message author.
@@ -44,22 +44,22 @@ interface Ticket {
 }
 
 export default function InboxPage() {
+  const { user } = useAuth()
   const [searchQuery, setSearchQuery] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [messages, setMessages] = useState<InboxMessage[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [userId, setUserId] = useState<string | null>(null)
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null)
   const [tickets, setTickets] = useState<any[]>([])
 
   const loadMessages = async () => {
-    if (!userId) return // Don't load if we don't have a userId yet
+    if (!user) return // Don't load if we don't have a user yet
     
     setIsLoading(true)
     setError(null)
     try {
       // Get all tickets with their messages
-      const tickets = await conversationService.getTicketsWithMessages(undefined, userId)
+      const tickets = await conversationService.getTicketsWithMessages(undefined, user.id)
 
       // Map the tickets to the format we need
       const mappedTickets = tickets.map((ticket: Ticket) => ({
@@ -80,31 +80,15 @@ export default function InboxPage() {
     }
   }
 
+  // Load messages when user changes
   useEffect(() => {
-    // On mount, get the logged in user, then fetch messages
-    const init = async () => {
-      try {
-        const session = await authService.getSession(undefined)
-        if (!session?.user?.id) {
-          setError('Not authenticated')
-          setIsLoading(false)
-          return
-        }
-        setUserId(session.user.id)
-      } catch (err: any) {
-        setError(err.message)
-        setIsLoading(false)
-      }
-    }
-    void init()
-  }, [])
-
-  // Add a new useEffect to trigger loadMessages when userId changes
-  useEffect(() => {
-    if (userId) {
+    if (user) {
       void loadMessages()
+    } else {
+      setError('Not authenticated')
+      setIsLoading(false)
     }
-  }, [userId])
+  }, [user])
 
   // Filter messages in memory
   const filteredMessages = messages.filter(msg => {
@@ -179,7 +163,7 @@ export default function InboxPage() {
       <div className="flex-1">
         <ConversationView
           ticketId={selectedTicketId}
-          currentUserId={userId || ''}
+          currentUserId={user?.id || ''}
         />
       </div>
 

@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react'
 import { Package, MapPin, Calendar, Plus } from 'lucide-react'
 import { COLORS } from '@/lib/constants'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay } from 'date-fns'
-import { pickupService, authService, type PickupTicket } from '@/lib/services'
+import { pickupService, type PickupTicket } from '@/lib/services'
+import { useAuth } from '@/lib/hooks/useAuth'
 
 interface TimeSlot {
   start: string
@@ -21,6 +22,7 @@ const TIME_SLOTS: TimeSlot[] = [
 ]
 
 export default function PickupPage() {
+  const { user } = useAuth()
   const [isLoading, setIsLoading] = useState(true)
   const [tickets, setTickets] = useState<PickupTicket[]>([])
   const [showForm, setShowForm] = useState(false)
@@ -53,14 +55,14 @@ export default function PickupPage() {
       return
     }
 
+    if (!user) {
+      setError('Must be logged in')
+      return
+    }
+
     setError(null)
     setIsLoading(true)
     try {
-      const session = await authService.getSession({})
-      if (!session?.user?.id) {
-        throw new Error('Must be logged in')
-      }
-
       const formattedDate = format(selectedDate, 'yyyy-MM-dd')
       const pickupDateTime = `${formattedDate} ${selectedTimeSlot}`
 
@@ -71,7 +73,7 @@ export default function PickupPage() {
         weight,
         quantity,
         additionalNotes,
-        customerId: session.user.id
+        customerId: user.id
       })
 
       setShowForm(false)
@@ -175,139 +177,4 @@ export default function PickupPage() {
                             isSameDay(date, selectedDate) ? 'bg-primary text-white' : 
                             'hover:bg-gray-100'
                           }
-                        `}
-                        disabled={!isSameMonth(date, currentMonth)}
-                      >
-                        {format(date, 'd')}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="mt-4">
-                    <h3 className="text-sm font-medium text-gray-700 mb-2">Available Time Slots</h3>
-                    <div className="space-y-2">
-                      {TIME_SLOTS.map((slot, index) => (
-                        <button
-                          key={index}
-                          onClick={() => setSelectedTimeSlot(`${slot.start} - ${slot.end}`)}
-                          disabled={!slot.available}
-                          className={`
-                            w-full p-2 text-left text-sm rounded-lg border
-                            ${!slot.available ? 'bg-gray-50 text-gray-400 cursor-not-allowed' :
-                              selectedTimeSlot === `${slot.start} - ${slot.end}` ? 'border-primary bg-primary/5' :
-                              'border-gray-200 hover:border-primary'
-                            }
-                          `}
-                        >
-                          {slot.start} - {slot.end}
-                          {!slot.available && <span className="ml-2 text-xs">(Unavailable)</span>}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Pickup Details Section */}
-              <div>
-                <h2 className="text-lg font-semibold mb-4">Pickup Details</h2>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Pickup Address
-                    </label>
-                    <input
-                      type="text"
-                      value={address}
-                      onChange={(e) => setAddress(e.target.value)}
-                      placeholder="Enter complete pickup address"
-                      className="w-full p-2 border border-gray-200 rounded-lg text-sm"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Additional Notes
-                    </label>
-                    <textarea
-                      value={additionalNotes}
-                      onChange={(e) => setAdditionalNotes(e.target.value)}
-                      rows={3}
-                      className="w-full p-2 border border-gray-200 rounded-lg text-sm"
-                      placeholder="Any special instructions or requirements..."
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 flex justify-end gap-3">
-              <button
-                onClick={() => setShowForm(false)}
-                className="px-4 py-2 border border-gray-200 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={createPickup}
-                disabled={!address || !selectedDate || !selectedTimeSlot}
-                className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                style={{ backgroundColor: COLORS.primary }}
-              >
-                Schedule Pickup
-              </button>
-            </div>
-          </div>
-        )}
-
-        <div className="flex-1 overflow-auto">
-          {tickets.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-gray-500 p-8">
-              <Package className="w-12 h-12 mb-4 text-gray-400" />
-              <p className="text-lg font-medium mb-2">No Pickups Scheduled</p>
-              <p className="text-sm text-center">
-                You haven't scheduled any pickups yet. Click 'Schedule New Pickup' to get started.
-              </p>
-            </div>
-          ) : (
-            tickets.map(pickup => (
-              <div
-                key={pickup.id}
-                className="p-4 border-b border-gray-100 hover:bg-gray-50 cursor-pointer"
-              >
-                <div className="flex items-start justify-between">
-                  <div>
-                    <h2 className="font-medium text-gray-900">{pickup.title}</h2>
-                    <p className="text-sm text-gray-600">{pickup.description}</p>
-                    {pickup.metadata && (
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        <span className="inline-flex items-center gap-1 text-xs text-gray-500">
-                          <MapPin className="w-3 h-3" />
-                          {pickup.metadata.address}
-                        </span>
-                        <span className="inline-flex items-center gap-1 text-xs text-gray-500">
-                          <Calendar className="w-3 h-3" />
-                          {pickup.metadata.pickupDateTime}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                  <span className={`text-xs font-medium px-2 py-1 rounded-full ${
-                    pickup.status === 'open' ? 'bg-green-100 text-green-700' :
-                    pickup.status === 'in_progress' ? 'bg-blue-100 text-blue-700' :
-                    'bg-gray-100 text-gray-700'
-                  }`}>
-                    {pickup.status.replace('_', ' ').charAt(0).toUpperCase() + pickup.status.slice(1)}
-                  </span>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-      <div className="w-[400px] bg-white flex flex-col items-center justify-center text-gray-500">
-        Select a shipment for details (not implemented)
-      </div>
-    </div>
-  )
-} 
+                        `

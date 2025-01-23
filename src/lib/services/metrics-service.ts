@@ -20,9 +20,9 @@ export const metricsService = {
   async getTeamMetrics(context: ServerContext, teamId: string, period: MetricsPeriod): Promise<TeamMetrics> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -93,9 +93,9 @@ export const metricsService = {
   async getAgentMetrics(context: ServerContext, userId: string, period: MetricsPeriod): Promise<AgentMetrics> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 

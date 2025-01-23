@@ -26,9 +26,9 @@ export const customerService = {
   ): Promise<ListCustomersResponse> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -79,28 +79,25 @@ export const customerService = {
     }
   },
 
-  async getCustomer(context: ServerContext, customerId: string): Promise<Customer> {
+  async getCustomer(context: ServerContext, customerId: string): Promise<Customer | null> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
+      // Use maybeSingle instead of single to handle not found case gracefully
       const { data, error } = await supabase
         .from('customers')
-        .select('id, name, email, company')
+        .select('*')
         .eq('id', customerId)
-        .single()
+        .maybeSingle()
 
       if (error) {
         console.error('Failed to get customer:', error)
         throw error
-      }
-
-      if (!data) {
-        throw new Error('Customer not found')
       }
 
       return data
@@ -117,9 +114,9 @@ export const customerService = {
   ): Promise<Customer> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -127,7 +124,7 @@ export const customerService = {
         .from('customers')
         .update({
           ...updates,
-          updated_by: session.user.id,
+          updated_by: user.id,
           updated_at: new Date().toISOString()
         })
         .eq('id', customerId)

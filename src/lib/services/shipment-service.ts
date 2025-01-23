@@ -6,9 +6,9 @@ export const shipmentService = {
   async createFromQuote(context: ServerContext, quoteId: string, customerId: string): Promise<Shipment> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -43,8 +43,8 @@ export const shipmentService = {
             hazardous: quote.metadata.hazardous,
             special_requirements: quote.metadata.specialRequirements
           },
-          created_by: session.user.id,
-          updated_by: session.user.id,
+          created_by: user.id,
+          updated_by: user.id,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
@@ -72,9 +72,9 @@ export const shipmentService = {
   ): Promise<void> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -82,7 +82,7 @@ export const shipmentService = {
         .from('shipments')
         .update({ 
           status,
-          updated_by: session.user.id,
+          updated_by: user.id,
           updated_at: new Date().toISOString()
         })
         .eq('id', shipmentId)
@@ -101,7 +101,7 @@ export const shipmentService = {
             status,
             location,
             notes,
-            created_by: session.user.id,
+            created_by: user.id,
             created_at: new Date().toISOString()
           })
 
@@ -119,9 +119,9 @@ export const shipmentService = {
   async getShipmentWithEvents(context: ServerContext, shipmentId: string): Promise<Shipment & { events: ShipmentEvent[] }> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -162,9 +162,9 @@ export const shipmentService = {
   async getCustomerShipments(context: ServerContext, customerId: string): Promise<Shipment[]> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -194,9 +194,9 @@ export const shipmentService = {
   ): Promise<void> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -206,7 +206,7 @@ export const shipmentService = {
           status: 'pickup_scheduled',
           scheduled_pickup: pickupDateTime,
           estimated_delivery: estimatedDelivery,
-          updated_by: session.user.id,
+          updated_by: user.id,
           updated_at: new Date().toISOString()
         })
         .eq('id', shipmentId)
@@ -277,9 +277,9 @@ export const shipmentService = {
   ): Promise<{ data: Shipment[], total: number }> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -337,9 +337,9 @@ export const shipmentService = {
   ): Promise<Shipment> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -371,8 +371,8 @@ export const shipmentService = {
         metadata: {
           quote_metadata: quote.metadata
         },
-        created_by: session.user.id,
-        updated_by: session.user.id,
+        created_by: user.id,
+        updated_by: user.id,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       }

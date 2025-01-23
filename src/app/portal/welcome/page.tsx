@@ -5,8 +5,8 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Icons } from '@/components/ui/icons';
 import { Card } from '@/components/ui/card';
-import { authService, customerService } from '@/lib/services';
-import type { ServerContext } from '@/lib/supabase-client';
+import { customerService } from '@/lib/services';
+import { useAuth } from '@/lib/hooks/useAuth';
 
 interface User {
   name: string;
@@ -14,6 +14,7 @@ interface User {
 }
 
 export default function WelcomePage() {
+  const { user: authUser } = useAuth();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
@@ -21,15 +22,13 @@ export default function WelcomePage() {
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        const context: ServerContext = { headers: {} };
-        const session = await authService.getSession(context);
-        if (!session) {
+        if (!authUser) {
           router.push('/auth/signin');
           return;
         }
 
         // Get user details
-        const customer = await customerService.getCustomer(context, session.user.id);
+        const customer = await customerService.getCustomer(undefined, authUser.id);
         if (!customer) throw new Error('Customer not found');
 
         setUser({
@@ -45,7 +44,7 @@ export default function WelcomePage() {
     };
 
     fetchUser();
-  }, [router]);
+  }, [router, authUser]);
 
   if (loading) {
     return (

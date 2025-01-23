@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { TicketPriority, TicketStatus } from '@/types/ticket'
 import type { NextRequest } from 'next/server'
-import { authService, ticketService } from '@/lib/services'
+import { ticketService } from '@/lib/services'
+import { getServerSupabase } from '@/lib/supabase-client'
 
 // Types
 interface CreateTicketResult {
@@ -55,9 +56,10 @@ const sortingSchema = z.object({
 // GET /api/tickets - Get tickets with optional filters
 export async function GET(request: NextRequest) {
   try {
-    // Check authentication
-    const session = await authService.getSession({})
-    if (!session?.user) {
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -65,52 +67,96 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url)
-    
-    // Parse and validate filters
-    const filters = ticketFiltersSchema.parse({
-      status: searchParams.get('status')?.split(','),
-      priority: searchParams.get('priority')?.split(','),
-      type: searchParams.get('type'),
-      search: searchParams.get('search'),
-      dateFrom: searchParams.get('dateFrom'),
-      dateTo: searchParams.get('dateTo')
-    })
+    const status = searchParams.get('status')
+    const priority = searchParams.get('priority')
+    const assignee = searchParams.get('assignee')
+    const team = searchParams.get('team')
+    const search = searchParams.get('search')
+    const page = parseInt(searchParams.get('page') || '1')
+    const limit = parseInt(searchParams.get('limit') || '20')
 
-    // Parse pagination with defaults
-    const { page, pageSize } = paginationSchema.parse({
-      page: searchParams.get('page') || '1',
-      pageSize: searchParams.get('pageSize') || '10'
-    })
+    // Get user role
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('role, team_id')
+      .eq('id', user.id)
+      .single()
 
-    // Parse sorting with defaults
-    const { sortField, sortDirection } = sortingSchema.parse({
-      sortField: searchParams.get('sortField') || 'created_at',
-      sortDirection: searchParams.get('sortDirection') || 'desc'
-    })
+    const isAdmin = agent?.role === 'admin'
+    const isAgent = !!agent
 
-    // Fetch tickets using the service
-    const { data: tickets, total } = await ticketService.fetchTickets({}, {
-      filters,
-      pagination: { page, pageSize },
-      sort: { field: sortField, direction: sortDirection }
-    })
+    // Build query
+    let query = supabase
+      .from('tickets')
+      .select(`
+        *,
+        customer:customer_id(*),
+        assignee:assignee_id(*),
+        team:team_id(*),
+        tags:ticket_tags(tag_id(*))
+      `, { count: 'exact' })
 
-    return NextResponse.json({
-      data: tickets,
-      total,
-      page,
-      pageSize
-    })
-  } catch (error) {
-    console.error('Error fetching tickets:', error)
-    if (error instanceof z.ZodError) {
+    // Apply filters
+    if (status) {
+      query = query.eq('status', status)
+    }
+    if (priority) {
+      query = query.eq('priority', priority)
+    }
+    if (assignee) {
+      query = query.eq('assignee_id', assignee)
+    }
+    if (team) {
+      query = query.eq('team_id', team)
+    }
+
+    // Apply search filter
+    if (search) {
+      query = query.or(`
+        title.ilike.%${search}%,
+        description.ilike.%${search}%,
+        reference.ilike.%${search}%
+      `)
+    }
+
+    // Apply access control
+    if (!isAdmin && !isAgent) {
+      // Customers can only see their own tickets
+      query = query.eq('customer_id', user.id)
+    } else if (!isAdmin && agent?.team_id) {
+      // Agents can see tickets assigned to them or their team
+      query = query.or(`assignee_id.eq.${user.id},team_id.eq.${agent.team_id}`)
+    }
+
+    // Add pagination
+    const from = (page - 1) * limit
+    const to = from + limit - 1
+    query = query.range(from, to).order('created_at', { ascending: false })
+
+    // Execute query
+    const { data: tickets, count, error } = await query
+
+    if (error) {
+      console.error('Error fetching tickets:', error)
       return NextResponse.json(
-        { error: 'Invalid parameters', details: error.errors },
-        { status: 400 }
+        { error: 'Failed to fetch tickets' },
+        { status: 500 }
       )
     }
+
+    return NextResponse.json({
+      tickets: tickets || [],
+      pagination: {
+        total: count || 0,
+        pages: Math.ceil((count || 0) / limit),
+        page,
+        limit
+      }
+    })
+  } catch (error) {
+    console.error('Error in GET /api/tickets:', error)
     return NextResponse.json(
-      { error: 'Failed to fetch tickets' },
+      { error: 'Internal server error' },
       { status: 500 }
     )
   }
@@ -119,40 +165,62 @@ export async function GET(request: NextRequest) {
 // POST /api/tickets - Create a new ticket
 export async function POST(request: NextRequest) {
   try {
-    // Check authentication
-    const session = await authService.getSession({})
-    if (!session?.user) {
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
       )
     }
 
-    const json = await request.json()
-    const body = createTicketSchema.parse(json)
+    const ticket = await request.json()
 
-    // Create the ticket using the service
-    const ticket = await ticketService.createTicket({}, {
-      title: body.title,
-      description: body.description,
-      priority: body.priority,
-      customerId: body.customerId,
-      assigneeId: body.assigneeId,
-      tags: body.tags,
-      metadata: body.metadata
-    })
+    // Get user role
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('role, team_id')
+      .eq('id', user.id)
+      .single()
 
-    return NextResponse.json(ticket)
-  } catch (error) {
-    console.error('Error creating ticket:', error)
-    if (error instanceof z.ZodError) {
+    const isAdmin = agent?.role === 'admin'
+    const isAgent = !!agent
+
+    // Only agents and admins can create tickets for other customers
+    if (!isAdmin && !isAgent && ticket.customer_id !== user.id) {
       return NextResponse.json(
-        { error: 'Invalid parameters', details: error.errors },
-        { status: 400 }
+        { error: 'Unauthorized - Cannot create tickets for other customers' },
+        { status: 403 }
       )
     }
+
+    // Create ticket
+    const { data: newTicket, error } = await supabase
+      .from('tickets')
+      .insert({
+        ...ticket,
+        created_by: user.id,
+        updated_by: user.id,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Error creating ticket:', error)
+      return NextResponse.json(
+        { error: 'Failed to create ticket' },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json(newTicket)
+  } catch (error) {
+    console.error('Error in POST /api/tickets:', error)
     return NextResponse.json(
-      { error: 'Failed to create ticket' },
+      { error: 'Internal server error' },
       { status: 500 }
     )
   }

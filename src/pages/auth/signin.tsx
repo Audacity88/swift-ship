@@ -108,6 +108,8 @@ export default function SignIn() {
                   name="email"
                   type="email"
                   autoComplete="email"
+                  required
+                  spellCheck="false"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="block w-full appearance-none rounded-lg border border-gray-200 \
@@ -130,6 +132,8 @@ export default function SignIn() {
                   name="password"
                   type="password"
                   autoComplete="current-password"
+                  required
+                  spellCheck="false"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="block w-full appearance-none rounded-lg border border-gray-200 \

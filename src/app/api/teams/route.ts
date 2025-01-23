@@ -1,61 +1,46 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { getServerSupabase } from '@/lib/supabase-client';
 import { Permission } from '@/types/role';
 import { checkUserPermissions } from '@/lib/auth/check-permissions';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    // Check permissions
-    const permissionCheck = await checkUserPermissions(Permission.VIEW_TEAMS);
-    if ('error' in permissionCheck) {
+    const supabase = getServerSupabase();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
       return NextResponse.json(
-        { error: permissionCheck.error },
-        { status: permissionCheck.status }
+        { error: 'Unauthorized' },
+        { status: 401 }
       );
     }
 
-    // Get query parameters for filtering
-    const searchParams = request.nextUrl.searchParams;
-    const isActive = searchParams.get('isActive');
-    const query = supabase.from('teams').select(`
-      *,
-      members:team_members (
-        agent:agents (
-          id,
-          name,
-          email,
-          role
-        ),
-        role,
-        schedule,
-        skills,
-        joined_at
-      ),
-      skills:team_skills (
-        name,
-        level,
-        description
-      ),
-      metrics:team_metrics (
-        average_response_time,
-        average_resolution_time,
-        open_tickets,
-        resolved_tickets,
-        customer_satisfaction_score,
-        updated_at
-      )
-    `);
+    // Get user role
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('role')
+      .eq('id', user.id)
+      .single();
 
-    if (isActive !== null) {
-      query.eq('is_active', isActive === 'true');
+    const isAdmin = agent?.role === 'admin';
+
+    if (!isAdmin) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Admin access required' },
+        { status: 403 }
+      );
     }
 
-    const { data: teams, error } = await query;
+    const { data: teams, error } = await supabase
+      .from('teams')
+      .select(`
+        *,
+        members:team_members(
+          agent:agent_id(*)
+        ),
+        schedule:team_schedule(*)
+      `)
+      .order('name');
 
     if (error) {
       console.error('Error fetching teams:', error);
@@ -65,7 +50,7 @@ export async function GET() {
       );
     }
 
-    return NextResponse.json({ teams });
+    return NextResponse.json(teams);
   } catch (error) {
     console.error('Error in GET /api/teams:', error);
     return NextResponse.json(
@@ -75,71 +60,56 @@ export async function GET() {
   }
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
   try {
-    // Check permissions
-    const permissionCheck = await checkUserPermissions(Permission.MANAGE_TEAMS);
-    if ('error' in permissionCheck) {
+    const supabase = getServerSupabase();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
       return NextResponse.json(
-        { error: permissionCheck.error },
-        { status: permissionCheck.status }
+        { error: 'Unauthorized' },
+        { status: 401 }
       );
     }
 
-    // Get request body
-    const body = await request.json();
-    const { name, description, schedule, skills } = body;
+    // Get user role
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('role')
+      .eq('id', user.id)
+      .single();
 
-    // Validate required fields
-    if (!name || !schedule) {
+    const isAdmin = agent?.role === 'admin';
+
+    if (!isAdmin) {
       return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
+        { error: 'Unauthorized - Admin access required' },
+        { status: 403 }
       );
     }
 
-    // Create team
-    const { data: team, error: createError } = await supabase
+    const team = await request.json();
+
+    const { data, error } = await supabase
       .from('teams')
       .insert({
-        name,
-        description,
-        schedule,
-        created_by: permissionCheck.session.user.id,
-        is_active: true
+        ...team,
+        created_by: user.id,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       })
       .select()
       .single();
 
-    if (createError) {
-      console.error('Error creating team:', createError);
+    if (error) {
+      console.error('Error creating team:', error);
       return NextResponse.json(
         { error: 'Failed to create team' },
         { status: 500 }
       );
     }
 
-    // Add skills if provided
-    if (skills?.length) {
-      const { error: skillsError } = await supabase
-        .from('team_skills')
-        .insert(
-          skills.map((skill: any) => ({
-            team_id: team.id,
-            ...skill
-          }))
-        );
-
-      if (skillsError) {
-        console.error('Error adding team skills:', skillsError);
-        // Don't fail the request, just log the error
-      }
-    }
-
-    return NextResponse.json({
-      message: 'Team created successfully',
-      team
-    });
+    return NextResponse.json(data);
   } catch (error) {
     console.error('Error in POST /api/teams:', error);
     return NextResponse.json(

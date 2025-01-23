@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { sql } from '@/lib/db'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+import { getServerSupabase } from '@/lib/supabase-client'
 
 // SLA configuration (could be moved to database or config file)
 const SLA_CONFIG = {
@@ -30,6 +29,16 @@ const pauseSLASchema = z.object({
 export async function GET(request: Request, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
     // Get ticket and SLA state
     const [result] = await sql.execute(sql`
       SELECT 
@@ -130,25 +139,14 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
 export async function POST(request: Request, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
-    const cookieStore = cookies();
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get(name: string) {
-            return cookieStore.get(name)?.value;
-          },
-        },
-      }
-    );
-
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
-      );
+      )
     }
 
     const json = await request.json()
@@ -197,7 +195,7 @@ export async function POST(request: Request, props: { params: Promise<{ id: stri
           'ticket',
           ${params.id},
           'sla_pause',
-          ${session.user.id},
+          ${user.id},
           'agent',
           ${JSON.stringify({
             reason: body.reason,
@@ -229,25 +227,14 @@ export async function POST(request: Request, props: { params: Promise<{ id: stri
 export async function PUT(request: Request, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
-    const cookieStore = cookies();
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get(name: string) {
-            return cookieStore.get(name)?.value;
-          },
-        },
-      }
-    );
-
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
-      );
+      )
     }
 
     // Start a transaction
@@ -298,7 +285,7 @@ export async function PUT(request: Request, props: { params: Promise<{ id: strin
           'ticket',
           ${params.id},
           'sla_resume',
-          ${session.user.id},
+          ${user.id},
           'agent',
           ${JSON.stringify({
             pausedTime: Math.floor(additionalPausedTime)
@@ -317,4 +304,4 @@ export async function PUT(request: Request, props: { params: Promise<{ id: strin
       { status: 500 }
     )
   }
-} 
+}

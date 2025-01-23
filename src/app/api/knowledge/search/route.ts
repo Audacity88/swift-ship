@@ -1,74 +1,82 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
-import { Permission } from '@/types/role';
-import { checkUserPermissions } from '@/lib/auth/check-permissions';
+import { getServerSupabase } from '@/lib/supabase-client';
 import { ArticleStatus } from '@/types/knowledge';
 
 // GET /api/knowledge/search - Search articles
 export async function GET(request: NextRequest) {
   try {
-    const cookieStore = cookies();
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get(name: string) {
-            return cookieStore.get(name)?.value;
-          },
-        },
-      }
-    );
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
 
-    // Get search query
-    const searchParams = request.nextUrl.searchParams;
-    const query = searchParams.get('q');
-    const category = searchParams.get('category');
-    const status = searchParams.get('status') as ArticleStatus | null;
+    // Get user role
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+
+    const isAdmin = agent?.role === 'admin'
+
+    if (!isAdmin) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Admin access required' },
+        { status: 403 }
+      )
+    }
+
+    const { searchParams } = new URL(request.url)
+    const query = searchParams.get('q')
+    const categoryId = searchParams.get('categoryId')
 
     if (!query) {
       return NextResponse.json(
         { error: 'Search query is required' },
         { status: 400 }
-      );
+      )
     }
 
     // Build search query
     let dbQuery = supabase
       .from('knowledge_articles')
-      .select('*, category:category_id(*), author:author_id(*)')
-      .textSearch('searchable_text', query);
+      .select(`
+        *,
+        category:category_id(*),
+        author:author_id(*)
+      `)
+      .or(`title.ilike.%${query}%, content.ilike.%${query}%`)
+      .eq('status', ArticleStatus.PUBLISHED)
 
-    // Add filters
-    if (category) {
-      dbQuery = dbQuery.eq('category_id', category);
-    }
-
-    if (status) {
-      dbQuery = dbQuery.eq('status', status);
-    } else {
-      // By default, only show published articles
-      dbQuery = dbQuery.eq('status', ArticleStatus.PUBLISHED);
+    // Apply category filter if provided
+    if (categoryId) {
+      dbQuery = dbQuery.eq('category_id', categoryId)
     }
 
     // Execute search
-    const { data: articles, error } = await dbQuery;
+    const { data: articles, error } = await dbQuery
+      .order('created_at', { ascending: false })
+      .limit(20)
 
     if (error) {
-      console.error('Search error:', error);
+      console.error('Error searching articles:', error)
       return NextResponse.json(
         { error: 'Failed to search articles' },
         { status: 500 }
-      );
+      )
     }
 
-    return NextResponse.json(articles);
+    return NextResponse.json(articles)
   } catch (error) {
-    console.error('Error in knowledge search:', error);
+    console.error('Error in GET /api/knowledge/search:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
-    );
+    )
   }
 } 

@@ -6,9 +6,9 @@ export const teamService = {
   async getAllTeams(context: ServerContext): Promise<Team[]> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -71,9 +71,9 @@ export const teamService = {
   async getTeamById(context: ServerContext, id: string): Promise<Team | null> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -140,9 +140,9 @@ export const teamService = {
   async createTeam(context: ServerContext, payload: TeamCreationData): Promise<Team | null> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -159,8 +159,8 @@ export const teamService = {
             customerSatisfaction: 0
           },
           is_active: true,
-          created_by: session.user.id,
-          updated_by: session.user.id,
+          created_by: user.id,
+          updated_by: user.id,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
@@ -202,9 +202,9 @@ export const teamService = {
   async updateTeam(context: ServerContext, payload: TeamUpdateData): Promise<boolean> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -216,7 +216,7 @@ export const teamService = {
           schedule: payload.schedule,
           skills: payload.skills,
           is_active: payload.isActive,
-          updated_by: session.user.id,
+          updated_by: user.id,
           updated_at: new Date().toISOString()
         })
         .eq('id', payload.id)
@@ -236,9 +236,9 @@ export const teamService = {
   async deleteTeam(context: ServerContext, id: string): Promise<boolean> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -274,9 +274,9 @@ export const teamService = {
   async getTeamMembers(context: ServerContext, teamId: string): Promise<TeamMember[]> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -314,9 +314,9 @@ export const teamService = {
   async addTeamMember(context: ServerContext, teamId: string, member: Omit<TeamMember, 'teamId' | 'joinedAt'>): Promise<boolean> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -346,9 +346,9 @@ export const teamService = {
   async removeTeamMember(context: ServerContext, teamId: string, userId: string): Promise<boolean> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -373,9 +373,9 @@ export const teamService = {
   async updateTeamMember(update: { teamId: string; userId: string; role?: UserRole; schedule?: any; skills?: string[] }): Promise<boolean> {
     try {
       const supabase = getServerSupabase(context)
-      const session = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 

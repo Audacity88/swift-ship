@@ -35,9 +35,9 @@ export const conversationService = {
     userId: string
   ): Promise<Ticket[]> {
     const supabase = getServerSupabase(context)
-    const { data: { session } } = await supabase.auth.getSession()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
     
-    if (!session) {
+    if (userError || !user) {
       throw new Error('Unauthorized')
     }
 
@@ -74,9 +74,9 @@ export const conversationService = {
     ticketId: string
   ): Promise<Message[]> {
     const supabase = getServerSupabase(context)
-    const { data: { session } } = await supabase.auth.getSession()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
     
-    if (!session) {
+    if (userError || !user) {
       throw new Error('Unauthorized')
     }
 
@@ -103,9 +103,9 @@ export const conversationService = {
     }[]
   ): Promise<Message> {
     const supabase = getServerSupabase(context)
-    const { data: { session } } = await supabase.auth.getSession()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
     
-    if (!session) {
+    if (userError || !user) {
       throw new Error('Unauthorized')
     }
 
@@ -115,7 +115,7 @@ export const conversationService = {
         ticket_id: ticketId,
         content,
         author_type: authorType,
-        author_id: session.user.id,
+        author_id: user.id,
         attachments
       })
       .select()
@@ -131,9 +131,9 @@ export const conversationService = {
     callback: (message: Message) => void
   ): Promise<() => void> {
     const supabase = getServerSupabase(context)
-    const { data: { session } } = await supabase.auth.getSession()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
     
-    if (!session) {
+    if (userError || !user) {
       throw new Error('Unauthorized')
     }
 

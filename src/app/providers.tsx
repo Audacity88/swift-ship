@@ -2,8 +2,9 @@
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState, createContext, useContext, useRef, type PropsWithChildren } from 'react'
-import { createBrowserClient, type SupabaseClient } from '@supabase/ssr'
+import type { SupabaseClient } from '@supabase/ssr'
 import { Database } from '@/types/supabase'
+import { getServerSupabase } from '@/lib/supabase-client'
 
 const SupabaseContext = createContext<SupabaseClient<Database> | null>(null)
 
@@ -19,25 +20,9 @@ export default function Providers({ children }: PropsWithChildren) {
   // Use useRef to ensure stable reference across renders
   const supabaseClient = useRef<SupabaseClient<Database> | null>(null)
   
-  // Initialize clients only once with proper options
+  // Initialize client only once using our singleton pattern
   if (!supabaseClient.current) {
-    supabaseClient.current = createBrowserClient<Database>(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        auth: {
-          persistSession: true,
-          autoRefreshToken: true,
-          detectSessionInUrl: true,
-          flowType: 'pkce'
-        },
-        global: {
-          headers: {
-            'x-application-name': 'zendesk-clone'
-          }
-        }
-      }
-    )
+    supabaseClient.current = getServerSupabase()
   }
 
   const [queryClient] = useState(

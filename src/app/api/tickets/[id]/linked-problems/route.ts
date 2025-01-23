@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { authService, ticketService } from '@/lib/services'
+import { ticketService } from '@/lib/services'
 import type { TicketRelationship } from '@/lib/services/ticket-service'
+import { getServerSupabase } from '@/lib/supabase-client'
 
 // GET /api/tickets/[id]/linked-problems - Get all linked problem tickets
 export async function GET(
@@ -8,9 +9,10 @@ export async function GET(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    // Check authentication
-    const session = await authService.getSession(undefined)
-    if (!session?.user) {
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -38,9 +40,10 @@ export async function POST(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    // Check authentication
-    const session = await authService.getSession(undefined)
-    if (!session?.user) {
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -76,9 +79,10 @@ export async function DELETE(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    // Check authentication
-    const session = await authService.getSession(undefined)
-    if (!session?.user) {
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }

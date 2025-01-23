@@ -5,9 +5,9 @@ export const auditService = {
   async getAuditLogs(context: ServerContext): Promise<AuditLog[]> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -31,9 +31,9 @@ export const auditService = {
   async createAuditLog(context: ServerContext, log: Partial<AuditLog>): Promise<void> {
     try {
       const supabase = getServerSupabase(context)
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (!session) {
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -41,7 +41,7 @@ export const auditService = {
         .from('audit_logs')
         .insert({
           ...log,
-          created_by: session.user.id,
+          created_by: user.id,
           created_at: new Date().toISOString()
         })
 
