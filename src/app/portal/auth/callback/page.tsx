@@ -2,66 +2,61 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { db } from '@/lib/db';
+import { useSupabase } from '@/app/providers';
 import { RoleType } from '@/types/role';
 import { Icons } from '@/components/ui/icons';
 
-export default function AuthCallbackPage() {
+export default function AuthCallback() {
   const router = useRouter();
+  const supabase = useSupabase();
 
   useEffect(() => {
     const handleCallback = async () => {
       try {
-        const { data: { user }, error } = await db.auth.getUser();
-        
-        if (error || !user) {
-          throw error || new Error('No user found');
-        }
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) throw error;
+        if (!session) throw new Error('No session');
 
-        // Check if customer profile exists
-        const { data: profile } = await db
-          .from('customer_profiles')
-          .select('*')
-          .eq('user_id', user.id)
+        // Check if user exists in customers table
+        const { data: customer } = await supabase
+          .from('customers')
+          .select('id')
+          .eq('id', session.user.id)
           .single();
 
-        if (!profile) {
-          // Create customer profile
-          const { error: profileError } = await db.from('customer_profiles').insert({
-            user_id: user.id,
-            name: user.user_metadata.name || user.email?.split('@')[0],
-            created_at: new Date().toISOString(),
-          });
+        if (customer) {
+          router.push('/portal/dashboard');
+        } else {
+          // Check if user exists in agents table
+          const { data: agent } = await supabase
+            .from('agents')
+            .select('id')
+            .eq('id', session.user.id)
+            .single();
 
-          if (profileError) throw profileError;
-
-          // Set default role and permissions
-          const { error: roleError } = await db.from('user_roles').insert({
-            user_id: user.id,
-            role: RoleType.CUSTOMER,
-            assigned_by: 'SYSTEM',
-            assigned_at: new Date().toISOString(),
-          });
-
-          if (roleError) throw roleError;
+          if (agent) {
+            router.push('/dashboard');
+          } else {
+            // New user - redirect to welcome page
+            router.push('/portal/welcome');
+          }
         }
-
-        // Redirect to welcome page for new users, or portal home for existing users
-        router.push(profile ? '/portal' : '/portal/welcome');
-      } catch (err) {
-        console.error('Auth callback error:', err);
-        router.push('/portal/auth/login?error=callback_failed');
+      } catch (error) {
+        console.error('Error in auth callback:', error);
+        router.push('/auth/error');
       }
     };
 
     handleCallback();
-  }, [router]);
+  }, [router, supabase]);
 
   return (
-    <div className="flex h-screen w-screen items-center justify-center">
-      <div className="flex flex-col items-center space-y-4">
-        <Icons.spinner className="h-8 w-8 animate-spin" />
-        <p className="text-lg text-gray-500">Setting up your account...</p>
+    <div className="flex min-h-screen items-center justify-center">
+      <div className="text-center">
+        <Icons.spinner className="mx-auto h-8 w-8 animate-spin" />
+        <p className="mt-4 text-sm text-muted-foreground">
+          Completing authentication...
+        </p>
       </div>
     </div>
   );

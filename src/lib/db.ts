@@ -1,10 +1,4 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { PostgrestError } from '@supabase/supabase-js'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-
-export const db = createClient(supabaseUrl, supabaseKey)
 
 // Types for database operations
 export type DbResult<T> = T extends PromiseLike<infer U> ? U : never
@@ -49,7 +43,6 @@ sql.join = (queries: ReturnType<typeof sql>[], separator: string) => {
     }
   })
 
-  result.text = result.strings.reduce((prev, curr, i) => prev + '$' + i + curr)
   return result
 }
 

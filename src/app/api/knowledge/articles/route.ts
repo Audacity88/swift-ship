@@ -1,14 +1,10 @@
-import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { NextRequest, NextResponse } from 'next/server';
+import { createServerClient } from '@supabase/ssr';
+import { cookies } from 'next/headers';
 import { ArticleStatus } from '@/types/knowledge';
 import { Permission } from '@/types/role';
 import { checkUserPermissions } from '@/lib/auth/check-permissions';
 import { z } from 'zod';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 const createArticleSchema = z.object({
   title: z.string().min(1),
@@ -21,51 +17,50 @@ const createArticleSchema = z.object({
 // GET /api/knowledge/articles - List articles with filtering
 export async function GET(request: NextRequest) {
   try {
-    // Check permissions
-    const permissionCheck = await checkUserPermissions(Permission.VIEW_KNOWLEDGE_BASE);
-    if ('error' in permissionCheck) {
-      return NextResponse.json(
-        { error: permissionCheck.error },
-        { status: permissionCheck.status }
-      );
-    }
+    const cookieStore = cookies();
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
+            return cookieStore.get(name)?.value;
+          },
+        },
+      }
+    );
 
     // Get query parameters
     const searchParams = request.nextUrl.searchParams;
+    const category = searchParams.get('category');
+    const status = searchParams.get('status') as ArticleStatus | null;
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '10');
-    const categoryId = searchParams.get('categoryId');
-    const status = searchParams.get('status') as ArticleStatus | null;
-    const from = (page - 1) * limit;
-    const to = from + limit - 1;
 
     // Build query
     let query = supabase
-      .from('articles')
-      .select(`
-        *,
-        category:categories (id, name),
-        tags:article_tags (
-          tag:tags (id, name, color)
-        )
-      `, { count: 'exact' });
+      .from('knowledge_articles')
+      .select('*, category:category_id(*), author:author_id(*)', { count: 'exact' });
 
     // Apply filters
-    if (categoryId) {
-      query = query.eq('category_id', categoryId);
+    if (category) {
+      query = query.eq('category_id', category);
     }
 
-    // Only show published articles to customers
-    if (permissionCheck.user.type === 'customer') {
-      query = query.eq('status', ArticleStatus.PUBLISHED);
-    } else if (status) {
+    if (status) {
       query = query.eq('status', status);
+    } else {
+      // By default, only show published articles
+      query = query.eq('status', ArticleStatus.PUBLISHED);
     }
 
-    // Get articles with pagination
-    const { data: articles, count, error } = await query
-      .order('created_at', { ascending: false })
-      .range(from, to);
+    // Add pagination
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+    query = query.range(from, to).order('created_at', { ascending: false });
+
+    // Execute query
+    const { data: articles, count, error } = await query;
 
     if (error) {
       console.error('Error fetching articles:', error);
@@ -75,7 +70,6 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Format response
     return NextResponse.json({
       articles: articles || [],
       pagination: {
@@ -86,7 +80,7 @@ export async function GET(request: NextRequest) {
       }
     });
   } catch (error) {
-    console.error('Error in GET /api/knowledge/articles:', error);
+    console.error('Error in knowledge articles:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
@@ -97,12 +91,25 @@ export async function GET(request: NextRequest) {
 // POST /api/knowledge/articles - Create new article
 export async function POST(request: NextRequest) {
   try {
-    // Check permissions
-    const permissionCheck = await checkUserPermissions(Permission.MANAGE_KNOWLEDGE_BASE);
-    if ('error' in permissionCheck) {
+    const cookieStore = cookies();
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
+            return cookieStore.get(name)?.value;
+          },
+        },
+      }
+    );
+
+    // Get current user
+    const { data: { session }, error: authError } = await supabase.auth.getSession();
+    if (authError || !session) {
       return NextResponse.json(
-        { error: permissionCheck.error },
-        { status: permissionCheck.status }
+        { error: 'Unauthorized' },
+        { status: 401 }
       );
     }
 
@@ -110,21 +117,23 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const validatedData = createArticleSchema.parse(body);
 
-    // Start transaction
-    const { data: article, error: articleError } = await supabase
-      .from('articles')
+    // Create article
+    const { data: article, error } = await supabase
+      .from('knowledge_articles')
       .insert({
         title: validatedData.title,
         content: validatedData.content,
         category_id: validatedData.categoryId,
         status: validatedData.status || ArticleStatus.DRAFT,
-        created_by: permissionCheck.user.id
+        author_id: session.user.id,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       })
       .select()
       .single();
 
-    if (articleError) {
-      console.error('Error creating article:', articleError);
+    if (error) {
+      console.error('Error creating article:', error);
       return NextResponse.json(
         { error: 'Failed to create article' },
         { status: 500 }
@@ -132,8 +141,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Add tags if provided
-    if (validatedData.tags && validatedData.tags.length > 0) {
-      const { error: tagsError } = await supabase
+    if (validatedData.tags?.length) {
+      const { error: tagError } = await supabase
         .from('article_tags')
         .insert(
           validatedData.tags.map(tagId => ({
@@ -142,12 +151,8 @@ export async function POST(request: NextRequest) {
           }))
         );
 
-      if (tagsError) {
-        console.error('Error adding article tags:', tagsError);
-        return NextResponse.json(
-          { error: 'Failed to add article tags' },
-          { status: 500 }
-        );
+      if (tagError) {
+        console.error('Error adding tags:', tagError);
       }
     }
 

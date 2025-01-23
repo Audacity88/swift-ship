@@ -368,7 +368,7 @@ export const TicketList: React.FC<TicketListProps> = ({
                   />
                 </TableCell>
                 <TableCell>{ticket.title}</TableCell>
-                <TableCell>{ticket.customer.name}</TableCell>
+                <TableCell>{ticket.customer?.name || 'Unknown Customer'}</TableCell>
                 <TableCell>{ticket.assignee?.name || 'Unassigned'}</TableCell>
                 <TableCell>
                   <Badge variant={ticket.priority === 'high' ? 'destructive' : 'secondary'}>

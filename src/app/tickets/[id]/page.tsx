@@ -78,12 +78,32 @@ export default function TicketPage() {
   // Only fetch ticket data after authentication is confirmed
   useEffect(() => {
     const fetchTicket = async () => {
-      if (!isAuthenticated || !ticketId) return
+      if (!isAuthenticated) {
+        setError('Not authenticated')
+        setIsLoading(false)
+        return
+      }
+
+      if (!ticketId || ticketId === 'undefined') {
+        setError('Invalid ticket ID')
+        setIsLoading(false)
+        return
+      }
+
+      // Validate UUID format using regex
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      if (!uuidRegex.test(ticketId)) {
+        setError('Invalid ticket ID format')
+        setIsLoading(false)
+        return
+      }
       
       try {
-        const ticketData = await getTicket(ticketId)
+        const ticketData = await getTicket({}, ticketId)
         if (!ticketData) {
-          throw new Error('Ticket not found')
+          setError('Ticket not found')
+          setIsLoading(false)
+          return
         }
         setTicket(ticketData)
         setSelectedType((ticketData.metadata?.type as TicketType) || 'problem')
@@ -108,7 +128,7 @@ export default function TicketPage() {
     const fetchSlaStatus = async () => {
       if (!ticket) return
       try {
-        const status = await slaService.getTicketSLA(ticket.id)
+        const status = await slaService.getTicketSLA({}, ticket.id)
         setSlaStatus(status)
       } catch (error) {
         console.error('Error fetching SLA status:', error)

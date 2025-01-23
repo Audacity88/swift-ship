@@ -1,203 +1,216 @@
-import { db } from '@/lib/db';
-import type { Ticket, TicketStatus, TicketComment } from '@/types/ticket';
-import type { Session } from '@supabase/supabase-js';
+import type { Ticket, TicketStatus, TicketComment } from '@/types/ticket'
+import { getServerSupabase, type ServerContext } from '@/lib/supabase-client'
 
 interface CreateTicketData {
-  description: string;
-  title?: string;
-  priority?: 'low' | 'medium' | 'high' | 'urgent';
+  description: string
+  title?: string
+  priority?: 'low' | 'medium' | 'high' | 'urgent'
 }
 
 interface TicketListParams {
-  status?: TicketStatus;
-  page?: number;
-  limit?: number;
-  sortBy?: 'createdAt' | 'updatedAt' | 'status';
-  sortOrder?: 'asc' | 'desc';
+  status?: TicketStatus
+  page?: number
+  limit?: number
+  sortBy?: 'createdAt' | 'updatedAt' | 'status'
+  sortOrder?: 'asc' | 'desc'
 }
 
 interface TicketListResponse {
-  tickets: Ticket[];
+  tickets: Ticket[]
   pagination: {
-    page: number;
-    limit: number;
-    total: number;
-    totalPages: number;
-  };
+    page: number
+    limit: number
+    total: number
+    totalPages: number
+  }
 }
 
 export const customerTicketService = {
-  async createTicket(data: CreateTicketData): Promise<Ticket> {
-    const { data: { session }, error: sessionError } = await db.auth.getSession();
-    if (sessionError) throw sessionError;
-    if (!session?.user?.id) throw new Error('Not authenticated');
+  async createTicket(context: ServerContext, data: CreateTicketData): Promise<Ticket> {
+    try {
+      const supabase = getServerSupabase(context)
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (!session) {
+        throw new Error('Unauthorized')
+      }
 
-    // Get customer name
-    const { data: customer, error: customerError } = await db
-      .from('users')
-      .select('name')
-      .eq('id', session.user.id)
-      .single();
+      // Get customer name
+      const { data: customer, error: customerError } = await supabase
+        .from('users')
+        .select('name')
+        .eq('id', session.user.id)
+        .single()
 
-    if (customerError) throw customerError;
+      if (customerError) throw customerError
 
-    const { data: ticket, error } = await db.from('tickets').insert({
-      title: `Support Request from ${customer?.name || 'Customer'}`,
-      description: data.description,
-      status: 'open',
-      priority: data.priority || 'medium',
-      customer_id: session.user.id,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }).select('*').single();
+      const { data: ticket, error } = await supabase
+        .from('tickets')
+        .insert({
+          title: data.title || `Support Request from ${customer?.name || 'Customer'}`,
+          description: data.description,
+          status: 'open',
+          priority: data.priority || 'medium',
+          customer_id: session.user.id,
+          created_by: session.user.id,
+          updated_by: session.user.id,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single()
 
-    if (error) throw error;
-    return ticket;
-  },
+      if (error) throw error
+      if (!ticket) throw new Error('Failed to create ticket')
 
-  async getTickets(params: TicketListParams = {}): Promise<TicketListResponse> {
-    const {
-      status,
-      page = 1,
-      limit = 10,
-      sortBy = 'createdAt',
-      sortOrder = 'desc',
-    } = params;
-
-    const { data: { session }, error: sessionError } = await db.auth.getSession();
-    if (sessionError) throw sessionError;
-    if (!session?.user?.id) throw new Error('Not authenticated');
-
-    let query = db
-      .from('tickets')
-      .select('*, comments(*)')
-      .eq('customer_id', session.user.id);
-
-    if (status) {
-      query = query.eq('status', status);
+      return ticket
+    } catch (error) {
+      console.error('Error in createTicket:', error)
+      throw error
     }
-
-    // Apply sorting
-    query = query.order(sortBy, { ascending: sortOrder === 'asc' });
-
-    // Apply pagination
-    const from = (page - 1) * limit;
-    const to = from + limit - 1;
-    query = query.range(from, to);
-
-    const { data: tickets, error, count } = await query;
-    if (error) throw error;
-
-    // Get total count
-    const { count: totalCount, error: countError } = await db
-      .from('tickets')
-      .select('*', { count: 'exact', head: true })
-      .eq('customer_id', session.user.id);
-
-    if (countError) throw countError;
-
-    return {
-      tickets: tickets || [],
-      pagination: {
-        page,
-        limit,
-        total: totalCount || 0,
-        totalPages: Math.ceil((totalCount || 0) / limit),
-      },
-    };
   },
 
-  async getTicketById(id: string): Promise<Ticket> {
-    const { data: { session }, error: sessionError } = await db.auth.getSession();
-    if (sessionError) throw sessionError;
-    if (!session?.user?.id) throw new Error('Not authenticated');
+  async getCustomerTickets(context: ServerContext, params: TicketListParams = {}): Promise<TicketListResponse> {
+    try {
+      const supabase = getServerSupabase(context)
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (!session) {
+        throw new Error('Unauthorized')
+      }
 
-    const { data: ticket, error } = await db
-      .from('tickets')
-      .select('*, comments(*)')
-      .eq('id', id)
-      .eq('customer_id', session.user.id)
-      .single();
-
-    if (error) throw error;
-    if (!ticket) throw new Error('Ticket not found');
-
-    return ticket;
-  },
-
-  async addComment(ticketId: string, content: string): Promise<TicketComment> {
-    const { data: { session }, error: sessionError } = await db.auth.getSession();
-    if (sessionError) throw sessionError;
-    if (!session?.user?.id) throw new Error('Not authenticated');
-
-    // Verify ticket ownership
-    const { data: ticket, error: ticketError } = await db
-      .from('tickets')
-      .select('id')
-      .eq('id', ticketId)
-      .eq('customer_id', session.user.id)
-      .single();
-
-    if (ticketError || !ticket) throw new Error('Ticket not found');
-
-    // Add comment
-    const { data: comment, error } = await db.from('ticket_comments').insert({
-      ticket_id: ticketId,
-      content,
-      user_id: session.user.id,
-      is_internal: false,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }).select('*').single();
-
-    if (error) throw error;
-
-    // Update ticket updated_at
-    await db
-      .from('tickets')
-      .update({ updated_at: new Date().toISOString() })
-      .eq('id', ticketId);
-
-    return comment;
-  },
-
-  async updateTicketStatus(ticketId: string, status: TicketStatus): Promise<void> {
-    const { data: { session }, error: sessionError } = await db.auth.getSession();
-    if (sessionError) throw sessionError;
-    if (!session?.user?.id) throw new Error('Not authenticated');
-
-    // Verify ticket ownership
-    const { data: ticket, error: ticketError } = await db
-      .from('tickets')
-      .select('id, status')
-      .eq('id', ticketId)
-      .eq('customer_id', session.user.id)
-      .single();
-
-    if (ticketError || !ticket) throw new Error('Ticket not found');
-
-    // Validate status transition
-    const allowedTransitions: Record<TicketStatus, TicketStatus[]> = {
-      'open': ['closed' as TicketStatus, 'awaiting_response' as TicketStatus],
-      'in_progress': ['closed' as TicketStatus, 'awaiting_response' as TicketStatus],
-      'awaiting_response': ['closed' as TicketStatus, 'in_progress' as TicketStatus],
-      'resolved': ['closed' as TicketStatus, 'open' as TicketStatus],
-      'closed': ['open' as TicketStatus],
-    };
-
-    if (!allowedTransitions[ticket.status as TicketStatus]?.includes(status)) {
-      throw new Error('Invalid status transition');
-    }
-
-    // Update status
-    const { error } = await db
-      .from('tickets')
-      .update({
+      const {
         status,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', ticketId);
+        page = 1,
+        limit = 10,
+        sortBy = 'createdAt',
+        sortOrder = 'desc'
+      } = params
 
-    if (error) throw error;
+      let query = supabase
+        .from('tickets')
+        .select('*', { count: 'exact' })
+        .eq('customer_id', session.user.id)
+
+      if (status) {
+        query = query.eq('status', status)
+      }
+
+      // Add sorting
+      query = query.order(sortBy, { ascending: sortOrder === 'asc' })
+
+      // Add pagination
+      const from = (page - 1) * limit
+      const to = from + limit - 1
+      query = query.range(from, to)
+
+      const { data, error, count } = await query
+
+      if (error) throw error
+
+      return {
+        tickets: data || [],
+        pagination: {
+          page,
+          limit,
+          total: count || 0,
+          totalPages: Math.ceil((count || 0) / limit)
+        }
+      }
+    } catch (error) {
+      console.error('Error in getCustomerTickets:', error)
+      throw error
+    }
   },
-}; 
+
+  async addComment(context: ServerContext, ticketId: string, content: string): Promise<TicketComment> {
+    try {
+      const supabase = getServerSupabase(context)
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (!session) {
+        throw new Error('Unauthorized')
+      }
+
+      // First verify the ticket belongs to the customer
+      const { data: ticket, error: ticketError } = await supabase
+        .from('tickets')
+        .select('id')
+        .eq('id', ticketId)
+        .eq('customer_id', session.user.id)
+        .single()
+
+      if (ticketError || !ticket) {
+        throw new Error('Ticket not found or access denied')
+      }
+
+      const { data: comment, error } = await supabase
+        .from('ticket_comments')
+        .insert({
+          ticket_id: ticketId,
+          content,
+          author_id: session.user.id,
+          created_by: session.user.id,
+          updated_by: session.user.id,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+      if (!comment) throw new Error('Failed to add comment')
+
+      return comment
+    } catch (error) {
+      console.error('Error in addComment:', error)
+      throw error
+    }
+  },
+
+  async getTicketComments(context: ServerContext, ticketId: string): Promise<TicketComment[]> {
+    try {
+      const supabase = getServerSupabase(context)
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (!session) {
+        throw new Error('Unauthorized')
+      }
+
+      // First verify the ticket belongs to the customer
+      const { data: ticket, error: ticketError } = await supabase
+        .from('tickets')
+        .select('id')
+        .eq('id', ticketId)
+        .eq('customer_id', session.user.id)
+        .single()
+
+      if (ticketError || !ticket) {
+        throw new Error('Ticket not found or access denied')
+      }
+
+      const { data, error } = await supabase
+        .from('ticket_comments')
+        .select(`
+          id,
+          content,
+          created_at,
+          updated_at,
+          author:author_id (
+            id,
+            name,
+            avatar_url
+          )
+        `)
+        .eq('ticket_id', ticketId)
+        .order('created_at', { ascending: true })
+
+      if (error) throw error
+
+      return data || []
+    } catch (error) {
+      console.error('Error in getTicketComments:', error)
+      throw error
+    }
+  }
+} 

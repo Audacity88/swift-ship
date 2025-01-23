@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Loader2, ArrowLeft } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { db } from '@/lib/db';
+import { useSupabase } from '@/app/providers';
 
 interface ResetFormData {
   email: string;
@@ -16,95 +16,93 @@ interface ResetFormData {
 }
 
 export function PasswordReset() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState<ResetFormData>({ email: '' });
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [formData, setFormData] = useState<ResetFormData>({ email: '' });
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const supabase = useSupabase();
 
-  // Check if we're in reset mode (have token) or request mode
-  const token = searchParams?.get('token');
+  // Check if we're in reset mode (have a token)
+  const token = searchParams.get('token');
   const isResetMode = !!token;
 
-  const handleRequestReset = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError(null);
     setSuccess(null);
-
-    try {
-      const { error } = await db.auth.resetPasswordForEmail(formData.email, {
-        redirectTo: `${window.location.origin}/portal/auth/reset-password`,
-      });
-
-      if (error) throw error;
-
-      setSuccess('Password reset instructions have been sent to your email');
-    } catch (err: any) {
-      setError(err.message || 'Failed to send reset instructions');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleResetPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.password || !formData.confirmPassword) {
-      setError('Please fill in all fields');
-      return;
-    }
-
-    if (formData.password !== formData.confirmPassword) {
-      setError('Passwords do not match');
-      return;
-    }
-
     setLoading(true);
-    setError(null);
 
     try {
-      const { error } = await db.auth.updateUser({
-        password: formData.password,
-      });
+      if (isResetMode) {
+        // Validate passwords match
+        if (formData.password !== formData.confirmPassword) {
+          throw new Error('Passwords do not match');
+        }
 
-      if (error) throw error;
+        if (!formData.password) {
+          throw new Error('Password is required');
+        }
 
-      setSuccess('Password has been reset successfully');
-      setTimeout(() => {
-        router.push('/portal/auth/login');
-      }, 2000);
-    } catch (err: any) {
-      setError(err.message || 'Failed to reset password');
+        // Update password
+        const { error } = await supabase.auth.updateUser({
+          password: formData.password
+        });
+
+        if (error) throw error;
+
+        setSuccess('Password has been reset successfully');
+        setTimeout(() => {
+          router.push('/auth/signin');
+        }, 2000);
+      } else {
+        // Send reset email
+        const { error } = await supabase.auth.resetPasswordForEmail(formData.email, {
+          redirectTo: `${window.location.origin}/auth/reset-password`
+        });
+
+        if (error) throw error;
+
+        setSuccess('Password reset instructions have been sent to your email');
+      }
+    } catch (err) {
+      console.error('Password reset error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to process request');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="w-full max-w-md space-y-6 p-6 bg-white rounded-lg shadow-lg">
-      <div className="space-y-2 text-center">
-        <h1 className="text-2xl font-bold">
+    <div className="space-y-6">
+      <div className="space-y-2">
+        <Button
+          variant="ghost"
+          className="mb-4"
+          onClick={() => router.push('/auth/signin')}
+        >
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Back to Sign In
+        </Button>
+
+        <h1 className="text-2xl font-semibold tracking-tight">
           {isResetMode ? 'Reset Your Password' : 'Forgot Password'}
         </h1>
-        <p className="text-gray-500">
+        <p className="text-sm text-muted-foreground">
           {isResetMode
             ? 'Enter your new password below'
-            : 'Enter your email to receive reset instructions'}
+            : 'Enter your email and we'll send you reset instructions'}
         </p>
       </div>
 
-      <form
-        onSubmit={isResetMode ? handleResetPassword : handleRequestReset}
-        className="space-y-4"
-      >
+      <form onSubmit={handleSubmit} className="space-y-4">
         {!isResetMode && (
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
             <Input
               id="email"
               type="email"
-              placeholder="john@company.com"
               value={formData.email}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
               required
@@ -119,7 +117,7 @@ export function PasswordReset() {
               <Input
                 id="password"
                 type="password"
-                value={formData.password || ''}
+                value={formData.password}
                 onChange={(e) =>
                   setFormData({ ...formData, password: e.target.value })
                 }
@@ -132,7 +130,7 @@ export function PasswordReset() {
               <Input
                 id="confirmPassword"
                 type="password"
-                value={formData.confirmPassword || ''}
+                value={formData.confirmPassword}
                 onChange={(e) =>
                   setFormData({ ...formData, confirmPassword: e.target.value })
                 }
@@ -158,21 +156,11 @@ export function PasswordReset() {
           {loading ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              {isResetMode ? 'Resetting password...' : 'Sending instructions...'}
+              {isResetMode ? 'Resetting Password...' : 'Sending Instructions...'}
             </>
           ) : (
-            isResetMode ? 'Reset Password' : 'Send Reset Instructions'
+            isResetMode ? 'Reset Password' : 'Send Instructions'
           )}
-        </Button>
-
-        <Button
-          type="button"
-          variant="ghost"
-          className="w-full"
-          onClick={() => router.push('/portal/auth/login')}
-        >
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to Login
         </Button>
       </form>
     </div>

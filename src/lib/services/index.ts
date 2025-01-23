@@ -11,6 +11,7 @@ export { teamService } from './team-service'
 export { auditService } from './audit-service'
 export { customerTicketService } from './customer-ticket-service'
 export { statusWorkflow } from './status-workflow'
+export { agentService } from './agent-service'
 
 // Individual Functions - Ticket Service
 export {

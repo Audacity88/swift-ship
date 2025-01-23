@@ -24,8 +24,8 @@ import {
 } from '@/components/ui/popover'
 import { Textarea } from '@/components/ui/textarea'
 import { TicketStatus } from '@/types/enums'
-import { statusWorkflow } from '@/lib/services'
-import type { StatusTransition as StatusTransitionType, TransitionCondition } from '@/lib/services/status-workflow'
+import { statusWorkflow } from '@/lib/services/status-workflow'
+import type { StatusTransition as StatusTransitionType, TransitionCondition } from '@/types/status-workflow'
 
 interface StatusTransitionProps {
   ticketId: string
@@ -122,7 +122,7 @@ export function StatusTransition({
 
   // Check if status has conditions
   const getStatusConditions = (status: TicketStatus): TransitionCondition[] => {
-    const transition = availableTransitions.find(t => t.to === status)
+    const transition = availableTransitions.find(t => t.toStatus === status)
     return transition?.conditions || []
   }
 
@@ -149,7 +149,7 @@ export function StatusTransition({
             disabled={isLoading}
           >
             <Badge className={getStatusColor(currentStatus)}>
-              {currentStatus.replace('_', ' ')}
+              {currentStatus}
             </Badge>
             {isLoading ? (
               <Loader2 className="w-4 h-4 ml-2 animate-spin" />
@@ -161,21 +161,21 @@ export function StatusTransition({
         <PopoverContent className="w-56 p-2">
           <div className="grid gap-1">
             {availableTransitions.map(transition => {
-              const conditions = getStatusConditions(transition.to)
+              const conditions = getStatusConditions(transition.toStatus)
               const hasConditions = conditions.length > 0
 
               return (
                 <Button
-                  key={transition.to}
+                  key={transition.toStatus}
                   variant="ghost"
                   className="justify-start font-normal"
                   onClick={() => {
-                    setSelectedStatus(transition.to)
+                    setSelectedStatus(transition.toStatus)
                     setIsDialogOpen(true)
                   }}
                 >
-                  <Badge className={getStatusColor(transition.to)}>
-                    {transition.to.replace('_', ' ')}
+                  <Badge className={getStatusColor(transition.toStatus)}>
+                    {transition.toStatus}
                   </Badge>
                   {hasConditions && (
                     <AlertTriangle className="w-4 h-4 ml-2 text-yellow-500" />
@@ -193,7 +193,7 @@ export function StatusTransition({
             <DialogTitle>Update Status</DialogTitle>
             <DialogDescription>
               Change the ticket status to{' '}
-              {selectedStatus?.replace('_', ' ')}
+              {selectedStatus}
             </DialogDescription>
           </DialogHeader>
 

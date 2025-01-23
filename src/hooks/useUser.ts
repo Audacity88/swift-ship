@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { db } from '@/lib/db';
+import { useSupabase } from '@/app/providers';
 
 interface User {
   id: string;
@@ -11,14 +11,15 @@ interface User {
 export function useUser() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const supabase = useSupabase();
 
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        const { data: { user } } = await db.auth.getUser();
+        const { data: { user } } = await supabase.auth.getUser();
         if (user) {
           // First check if user is an agent
-          const { data: agentData } = await db
+          const { data: agentData } = await supabase
             .from('agents')
             .select('id, name')
             .eq('id', user.id)
@@ -35,7 +36,7 @@ export function useUser() {
           }
 
           // If not an agent, check if user is a customer
-          const { data: customerData } = await db
+          const { data: customerData } = await supabase
             .from('customers')
             .select('id, name')
             .eq('id', user.id)
@@ -58,7 +59,7 @@ export function useUser() {
     };
 
     fetchUser();
-  }, []);
+  }, [supabase]);
 
   return { user, loading };
 } 
