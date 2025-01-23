@@ -14,7 +14,7 @@ import type {
   SearchGroup, 
   SearchOperator 
 } from '@/types/search'
-import { searchService } from '@/lib/services/search-service'
+import { searchService } from '@/lib/services'
 
 interface SearchBuilderProps {
   onSearch: (query: SearchGroup) => void

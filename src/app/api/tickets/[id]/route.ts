@@ -1,15 +1,12 @@
 import { NextResponse } from 'next/server'
-import { z } from 'zod'
-import { sql, Transaction } from '@/lib/db'
-import { auth } from '@/lib/auth'
-import { TicketPriority, TicketStatus } from '@/types/ticket'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { TicketPriority, TicketStatus } from '@/types/ticket'
+import { z } from 'zod'
 import { Permission } from '@/types/role'
-import { hasAnyPermission, getUserRole } from '@/lib/auth/permissions'
-import { RoleType } from '@/types/role'
+import { getUserRole, hasAnyPermission } from '@/lib/auth/permissions'
 
-const createClient = async (request: Request) => {
+const createClient = async () => {
   const cookieStore = await cookies()
   
   return createServerClient(
@@ -20,18 +17,18 @@ const createClient = async (request: Request) => {
         get(name: string) {
           return cookieStore.get(name)?.value
         },
-        set(name: string, value: string, options: any) {
+        set(name: string, value: string, options: Record<string, unknown>) {
           try {
             cookieStore.set({ name, value, ...options })
-          } catch (error) {
-            // Handle cookie setting error
+          } catch {
+            // Handle cookie setting error silently
           }
         },
-        remove(name: string, options: any) {
+        remove(name: string, options: Record<string, unknown>) {
           try {
             cookieStore.set({ name, value: '', ...options })
-          } catch (error) {
-            // Handle cookie removal error
+          } catch {
+            // Handle cookie removal error silently
           }
         },
       },
@@ -48,7 +45,7 @@ interface TicketResult {
   priority: TicketPriority
   customer_id: string
   assignee_id: string | null
-  metadata: Record<string, any>
+  metadata: Record<string, unknown>
   created_at: string
   updated_at: string
   resolved_at: string | null
@@ -77,7 +74,7 @@ interface TicketResult {
   snapshots: Array<{
     id: string
     snapshotAt: string
-    data: Record<string, any>
+    data: Record<string, unknown>
     reason: string | null
     triggeredBy: string
   }>
@@ -108,9 +105,9 @@ const updateTicketSchema = z.object({
 // GET /api/tickets/[id] - Get a single ticket
 export async function GET(
   request: Request,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await Promise.resolve(context.params)
+  const { id } = await Promise.resolve((await context.params))
   
   console.log('API route hit:', { 
     url: request.url,
@@ -119,28 +116,18 @@ export async function GET(
   })
   
   try {
-    const authHeader = request.headers.get('Authorization')
-    if (!authHeader?.startsWith('Bearer ')) {
-      console.error('No Bearer token found')
+    const supabase = await createClient()
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+
+    if (sessionError || !session) {
+      console.error('Auth error:', sessionError)
       return NextResponse.json(
         { error: 'Not authenticated' },
         { status: 401 }
       )
     }
 
-    const token = authHeader.split(' ')[1]
-    const supabase = await createClient(request)
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-
-    if (authError || !user) {
-      console.error('Auth error:', authError)
-      return NextResponse.json(
-        { error: 'Invalid token' },
-        { status: 401 }
-      )
-    }
-
-    console.log('Authenticated as:', user.id)
+    console.log('Authenticated as:', session.user.id)
 
     // Get current ticket using Supabase query builder
     console.log('Fetching ticket:', id)
@@ -236,14 +223,13 @@ export async function GET(
 }
 
 // PATCH /api/tickets/[id] - Update a ticket
-export async function PATCH(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function PATCH(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
-    const supabase = await createClient(request)
-    const session = await auth()
-    if (!session) {
+    const supabase = await createClient()
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+
+    if (sessionError || !session) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -253,104 +239,91 @@ export async function PATCH(
     const json = await request.json()
     const body = updateTicketSchema.parse(json)
 
-    // Start a transaction
-    const result = await sql.transaction(async (tx: Transaction) => {
-      // Get current ticket state
-      const [currentTicket] = await tx.execute<TicketResult>(sql`
-        SELECT * FROM tickets WHERE id = ${params.id}
-      `)
+    // Get current ticket state
+    const { data: currentTicket, error: ticketError } = await supabase
+      .from('tickets')
+      .select('*')
+      .eq('id', params.id)
+      .single()
 
-      if (!currentTicket) {
-        throw new Error('Ticket not found')
-      }
+    if (ticketError) {
+      return NextResponse.json(
+        { error: 'Failed to fetch current ticket state' },
+        { status: 500 }
+      )
+    }
 
-      // Build update query dynamically
-      const updates: string[] = []
-      const values: any[] = []
-      let paramCount = 1
+    if (!currentTicket) {
+      return NextResponse.json(
+        { error: 'Ticket not found' },
+        { status: 404 }
+      )
+    }
 
-      if (body.title !== undefined) {
-        updates.push(`title = $${paramCount}`)
-        values.push(body.title)
-        paramCount++
-      }
-      if (body.description !== undefined) {
-        updates.push(`description = $${paramCount}`)
-        values.push(body.description)
-        paramCount++
-      }
-      if (body.priority !== undefined) {
-        updates.push(`priority = $${paramCount}`)
-        values.push(body.priority)
-        paramCount++
-      }
-      if (body.status !== undefined) {
-        updates.push(`status = $${paramCount}`)
-        values.push(body.status)
-        paramCount++
-        if (body.status === TicketStatus.RESOLVED) {
-          updates.push(`resolved_at = NOW()`)
-        }
-      }
-      if (body.assigneeId !== undefined) {
-        updates.push(`assignee_id = $${paramCount}`)
-        values.push(body.assigneeId)
-        paramCount++
-      }
-      if (body.metadata !== undefined) {
-        updates.push(`metadata = metadata || $${paramCount}::jsonb`)
-        values.push(JSON.stringify(body.metadata))
-        paramCount++
-      }
+    // Check if user has permission to update tickets
+    const userRole = await getUserRole(session.user.id)
+    if (!hasAnyPermission(userRole, [Permission.UPDATE_TICKETS])) {
+      return NextResponse.json(
+        { error: 'Permission denied' },
+        { status: 403 }
+      )
+    }
 
-      // Update ticket if there are changes
-      if (updates.length > 0) {
-        // Convert to parameterized query for sql template literal
-        const updateQuery = sql`
-          UPDATE tickets 
-          SET ${sql.__dangerous__rawValue(updates.join(', '))}, updated_at = NOW()
-          WHERE id = ${params.id}
-          RETURNING *
-        `
-        
-        const [ticket] = await tx.execute<TicketResult>(updateQuery)
+    // Prepare update data
+    const updateData: Record<string, any> = {
+      updated_at: new Date().toISOString()
+    }
 
-        // Update tags if provided
-        if (body.tags !== undefined) {
-          await tx.execute(sql`
-            DELETE FROM ticket_tags WHERE ticket_id = ${params.id}
-          `)
-          if (body.tags.length > 0) {
-            await tx.execute(sql`
-              INSERT INTO ticket_tags (ticket_id, tag_id)
-              SELECT ${params.id}, tag_id
-              FROM unnest(${sql.__dangerous__rawValue('{' + body.tags.join(',') + '}')}::uuid[]) AS tag_id
-            `)
-          }
-        }
+    if (body.title) updateData.title = body.title
+    if (body.description) updateData.description = body.description
+    if (body.priority) updateData.priority = body.priority
+    if (body.status) updateData.status = body.status
+    if (body.assigneeId !== undefined) updateData.assignee_id = body.assigneeId
+    if (body.metadata) updateData.metadata = body.metadata
 
-        // Create snapshot
-        await tx.execute(sql`
-          INSERT INTO ticket_snapshots (
-            ticket_id,
-            data,
-            reason,
-            triggered_by
-          ) VALUES (
-            ${params.id},
-            ${JSON.stringify(ticket)}::jsonb,
-            'Update',
-            ${session.id}
-          )
-        `)
-      }
-    })
+    // Update the ticket
+    const { data: updatedTicket, error: updateError } = await supabase
+      .from('tickets')
+      .update(updateData)
+      .eq('id', params.id)
+      .select()
+      .single()
 
-    return NextResponse.json({ data: result })
+    if (updateError) {
+      return NextResponse.json(
+        { error: 'Failed to update ticket: ' + updateError.message },
+        { status: 500 }
+      )
+    }
+
+    // Create audit log for the update
+    const { error: auditError } = await supabase
+      .from('audit_logs')
+      .insert({
+        entity_type: 'ticket',
+        entity_id: params.id,
+        action: 'update',
+        changes: body,
+        actor_id: session.user.id,
+        actor_type: 'agent'
+      })
+
+    if (auditError) {
+      console.error('Failed to create audit log:', auditError)
+      // Don't fail the request if audit log fails
+    }
+
+    return NextResponse.json({ data: updatedTicket })
   } catch (error) {
-    console.error('Server error:', error)
+    console.error('Error updating ticket:', error)
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Invalid request data', details: error.errors },
+        { status: 400 }
+      )
+    }
     return NextResponse.json(
-      { error: 'Failed to update ticket: ' + (error instanceof Error ? error.message : 'Unknown error') },
+      { error: 'Failed to update ticket' },
       { status: 500 }
     )
   }

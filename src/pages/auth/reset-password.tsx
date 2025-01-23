@@ -47,7 +47,7 @@ export default function ResetPassword() {
             Check your email
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
-            We've sent you a password reset link. Please check your email to reset your password.
+            We&apos;ve sent you a password reset link. Please check your email to reset your password.
           </p>
           <div className="mt-4 text-center">
             <Link
@@ -70,7 +70,7 @@ export default function ResetPassword() {
           Reset your password
         </h2>
         <p className="mt-2 text-center text-sm text-gray-600">
-          Enter your email address and we'll send you a link to reset your password.
+          Enter your email address and we&apos;ll send you a link to reset your password.
         </p>
       </div>
 

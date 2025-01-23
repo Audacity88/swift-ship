@@ -29,32 +29,23 @@ export default function ShipmentsPage() {
     setIsLoading(true)
     setError(null)
     try {
-      // We'll fetch tickets that have the 'shipment' tag.
-      // We can do a join on ticket_tags and tags or we can do a filter eq.
-      // We'll do a simpler approach: "select * from tickets where is_archived=false" or "like"?
-      // Actually let's do a big query:
       const { data, error } = await supabase
-        .rpc('get_tickets_by_tag', { tag_name: 'shipment' }) // if we had a custom function
-      // If we don't have that function, we do a manual approach:
-      // Alternatively, we do something like:
-      //   .from('ticket_tags')
-      //   .select('tickets(*), tags!inner(name)')
-      //   .eq('tags.name','shipment')
-      // But let's assume a simpler approach. We'll do the manual approach:
-      /*
-      const { data, error } = await supabase
-        .from('ticket_tags')
-        .select('tickets(*), tag:tags(*)')
-        .eq('tag.name', 'shipment')
-      */
-      // We'll just do a standard approach if we don't have get_tickets_by_tag function:
+        .from('tickets')
+        .select(`
+          *,
+          ticket_tags!inner(
+            tags!inner(name)
+          )
+        `)
+        .eq('ticket_tags.tags.name', 'shipment')
+        .order('created_at', { ascending: false })
+
       if (error) {
         throw error
       }
       if (!data) {
         setTickets([])
       } else {
-        // data is an array of tickets from the rpc
         setTickets(data)
       }
     } catch (err: any) {

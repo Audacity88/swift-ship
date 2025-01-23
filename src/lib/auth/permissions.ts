@@ -1,6 +1,6 @@
-import { isAgentRole, Permission, RoleType } from '@/types/role';
+import { roleService } from '@/lib/services'
 import { createClient } from '@supabase/supabase-js';
-import { roleService } from '@/lib/services/role-service';
+import { RoleType, Permission } from '@/types/role'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -66,9 +66,12 @@ export async function getUserPermissions(): Promise<Permission[]> {
     .single();
 
   if (agent) {
-    const permissions = await roleService.getUserPermissions(agent.role as RoleType);
-    cachePermissions(session.user.id, permissions, agent.role as RoleType);
-    return permissions;
+    const permissions = await roleService.getPermissionsForRole(agent.role as RoleType);
+    if (permissions) {
+      cachePermissions(session.user.id, permissions, agent.role as RoleType);
+      return permissions;
+    }
+    return [];
   }
 
   // If not an agent, check if user is a customer
@@ -79,9 +82,11 @@ export async function getUserPermissions(): Promise<Permission[]> {
     .single();
 
   if (customer) {
-    const permissions = await roleService.getUserPermissions(RoleType.CUSTOMER);
-    cachePermissions(session.user.id, permissions, RoleType.CUSTOMER);
-    return permissions;
+    const permissions = await roleService.getPermissionsForRole(RoleType.CUSTOMER);
+    if (permissions) {
+      cachePermissions(session.user.id, permissions, RoleType.CUSTOMER);
+      return permissions;
+    }
   }
 
   return [];
@@ -125,12 +130,14 @@ export async function getUserRole(): Promise<AuthUser | null> {
     .single();
 
   if (agent) {
-    const permissions = await roleService.getUserPermissions(agent.role as RoleType);
-    cachePermissions(session.user.id, permissions, agent.role as RoleType);
-    return {
-      role: agent.role,
-      type: 'agent'
-    };
+    const permissions = await roleService.getPermissionsForRole(agent.role as RoleType);
+    if (permissions) {
+      cachePermissions(session.user.id, permissions, agent.role as RoleType);
+      return {
+        role: agent.role,
+        type: 'agent'
+      };
+    }
   }
 
   // If not an agent, check if user is a customer
@@ -141,12 +148,14 @@ export async function getUserRole(): Promise<AuthUser | null> {
     .single();
 
   if (customer) {
-    const permissions = await roleService.getUserPermissions(RoleType.CUSTOMER);
-    cachePermissions(session.user.id, permissions, RoleType.CUSTOMER);
-    return {
-      role: 'customer',
-      type: 'customer'
-    };
+    const permissions = await roleService.getPermissionsForRole(RoleType.CUSTOMER);
+    if (permissions) {
+      cachePermissions(session.user.id, permissions, RoleType.CUSTOMER);
+      return {
+        role: 'customer',
+        type: 'customer'
+      };
+    }
   }
 
   return null;
@@ -161,16 +170,19 @@ const ROLE_HIERARCHY: Record<RoleType, RoleType[]> = {
 };
 
 // Get all permissions for a role including inherited ones
-export function getAllPermissionsForRole(role: RoleType): Permission[] {
-  const basePermissions = roleService.getDefaultPermissions(role);
+export async function getAllPermissionsForRole(role: RoleType): Promise<Permission[]> {
+  const basePermissions = await roleService.getPermissionsForRole(role);
   const inheritedRoles = ROLE_HIERARCHY[role] || [];
   
-  const inheritedPermissions = inheritedRoles.flatMap(inheritedRole => 
-    roleService.getDefaultPermissions(inheritedRole)
+  const inheritedPermissionsPromises = inheritedRoles.map(inheritedRole => 
+    roleService.getPermissionsForRole(inheritedRole)
   );
 
+  const inheritedPermissions = await Promise.all(inheritedPermissionsPromises);
+  const allPermissions = [...(basePermissions || []), ...inheritedPermissions.flat()];
+
   // Remove duplicates
-  return [...new Set([...basePermissions, ...inheritedPermissions])];
+  return [...new Set(allPermissions)];
 }
 
 // Add this before isAuthorizedForRoute

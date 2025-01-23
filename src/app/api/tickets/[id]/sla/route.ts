@@ -26,10 +26,8 @@ const pauseSLASchema = z.object({
 })
 
 // GET /api/tickets/[id]/sla - Get SLA status
-export async function GET(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function GET(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     // Get ticket and SLA state
     const [result] = await sql.execute(sql`
@@ -128,10 +126,8 @@ export async function GET(
 }
 
 // POST /api/tickets/[id]/sla/pause - Pause SLA timer
-export async function POST(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function POST(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const session = await auth()
     if (!session) {
@@ -216,10 +212,8 @@ export async function POST(
 }
 
 // POST /api/tickets/[id]/sla/resume - Resume SLA timer
-export async function PUT(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function PUT(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const session = await auth()
     if (!session) {

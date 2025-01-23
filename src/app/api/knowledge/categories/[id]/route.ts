@@ -2,25 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { Permission } from '@/types/role';
 import { checkUserPermissions } from '@/lib/auth/check-permissions';
-import { z } from 'zod';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-const updateCategorySchema = z.object({
-  name: z.string().min(1).optional(),
-  description: z.string().optional(),
-  parentId: z.string().uuid().optional(),
-  order: z.number().int().min(0).optional()
-});
-
 // GET /api/knowledge/categories/[id] - Get category details
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     // Check permissions
     const permissionCheck = await checkUserPermissions(Permission.VIEW_KNOWLEDGE_BASE);
@@ -66,10 +56,8 @@ export async function GET(
 }
 
 // PUT /api/knowledge/categories/[id] - Update category
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PUT(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     // Check permissions
     const permissionCheck = await checkUserPermissions(Permission.MANAGE_KNOWLEDGE_BASE);
@@ -160,10 +148,8 @@ export async function PUT(
 }
 
 // DELETE /api/knowledge/categories/[id] - Delete category
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     // Check permissions
     const permissionCheck = await checkUserPermissions(Permission.MANAGE_KNOWLEDGE_BASE);

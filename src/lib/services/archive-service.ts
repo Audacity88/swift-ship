@@ -1,143 +1,131 @@
+import { supabase } from '@/lib/supabase'
 import type { Ticket, Agent, TicketSnapshot } from '@/types/ticket'
+import { v4 as uuidv4 } from 'uuid'
 
-export class ArchiveService {
-  /**
-   * Archive a ticket
-   */
-  async archiveTicket(
-    ticket: Ticket,
-    agent: Agent,
-    reason?: string
-  ): Promise<Ticket> {
-    // Create a snapshot before archiving
-    await this.createSnapshot(ticket, agent, 'pre-archive')
-
-    const now = new Date().toISOString()
-    
-    const archivedTicket: Ticket = {
-      ...ticket,
-      isArchived: true,
-      metadata: {
-        ...ticket.metadata,
-        archivedAt: now,
-        archivedBy: agent,
-        archiveReason: reason
-      }
+export const archiveService = {
+  async archiveTicket(ticket: Ticket, currentAgent: Agent, reason: string): Promise<Ticket> {
+    // Mark ticket as archived
+    const updatedMetadata = {
+      ...ticket.metadata,
+      archivedAt: new Date().toISOString(),
+      archivedBy: currentAgent,
+      archiveReason: reason,
     }
 
-    // TODO: Save to database
-    return archivedTicket
-  }
+    const { data, error } = await supabase
+      .from('tickets')
+      .update({
+        is_archived: true,
+        metadata: updatedMetadata
+      })
+      .eq('id', ticket.id)
+      .select()
+      .single()
 
-  /**
-   * Restore an archived ticket
-   */
-  async restoreTicket(
-    ticket: Ticket,
-    agent: Agent
-  ): Promise<Ticket> {
-    if (!ticket.isArchived) {
-      throw new Error('Ticket is not archived')
+    if (error || !data) {
+      throw new Error(error?.message || 'Failed to archive ticket')
     }
 
-    // Create a snapshot before restoring
-    await this.createSnapshot(ticket, agent, 'pre-restore')
+    // Create snapshot
+    await this.createSnapshot(data, currentAgent, 'Archive')
 
-    const restoredTicket: Ticket = {
-      ...ticket,
-      isArchived: false,
-      metadata: {
-        ...ticket.metadata,
-        archivedAt: undefined,
-        archivedBy: undefined,
-        archiveReason: undefined
-      }
+    return data
+  },
+
+  async restoreTicket(ticket: Ticket, currentAgent: Agent): Promise<Ticket> {
+    // Mark ticket as unarchived
+    const updatedMetadata = {
+      ...ticket.metadata,
+      archivedAt: null,
+      archivedBy: null,
+      archiveReason: null,
     }
 
-    // TODO: Save to database
-    return restoredTicket
-  }
+    const { data, error } = await supabase
+      .from('tickets')
+      .update({
+        is_archived: false,
+        metadata: updatedMetadata
+      })
+      .eq('id', ticket.id)
+      .select()
+      .single()
 
-  /**
-   * Create a snapshot of the ticket's current state
-   */
-  async createSnapshot(
-    ticket: Ticket,
-    agent: Agent,
-    reason?: string
-  ): Promise<TicketSnapshot> {
-    const now = new Date().toISOString()
-    
-    const snapshot: TicketSnapshot = {
-      id: crypto.randomUUID(),
-      ticketId: ticket.id,
-      snapshotAt: now,
-      data: {
-        ...ticket,
-      },
-      reason,
-      triggeredBy: agent
+    if (error || !data) {
+      throw new Error(error?.message || 'Failed to restore ticket')
     }
 
-    // Update ticket's last snapshot timestamp
-    ticket.metadata.lastSnapshotAt = now
+    // Create snapshot
+    await this.createSnapshot(data, currentAgent, 'Restore')
 
-    // TODO: Save snapshot to database
-    return snapshot
-  }
+    return data
+  },
 
-  /**
-   * Get all snapshots for a ticket
-   */
   async getTicketSnapshots(ticketId: string): Promise<TicketSnapshot[]> {
-    // TODO: Fetch from database
-    return []
-  }
+    // In code references, snapshots are stored in "ticket_snapshots"
+    const { data, error } = await supabase
+      .from('ticket_snapshots')
+      .select('*')
+      .eq('ticket_id', ticketId)
+      .order('snapshot_at', { ascending: false })
 
-  /**
-   * Restore a ticket to a specific snapshot
-   */
-  async restoreSnapshot(
-    ticket: Ticket,
-    snapshotId: string,
-    agent: Agent
-  ): Promise<Ticket> {
-    // Create a snapshot of current state before restoring
-    await this.createSnapshot(ticket, agent, 'pre-snapshot-restore')
-
-    // TODO: Fetch snapshot from database
-    const snapshot: TicketSnapshot | null = null // Placeholder
-    
-    if (!snapshot) {
-      throw new Error('Snapshot not found')
+    if (error) {
+      console.error('Failed to load snapshots:', error)
+      return []
     }
 
-    const restoredTicket: Ticket = {
-      ...(snapshot as TicketSnapshot).data,
-      metadata: {
-        ...(snapshot as TicketSnapshot).data.metadata,
-        updatedAt: new Date().toISOString()
-      }
+    return (data || []).map((s: any) => ({
+      id: s.id,
+      ticketId: s.ticket_id,
+      snapshotAt: s.snapshot_at,
+      data: s.data,
+      reason: s.reason || undefined,
+      triggeredBy: s.triggered_by,
+    }))
+  },
+
+  async restoreSnapshot(ticket: Ticket, snapshotId: string, currentAgent: Agent): Promise<Ticket> {
+    // Load snapshot
+    const { data: snapData, error: snapError } = await supabase
+      .from('ticket_snapshots')
+      .select('*')
+      .eq('id', snapshotId)
+      .single()
+
+    if (snapError || !snapData) {
+      throw new Error(snapError?.message || 'Snapshot not found')
     }
 
-    // TODO: Save restored ticket to database
-    return restoredTicket
-  }
+    // Use the snapshot data to restore
+    const { data: updatedTicket, error } = await supabase
+      .from('tickets')
+      .update({
+        ...snapData.data,
+      })
+      .eq('id', ticket.id)
+      .select()
+      .single()
 
-  /**
-   * Get a list of archived tickets with optional filtering
-   */
-  async getArchivedTickets(params: {
-    page?: number
-    limit?: number
-    from?: string
-    to?: string
-    archivedBy?: string
-  }): Promise<{ tickets: Ticket[]; total: number }> {
-    // TODO: Implement database query with filtering
-    return { tickets: [], total: 0 }
-  }
+    if (error || !updatedTicket) {
+      throw new Error(error?.message || 'Failed to restore snapshot')
+    }
+
+    // Optionally create a new snapshot to reflect the restore action
+    await this.createSnapshot(updatedTicket, currentAgent, 'Snapshot Restore')
+
+    return updatedTicket
+  },
+
+  async createSnapshot(ticketData: any, agent: Agent, reason?: string) {
+    await supabase
+      .from('ticket_snapshots')
+      .insert({
+        id: uuidv4(),
+        ticket_id: ticketData.id,
+        snapshot_at: new Date().toISOString(),
+        data: ticketData,
+        reason,
+        triggered_by: agent.id,
+      })
+  },
 }
-
-// Create singleton instance
-export const archiveService = new ArchiveService() 

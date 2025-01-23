@@ -1,269 +1,178 @@
 'use client'
 
-import { useState } from 'react'
-import { useParams } from 'next/navigation'
-import { Search, Link2, AlertCircle, Check, X } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { useRouter, useParams } from 'next/navigation'
+import { Search, Link as LinkIcon, Plus, X } from 'lucide-react'
 
 interface LinkedTicket {
   id: string
   title: string
   status: string
   priority: string
-  type: string
-  createdAt: string
+  created_at: string
 }
 
-const mockLinkedTickets: LinkedTicket[] = [
-  {
-    id: 'TICKET-123',
-    title: 'Server performance degradation in US-East region',
-    status: 'open',
-    priority: 'high',
-    type: 'problem',
-    createdAt: '2024-03-15T10:30:00Z',
-  },
-  {
-    id: 'TICKET-124',
-    title: 'Database connection timeout issues',
-    status: 'in-progress',
-    priority: 'urgent',
-    type: 'incident',
-    createdAt: '2024-03-15T11:45:00Z',
-  },
-]
-
-const mockSearchResults: LinkedTicket[] = [
-  {
-    id: 'TICKET-125',
-    title: 'API Gateway latency spikes',
-    status: 'open',
-    priority: 'medium',
-    type: 'problem',
-    createdAt: '2024-03-15T09:15:00Z',
-  },
-  {
-    id: 'TICKET-126',
-    title: 'Cache invalidation errors',
-    status: 'open',
-    priority: 'high',
-    type: 'incident',
-    createdAt: '2024-03-15T08:30:00Z',
-  },
-]
-
 export default function LinkedProblemPage() {
+  const [searchQuery, setSearchQuery] = useState('')
+  const [linkedTickets, setLinkedTickets] = useState<LinkedTicket[]>([])
+  const [availableTickets, setAvailableTickets] = useState<LinkedTicket[]>([])
+  const [isLoading, setIsLoading] = useState(false)
+
+  const router = useRouter()
   const params = useParams()
   const ticketId = params?.id as string
-  const [searchQuery, setSearchQuery] = useState('')
-  const [isSearching, setIsSearching] = useState(false)
-  const [searchResults, setSearchResults] = useState<LinkedTicket[]>([])
-  const [linkedTickets, setLinkedTickets] = useState<LinkedTicket[]>(mockLinkedTickets)
 
-  const handleSearch = async () => {
-    setIsSearching(true)
+  // Load current linked problem tickets
+  useEffect(() => {
+    const loadLinkedProblems = async () => {
+      try {
+        const response = await fetch('/api/tickets/' + ticketId + '/linked-problems', {
+          credentials: 'include'
+        })
+        if (!response.ok) {
+          const error = await response.json()
+          throw new Error(error.error || 'Failed to fetch linked problems')
+        }
+        const data = await response.json()
+        setLinkedTickets(data || [])
+      } catch (error) {
+        console.error('Failed to load linked problems:', error)
+      }
+    }
+    loadLinkedProblems()
+  }, [ticketId])
+
+  // Load available problem tickets
+  useEffect(() => {
+    const loadAvailableProblems = async () => {
+      try {
+        const response = await fetch('/api/tickets?type=problem', {
+          credentials: 'include'
+        })
+        if (!response.ok) {
+          const error = await response.json()
+          throw new Error(error.error || 'Failed to fetch available problems')
+        }
+        const { data } = await response.json()
+        if (!Array.isArray(data)) {
+          throw new Error('Invalid response format')
+        }
+        setAvailableTickets(data.filter((ticket: LinkedTicket) => 
+          ticket.id !== ticketId && !linkedTickets.some(lt => lt.id === ticket.id)
+        ))
+      } catch (error) {
+        console.error('Failed to load available problems:', error)
+      }
+    }
+    loadAvailableProblems()
+  }, [ticketId, linkedTickets])
+
+  // Filter tickets based on search query
+  const filteredTickets = availableTickets.filter((ticket) => {
+    if (!searchQuery) return true
+    return ticket.title.toLowerCase().includes(searchQuery.toLowerCase())
+  })
+
+  const handleLinkToggle = async (ticket: LinkedTicket) => {
+    setIsLoading(true)
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      setSearchResults(mockSearchResults)
+      const isLinked = linkedTickets.some(t => t.id === ticket.id)
+      const method = isLinked ? 'DELETE' : 'POST'
+      
+      const response = await fetch('/api/tickets/' + ticketId + '/linked-problems', {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ problemId: ticket.id }),
+        credentials: 'include'
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to update linked problems')
+      }
+
+      if (isLinked) {
+        setLinkedTickets(prev => prev.filter(t => t.id !== ticket.id))
+      } else {
+        setLinkedTickets(prev => [...prev, ticket])
+      }
+      router.refresh()
     } catch (error) {
-      console.error('Failed to search tickets:', error)
+      console.error('Failed to update linked problems:', error)
+      // TODO: Add toast notification here
     } finally {
-      setIsSearching(false)
-    }
-  }
-
-  const handleLink = async (ticket: LinkedTicket) => {
-    try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 500))
-      setLinkedTickets(prev => [...prev, ticket])
-      setSearchResults(prev => prev.filter(t => t.id !== ticket.id))
-    } catch (error) {
-      console.error('Failed to link ticket:', error)
-    }
-  }
-
-  const handleUnlink = async (ticketId: string) => {
-    try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 500))
-      setLinkedTickets(prev => prev.filter(t => t.id !== ticketId))
-    } catch (error) {
-      console.error('Failed to unlink ticket:', error)
+      setIsLoading(false)
     }
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      {/* Search and Link Section */}
-      <div className="lg:col-span-2 space-y-6">
-        <div className="bg-white border border-gray-200 rounded-lg p-6">
-          <h2 className="text-lg font-medium text-gray-900 mb-4">Link Related Problems</h2>
-          
-          {/* Search Input */}
-          <div className="flex gap-4 mb-6">
-            <div className="flex-1 relative">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search for tickets by ID or title"
-                className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg \
-                  focus:outline-none focus:ring-2 focus:ring-primary/20 \
-                  focus:border-primary transition-colors"
-              />
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            </div>
-            <button
-              onClick={handleSearch}
-              disabled={!searchQuery.trim() || isSearching}
-              className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-lg \
-                hover:bg-primary/90 transition-colors disabled:opacity-50"
-              style={{ backgroundColor: '#0052CC' }}
-            >
-              {isSearching ? 'Searching...' : 'Search'}
-            </button>
-          </div>
+    <div className="space-y-6">
+      <div className="bg-white border border-gray-200 rounded-lg p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-lg font-medium text-gray-900">Linked Problem Tickets</h2>
+        </div>
 
-          {/* Search Results */}
-          {searchResults.length > 0 && (
-            <div className="space-y-4">
-              <h3 className="text-sm font-medium text-gray-700">Search Results</h3>
-              {searchResults.map((ticket) => (
-                <div
-                  key={ticket.id}
-                  className="flex items-center justify-between p-4 border \
-                    border-gray-200 rounded-lg hover:border-gray-300 transition-colors"
-                >
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-sm font-medium text-gray-900">
-                        {ticket.id}
-                      </span>
-                      <span className="text-sm text-gray-500">•</span>
-                      <span className="text-sm text-gray-500">{ticket.type}</span>
-                    </div>
-                    <h4 className="text-sm text-gray-900">{ticket.title}</h4>
-                  </div>
-                  <button
-                    onClick={() => handleLink(ticket)}
-                    className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium \
-                      text-primary hover:bg-primary/5 rounded transition-colors"
-                  >
-                    <Link2 className="w-4 h-4" />
-                    Link
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
+        {/* Search */}
+        <div className="relative mb-6">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search problem tickets..."
+            className="w-full pl-10 pr-4 py-2 text-base border border-gray-200 rounded-lg \
+              focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+          />
         </div>
 
         {/* Linked Tickets */}
-        <div className="bg-white border border-gray-200 rounded-lg p-6">
-          <h2 className="text-lg font-medium text-gray-900 mb-4">Linked Problems</h2>
-          {linkedTickets.length === 0 ? (
-            <div className="text-center py-8">
-              <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-              <p className="text-sm text-gray-500">No linked problems found</p>
-              <p className="text-sm text-gray-500">
-                Search and link related problems above
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {linkedTickets.map((ticket) => (
-                <div
+        <div className="mb-6">
+          <h3 className="text-sm font-medium text-gray-700 mb-3">Linked Problems</h3>
+          <div className="space-y-2">
+            {linkedTickets.length === 0 ? (
+              <p className="text-sm text-gray-500">No problem tickets linked</p>
+            ) : (
+              linkedTickets.map((ticket) => (
+                <button
                   key={ticket.id}
-                  className="flex items-start justify-between p-4 border \
-                    border-gray-200 rounded-lg"
+                  onClick={() => !isLoading && handleLinkToggle(ticket)}
+                  disabled={isLoading}
+                  className="w-full flex items-center justify-between px-4 py-2 text-sm \
+                    bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors"
                 >
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-sm font-medium text-gray-900">
-                        {ticket.id}
-                      </span>
-                      <span className="text-sm text-gray-500">•</span>
-                      <span
-                        className={`text-sm font-medium px-2 py-0.5 rounded-full ${
-                          ticket.priority === 'urgent'
-                            ? 'bg-red-50 text-red-700'
-                            : ticket.priority === 'high'
-                            ? 'bg-orange-50 text-orange-700'
-                            : 'bg-blue-50 text-blue-700'
-                        }`}
-                      >
-                        {ticket.priority}
-                      </span>
-                    </div>
-                    <h4 className="text-sm text-gray-900">{ticket.title}</h4>
-                    <div className="flex items-center gap-2 mt-2">
-                      <span
-                        className={`text-xs px-2 py-0.5 rounded-full ${
-                          ticket.status === 'open'
-                            ? 'bg-green-50 text-green-700'
-                            : 'bg-purple-50 text-purple-700'
-                        }`}
-                      >
-                        {ticket.status}
-                      </span>
-                      <span className="text-xs text-gray-500">
-                        Created on {new Date(ticket.createdAt).toLocaleDateString()}
-                      </span>
-                    </div>
+                  <div className="flex items-center gap-2">
+                    <LinkIcon className="w-4 h-4 text-gray-400" />
+                    <span className="font-medium">{ticket.title}</span>
                   </div>
-                  <button
-                    onClick={() => handleUnlink(ticket.id)}
-                    className="flex items-center gap-1 px-2 py-1 text-sm font-medium \
-                      text-red-600 hover:bg-red-50 rounded transition-colors"
-                  >
-                    <X className="w-4 h-4" />
-                    Unlink
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
+                  <X className="w-4 h-4 text-gray-400" />
+                </button>
+              ))
+            )}
+          </div>
         </div>
-      </div>
 
-      {/* Relationship Details */}
-      <div>
-        <div className="bg-white border border-gray-200 rounded-lg p-6">
-          <h2 className="text-lg font-medium text-gray-900 mb-4">Relationship Details</h2>
-          
-          {/* Statistics */}
-          <div className="space-y-6">
-            <div>
-              <h3 className="text-sm font-medium text-gray-700 mb-3">Quick Stats</h3>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 bg-gray-50 rounded-lg">
-                  <div className="text-2xl font-semibold text-gray-900">
-                    {linkedTickets.length}
-                  </div>
-                  <div className="text-sm text-gray-500">Linked Problems</div>
+        {/* Available Tickets */}
+        <div>
+          <h3 className="text-sm font-medium text-gray-700 mb-3">Available Problem Tickets</h3>
+          <div className="space-y-2">
+            {filteredTickets.map((ticket) => (
+              <button
+                key={ticket.id}
+                onClick={() => !isLoading && handleLinkToggle(ticket)}
+                disabled={isLoading}
+                className="w-full flex items-center justify-between px-4 py-2 text-sm \
+                  border border-gray-200 hover:border-gray-300 rounded-lg transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <Plus className="w-4 h-4 text-gray-400" />
+                  <span>{ticket.title}</span>
                 </div>
-                <div className="p-4 bg-gray-50 rounded-lg">
-                  <div className="text-2xl font-semibold text-gray-900">
-                    {linkedTickets.filter(t => t.status === 'open').length}
-                  </div>
-                  <div className="text-sm text-gray-500">Open Problems</div>
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="px-2 py-1 rounded-full bg-gray-100">{ticket.status}</span>
+                  <span className="px-2 py-1 rounded-full bg-gray-100">{ticket.priority}</span>
                 </div>
-              </div>
-            </div>
-
-            {/* Guidelines */}
-            <div className="pt-6 border-t border-gray-200">
-              <h3 className="text-sm font-medium text-gray-700 mb-3">
-                Linking Guidelines
-              </h3>
-              <ul className="text-sm text-gray-500 space-y-2">
-                <li>• Link related problems to track dependencies</li>
-                <li>• Ensure proper problem categorization</li>
-                <li>• Review existing links periodically</li>
-                <li>• Update relationships as problems evolve</li>
-              </ul>
-            </div>
+              </button>
+            ))}
           </div>
         </div>
       </div>

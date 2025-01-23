@@ -70,6 +70,7 @@ const AGENT_ROUTES = [
   '/analytics/[id]',
   '/knowledge',
   '/knowledge/[id]',
+  '/admin/quotes',
 ]
 
 // Define routes that require admin permissions
@@ -101,12 +102,10 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
-  let response = NextResponse.next({
-    request: {
-      headers: request.headers,
-    },
-  })
+  // Initialize response
+  let response = NextResponse.next()
 
+  // Create Supabase client
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -116,6 +115,16 @@ export async function middleware(request: NextRequest) {
           return request.cookies.get(name)?.value
         },
         set(name: string, value: string, options: CookieOptions) {
+          request.cookies.set({
+            name,
+            value,
+            ...options,
+          })
+          response = NextResponse.next({
+            request: {
+              headers: request.headers,
+            },
+          })
           response.cookies.set({
             name,
             value,
@@ -123,6 +132,16 @@ export async function middleware(request: NextRequest) {
           })
         },
         remove(name: string, options: CookieOptions) {
+          request.cookies.set({
+            name,
+            value: '',
+            ...options,
+          })
+          response = NextResponse.next({
+            request: {
+              headers: request.headers,
+            },
+          })
           response.cookies.set({
             name,
             value: '',
@@ -133,17 +152,18 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  const { data: { session } } = await supabase.auth.getSession()
+  // Verify auth status using getUser instead of getSession
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
 
   // Require authentication for API routes except auth
   if (request.nextUrl.pathname.startsWith('/api/') && !request.nextUrl.pathname.startsWith('/api/auth')) {
-    if (!session) {
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    // Clone the request headers and add the session token
+    // Clone the request headers and add the user ID for verification
     const requestHeaders = new Headers(request.headers)
-    requestHeaders.set('Authorization', `Bearer ${session.access_token}`)
+    requestHeaders.set('X-User-Id', user.id)
 
     // Return a new response with the modified headers
     return NextResponse.next({
@@ -156,14 +176,14 @@ export async function middleware(request: NextRequest) {
   // Allow access to public routes
   if (PUBLIC_ROUTES.includes(request.nextUrl.pathname)) {
     // If user is signed in and trying to access auth pages, redirect to home
-    if (session && request.nextUrl.pathname.startsWith('/auth/') && request.nextUrl.pathname !== '/auth/signout') {
+    if (user && request.nextUrl.pathname.startsWith('/auth/') && request.nextUrl.pathname !== '/auth/signout') {
       return NextResponse.redirect(new URL('/home', request.url))
     }
     return response
   }
 
   // Require authentication for all other routes
-  if (!session) {
+  if (!user) {
     // Don't redirect API routes, just return 401
     if (request.nextUrl.pathname.startsWith('/api/')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -175,7 +195,7 @@ export async function middleware(request: NextRequest) {
   const { data: agent } = await supabase
     .from('agents')
     .select('id, role')
-    .eq('id', session.user.id)
+    .eq('id', user.id)
     .single()
 
   const isCustomer = !agent

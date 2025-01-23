@@ -18,28 +18,14 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { Textarea } from '@/components/ui/textarea'
 import { TicketStatus } from '@/types/enums'
-
-interface StatusTransition {
-  status: TicketStatus
-  requiredRole?: string
-  conditions?: {
-    type: string
-    message: string
-  }[]
-}
+import { statusWorkflow } from '@/lib/services'
+import type { StatusTransition as StatusTransitionType, TransitionCondition } from '@/lib/services/status-workflow'
 
 interface StatusTransitionProps {
   ticketId: string
@@ -55,7 +41,7 @@ export function StatusTransition({
   className = ''
 }: StatusTransitionProps) {
   // State
-  const [availableTransitions, setAvailableTransitions] = useState<StatusTransition[]>([])
+  const [availableTransitions, setAvailableTransitions] = useState<StatusTransitionType[]>([])
   const [selectedStatus, setSelectedStatus] = useState<TicketStatus | null>(null)
   const [reason, setReason] = useState('')
   const [isLoading, setIsLoading] = useState(true)
@@ -67,12 +53,16 @@ export function StatusTransition({
     const loadTransitions = async () => {
       try {
         setIsLoading(true)
-        const response = await fetch(`/api/tickets/${ticketId}/status`)
-        const data = await response.json()
-        setAvailableTransitions(data.data || [])
+        setError(null)
+        const transitions = await statusWorkflow.getAvailableTransitions(ticketId, currentStatus)
+        setAvailableTransitions(transitions)
       } catch (error) {
         console.error('Failed to load status transitions:', error)
-        setError('Failed to load available status transitions')
+        const errorMessage = error instanceof Error && error.message === 'Unauthorized' 
+          ? 'Please sign in to view available status transitions.'
+          : 'Unable to load status transitions. Please try again later.'
+        setError(errorMessage)
+        setAvailableTransitions([])
       } finally {
         setIsLoading(false)
       }
@@ -107,26 +97,46 @@ export function StatusTransition({
     setError(null)
 
     try {
+      // Validate transition first
+      const isValid = await statusWorkflow.validateTransition(ticketId, currentStatus, selectedStatus)
+      if (!isValid) {
+        setError('This status transition is not allowed')
+        return
+      }
+
       await onStatusChange(selectedStatus, reason.trim() || undefined)
       setIsDialogOpen(false)
       setSelectedStatus(null)
       setReason('')
 
       // Refresh transitions
-      const { data: transitions } = await fetch(`/api/tickets/${ticketId}/status`).then(res => res.json())
-      setAvailableTransitions(transitions.data || [])
+      const transitions = await statusWorkflow.getAvailableTransitions(ticketId, selectedStatus)
+      setAvailableTransitions(transitions)
     } catch (error) {
       console.error('Failed to update status:', error)
-      setError(error instanceof Error ? error.message : 'Failed to update status')
+      setError('Failed to update status. Please try again.')
     } finally {
       setIsLoading(false)
     }
   }
 
   // Check if status has conditions
-  const getStatusConditions = (status: TicketStatus) => {
-    const transition = availableTransitions.find(t => t.status === status)
+  const getStatusConditions = (status: TicketStatus): TransitionCondition[] => {
+    const transition = availableTransitions.find(t => t.to === status)
     return transition?.conditions || []
+  }
+
+  if (error) {
+    return (
+      <div className={`flex items-center gap-2 text-sm ${error.includes('sign in') ? 'text-amber-500' : 'text-red-500'} ${className}`}>
+        {error.includes('sign in') ? (
+          <AlertTriangle className="w-4 h-4" />
+        ) : (
+          <AlertCircle className="w-4 h-4" />
+        )}
+        {error}
+      </div>
+    )
   }
 
   return (
@@ -151,21 +161,21 @@ export function StatusTransition({
         <PopoverContent className="w-56 p-2">
           <div className="grid gap-1">
             {availableTransitions.map(transition => {
-              const conditions = getStatusConditions(transition.status)
+              const conditions = getStatusConditions(transition.to)
               const hasConditions = conditions.length > 0
 
               return (
                 <Button
-                  key={transition.status}
+                  key={transition.to}
                   variant="ghost"
                   className="justify-start font-normal"
                   onClick={() => {
-                    setSelectedStatus(transition.status)
+                    setSelectedStatus(transition.to)
                     setIsDialogOpen(true)
                   }}
                 >
-                  <Badge className={getStatusColor(transition.status)}>
-                    {transition.status.replace('_', ' ')}
+                  <Badge className={getStatusColor(transition.to)}>
+                    {transition.to.replace('_', ' ')}
                   </Badge>
                   {hasConditions && (
                     <AlertTriangle className="w-4 h-4 ml-2 text-yellow-500" />

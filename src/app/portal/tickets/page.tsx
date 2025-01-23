@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { ChevronLeft } from 'lucide-react';
 import { TicketList } from '@/components/features/portal/TicketList';
-import { customerTicketService } from '@/lib/services/customer-ticket-service';
+import { customerTicketService } from '@/lib/services';
 import type { Ticket, TicketStatus } from '@/types/ticket';
 import { useToast } from '@/components/ui/use-toast';
 

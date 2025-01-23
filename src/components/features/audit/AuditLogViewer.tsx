@@ -6,6 +6,7 @@ import { Clock, User } from 'lucide-react'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
 import type { TicketStatus, TicketPriority, Tag } from '@/types/ticket'
+import { auditService } from '@/lib/services'
 
 interface TicketSnapshotData {
   status: TicketStatus;
@@ -47,10 +48,19 @@ export const AuditLogViewer = ({ ticketId }: AuditLogViewerProps) => {
   useEffect(() => {
     const loadSnapshots = async () => {
       try {
-        const response = await fetch(`/api/tickets/${ticketId}/snapshots`)
-        if (!response.ok) throw new Error('Failed to load snapshots')
-        const data = await response.json()
-        setSnapshots(data)
+        const logs = await auditService.getAuditLogs()
+        const ticketLogs = logs.filter(log => log.entity_id === ticketId && log.entity_type === 'ticket')
+        setSnapshots(ticketLogs.map(log => ({
+          id: log.id,
+          ticketId: log.entity_id,
+          snapshotAt: log.created_at,
+          data: log.changes as TicketSnapshotData,
+          reason: log.change_reason,
+          triggeredBy: {
+            name: log.actor_name || 'Unknown',
+            avatar: log.actor_avatar
+          }
+        })))
       } catch (error) {
         console.error('Failed to load snapshots:', error)
       } finally {

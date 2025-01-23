@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import type { Team } from '@/types/team';
-import { teamService } from '@/lib/services/team-service';
+import { teamService } from '@/lib/services';
 import {
   Table,
   TableBody,

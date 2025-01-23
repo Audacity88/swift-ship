@@ -66,7 +66,7 @@ export default function UpgradePage() {
         <div className="text-center mb-12">
           <h1 className="text-4xl font-bold mb-4">Upgrade Your Plan</h1>
           <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-            Choose the perfect plan for your team's needs. All plans include our core features with additional capabilities as you grow.
+            Choose the perfect plan for your team&apos;s needs. All plans include our core features with additional capabilities as you grow.
           </p>
         </div>
 

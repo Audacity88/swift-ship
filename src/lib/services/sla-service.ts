@@ -1,316 +1,260 @@
-import type { 
-  SLAConfig, 
-  StatusAutomation,
-  StatusCondition,
-  StatusAction,
-  SLAAction
-} from '@/types/sla'
-import { DEFAULT_SLA_CONFIGS, DEFAULT_STATUS_AUTOMATIONS } from '@/types/sla'
-import type { Ticket } from '@/types/ticket'
+import { supabase } from '@/lib/supabase'
+import { TicketStatus, TicketPriority } from '@/types/enums'
+import { DEFAULT_SLA_CONFIGS, type SLAConfig } from '@/types/sla'
+import type { SLAState } from '@/types/sla'
 
-export interface SLAState {
-  ticketId: string
-  configId: string
-  startedAt: string
-  totalPausedTime: number
-  pausedAt?: string
-  responseBreached?: boolean
-  resolutionBreached?: boolean
-  breachedAt?: string
-  lastEscalationThreshold?: number
+// Map priorities to their default SLA config IDs
+const PRIORITY_TO_CONFIG_ID: Record<TicketPriority, string> = {
+  [TicketPriority.URGENT]: 'urgent_sla',
+  [TicketPriority.HIGH]: 'high_sla',
+  [TicketPriority.MEDIUM]: 'medium_sla',
+  [TicketPriority.LOW]: 'low_sla'
 }
 
 export class SLAService {
-  private slaConfigs: SLAConfig[]
-  private statusAutomations: StatusAutomation[]
+  private authStateReady: boolean = false
+  private authCheckPromise: Promise<void>
 
-  constructor(
-    customSLAConfigs: SLAConfig[] = [],
-    customAutomations: StatusAutomation[] = []
-  ) {
-    this.slaConfigs = [...DEFAULT_SLA_CONFIGS, ...customSLAConfigs]
-    this.statusAutomations = [...DEFAULT_STATUS_AUTOMATIONS, ...customAutomations]
+  constructor() {
+    // Initialize auth state check
+    this.authCheckPromise = this.waitForAuthState()
   }
 
-  /**
-   * Start SLA tracking for a ticket
-   */
-  async startSLA(ticket: Ticket): Promise<SLAState | null> {
-    const config = this.getSLAConfig(ticket)
-    if (!config) return null
-
-    const slaState: SLAState = {
-      ticketId: ticket.id,
-      configId: config.id,
-      startedAt: new Date().toISOString(),
-      totalPausedTime: 0
-    }
-
-    // TODO: Save to database
-    return slaState
-  }
-
-  /**
-   * Pause SLA tracking (e.g., when waiting for customer)
-   */
-  async pauseSLA(ticketId: string): Promise<SLAState | null> {
-    // TODO: Fetch current state from database
-    const state = await this.getSLAState(ticketId)
-    if (!state || state.pausedAt) return state
-
-    const updatedState: SLAState = {
-      ticketId: state.ticketId,
-      configId: state.configId,
-      startedAt: state.startedAt,
-      totalPausedTime: state.totalPausedTime,
-      pausedAt: new Date().toISOString()
-    }
-
-    return updatedState
-  }
-
-  /**
-   * Resume SLA tracking
-   */
-  async resumeSLA(ticketId: string): Promise<SLAState | null> {
-    // TODO: Fetch current state from database
-    const state = await this.getSLAState(ticketId)
-    if (!state || !state.pausedAt) return state
-
-    const pausedDuration = Date.now() - new Date(state.pausedAt).getTime()
-    const pausedMinutes = Math.floor(pausedDuration / (1000 * 60))
-
-    const updatedState: SLAState = {
-      ticketId: state.ticketId,
-      configId: state.configId,
-      startedAt: state.startedAt,
-      totalPausedTime: state.totalPausedTime + pausedMinutes,
-      pausedAt: undefined
-    }
-
-    return updatedState
-  }
-
-  /**
-   * Check SLA status and trigger escalations
-   */
-  async checkSLA(ticket: Ticket): Promise<void> {
-    const state = await this.getSLAState(ticket.id)
-    if (!state || state.pausedAt) return
-
-    const config = this.slaConfigs.find(c => c.id === state.configId)
-    if (!config) return
-
-    const elapsed = this.getElapsedTime(state)
-    const threshold = Math.floor((elapsed / config.resolutionTime) * 100)
-
-    // Check for breaches
-    if (elapsed > config.responseTime && !state.responseBreached) {
-      await this.handleSLABreach(ticket, state, 'response')
-    }
-
-    if (elapsed > config.resolutionTime && !state.resolutionBreached) {
-      await this.handleSLABreach(ticket, state, 'resolution')
-    }
-
-    // Check for escalations
-    const pendingEscalations = config.escalations
-      .filter(e => e.threshold > (state.lastEscalationThreshold || 0) && e.threshold <= threshold)
-      .sort((a, b) => a.threshold - b.threshold)
-
-    for (const escalation of pendingEscalations) {
-      await this.executeEscalationActions(ticket, escalation.actions)
-      await this.updateLastEscalation(state, escalation.threshold)
-    }
-  }
-
-  /**
-   * Check and execute status automations
-   */
-  async checkAutomations(ticket: Ticket): Promise<void> {
-    const activeAutomations = this.statusAutomations.filter(a => a.isActive)
-
-    for (const automation of activeAutomations) {
-      const shouldExecute = await this.checkConditions(ticket, automation.conditions)
-      if (shouldExecute) {
-        await this.executeStatusActions(ticket, automation.actions)
+  private async waitForAuthState(): Promise<void> {
+    return new Promise((resolve) => {
+      const checkAuth = async () => {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session || Date.now() - startTime > 5000) { // 5 second timeout
+          this.authStateReady = true
+          resolve()
+        } else {
+          setTimeout(checkAuth, 100)
+        }
       }
-    }
+      const startTime = Date.now()
+      checkAuth()
+    })
   }
 
-  /**
-   * Get current SLA state
-   */
-  async getSLAState(ticketId: string): Promise<SLAState | null> {
-    // TODO: Fetch from database
-    return null
-  }
-
-  /**
-   * Get appropriate SLA config for a ticket
-   */
-  private getSLAConfig(ticket: Ticket): SLAConfig | null {
-    return this.slaConfigs.find(config => config.priority === ticket.priority) || null
-  }
-
-  /**
-   * Calculate elapsed time considering business hours and paused time
-   */
-  private getElapsedTime(state: SLAState): number {
-    const config = this.slaConfigs.find(c => c.id === state.configId)
-    if (!config) return 0
-
-    const now = new Date()
-    const start = new Date(state.startedAt)
-    let elapsed = (now.getTime() - start.getTime()) / (1000 * 60) // minutes
-
-    // Subtract paused time
-    elapsed -= state.totalPausedTime
-
-    // Consider business hours if configured
-    if (config.businessHours) {
-      // TODO: Implement business hours calculation
-    }
-
-    return Math.max(0, elapsed)
-  }
-
-  /**
-   * Handle SLA breach
-   */
-  private async handleSLABreach(
-    ticket: Ticket,
-    state: SLAState,
-    type: 'response' | 'resolution'
-  ): Promise<void> {
-    const updates: Partial<SLAState> = {
-      breachedAt: new Date().toISOString()
-    }
-
-    if (type === 'response') {
-      updates.responseBreached = true
-    } else {
-      updates.resolutionBreached = true
-    }
-
-    // TODO: Save breach state
-    // TODO: Trigger notifications
-  }
-
-  /**
-   * Execute escalation actions
-   */
-  private async executeEscalationActions(
-    ticket: Ticket,
-    actions: SLAAction[]
-  ): Promise<void> {
-    for (const action of actions) {
-      switch (action.type) {
-        case 'notify':
-          // TODO: Send notifications
-          break
-
-        case 'escalate_priority':
-          // TODO: Escalate ticket priority
-          break
-
-        case 'reassign':
-          // TODO: Reassign ticket
-          break
-
-        case 'custom':
-          await action.action(ticket.id)
-          break
-      }
-    }
-  }
-
-  /**
-   * Update last escalation state
-   */
-  private async updateLastEscalation(
-    state: SLAState,
-    threshold: number
-  ): Promise<void> {
-    // TODO: Save to database
-  }
-
-  /**
-   * Check automation conditions
-   */
-  private async checkConditions(
-    ticket: Ticket,
-    conditions: StatusCondition[]
-  ): Promise<boolean> {
-    for (const condition of conditions) {
-      let met = false;
-
-      switch (condition.type) {
-        case 'time_in_status':
-          if (condition.params.status === ticket.status) {
-            const timeInStatus = Date.now() - new Date(ticket.metadata?.updatedAt || Date.now()).getTime();
-            const thresholdMs = (condition.params.timeThreshold || 0) * 60 * 1000;
-            met = timeInStatus >= thresholdMs;
-          }
-          break;
-
-        case 'priority':
-          if (condition.params.minPriority) {
-            const priorities = ['low', 'medium', 'high', 'urgent'];
-            const minIndex = priorities.indexOf(condition.params.minPriority);
-            const currentIndex = priorities.indexOf(ticket.priority);
-            met = currentIndex >= minIndex;
-          }
-          break;
-
-        case 'tag':
-          if (condition.params.tags) {
-            const ticketTags = new Set(ticket.metadata?.tags?.map(t => t.id) || []);
-            met = condition.params.tags.every(tag => ticketTags.has(tag));
-          }
-          break;
-
-        case 'custom':
-          if (condition.params.customCheck) {
-            met = await condition.params.customCheck(ticket.id);
-          }
-          break;
+  async getTicketSLA(ticketId: string): Promise<SLAState | null> {
+    try {
+      // Wait for auth state to be ready
+      if (!this.authStateReady) {
+        await this.authCheckPromise
       }
 
-      if (!met) return false;
-    }
+      // Get the current session
+      const { data: sessionData } = await supabase.auth.getSession()
+      const session = sessionData?.session
 
-    return true;
+      if (!session) {
+        console.warn('No active session after auth ready')
+        return null
+      }
+
+      // Get ticket priority first
+      const { data: ticket, error: ticketError } = await supabase
+        .from('tickets')
+        .select('priority, created_at')
+        .eq('id', ticketId)
+        .single()
+
+      if (ticketError) {
+        console.warn('Failed to fetch ticket:', ticketError)
+        return null
+      }
+
+      // Get existing SLA state
+      const { data: slaState, error: slaError } = await supabase
+        .from('sla_states')
+        .select('*')
+        .eq('ticket_id', ticketId)
+        .maybeSingle()
+
+      if (slaError) {
+        console.warn('Failed to fetch SLA state:', slaError)
+        return null
+      }
+
+      // If SLA state exists, return it
+      if (slaState) {
+        return slaState
+      }
+
+      // Otherwise create a new SLA state
+      const priority = ticket.priority as TicketPriority
+      const configId = DEFAULT_SLA_CONFIGS[priority]?.id
+
+      if (!configId) {
+        console.warn('No SLA config found for priority:', priority)
+        return null
+      }
+
+      // Create new SLA state
+      const { data: newState, error: createError } = await supabase
+        .from('sla_states')
+        .insert({
+          ticket_id: ticketId,
+          config_id: configId,
+          start_time: ticket.created_at,
+          paused: false
+        })
+        .select()
+        .single()
+
+      if (createError) {
+        console.error('Failed to create SLA state:', createError)
+        return null
+      }
+
+      return newState
+    } catch (error) {
+      console.error('Error getting ticket SLA:', error)
+      return null
+    }
   }
 
-  /**
-   * Execute status automation actions
-   */
-  private async executeStatusActions(
-    ticket: Ticket,
-    actions: StatusAction[]
-  ): Promise<void> {
-    for (const action of actions) {
-      switch (action.type) {
-        case 'change_status':
-          // TODO: Update ticket status
-          break
-
-        case 'add_tag':
-          // TODO: Add tags to ticket
-          break
-
-        case 'notify':
-          // TODO: Send notifications
-          break
-
-        case 'custom':
-          await action.action(ticket.id)
-          break
+  async pauseSLA(ticketId: string, reason: string): Promise<boolean> {
+    try {
+      // Wait for auth state to be ready
+      if (!this.authStateReady) {
+        await this.authCheckPromise
       }
+
+      // Get the current session
+      const { data: sessionData } = await supabase.auth.getSession()
+      const session = sessionData?.session
+      
+      if (!session) {
+        console.warn('No active session after auth ready')
+        return false
+      }
+
+      // set paused_at = now, keep track of reason in an audit
+      const { data: state, error: fetchError } = await supabase
+        .from('sla_states')
+        .select('*')
+        .eq('ticket_id', ticketId)
+        .single()
+
+      if (fetchError || !state) {
+        console.error('No SLA state found or error:', fetchError)
+        return false
+      }
+
+      if (state.paused_at) {
+        console.error('SLA is already paused')
+        return false
+      }
+
+      const { error: updateError } = await supabase
+        .from('sla_states')
+        .update({
+          paused_at: new Date().toISOString(),
+        })
+        .eq('ticket_id', ticketId)
+
+      if (updateError) {
+        console.error('Failed to pause SLA:', updateError)
+        return false
+      }
+
+      // Create audit log
+      const { error: auditError } = await supabase
+        .from('audit_logs')
+        .insert({
+          entity_type: 'ticket',
+          entity_id: ticketId,
+          action: 'sla_pause',
+          changes: { reason },
+          actor_id: session.user.id,
+          actor_type: 'agent'
+        })
+
+      if (auditError) {
+        console.error('Failed to create audit log:', auditError)
+      }
+
+      return true
+    } catch (error) {
+      console.error('Error in pauseSLA:', error)
+      return false
+    }
+  }
+
+  async resumeSLA(ticketId: string): Promise<boolean> {
+    try {
+      // Wait for auth state to be ready
+      if (!this.authStateReady) {
+        await this.authCheckPromise
+      }
+
+      // Get the current session
+      const { data: sessionData } = await supabase.auth.getSession()
+      const session = sessionData?.session
+      
+      if (!session) {
+        console.warn('No active session after auth ready')
+        return false
+      }
+
+      // remove paused_at, add to total_paused_time
+      const { data: state, error: fetchError } = await supabase
+        .from('sla_states')
+        .select('*')
+        .eq('ticket_id', ticketId)
+        .single()
+
+      if (fetchError || !state) {
+        console.error('No SLA state found or error:', fetchError)
+        return false
+      }
+
+      if (!state.paused_at) {
+        console.error('SLA not paused, cannot resume')
+        return false
+      }
+
+      const pausedAt = new Date(state.paused_at)
+      const additionalPausedMinutes = Math.floor((Date.now() - pausedAt.getTime()) / (1000 * 60))
+      const totalPaused = (state.total_paused_time || 0) + additionalPausedMinutes
+
+      const { error: updateError } = await supabase
+        .from('sla_states')
+        .update({
+          paused_at: null,
+          total_paused_time: totalPaused,
+        })
+        .eq('ticket_id', ticketId)
+
+      if (updateError) {
+        console.error('Failed to resume SLA:', updateError)
+        return false
+      }
+
+      // Create audit log
+      const { error: auditError } = await supabase
+        .from('audit_logs')
+        .insert({
+          entity_type: 'ticket',
+          entity_id: ticketId,
+          action: 'sla_resume',
+          changes: { additionalPausedMinutes },
+          actor_id: session.user.id,
+          actor_type: 'agent'
+        })
+
+      if (auditError) {
+        console.error('Failed to create audit log:', auditError)
+      }
+
+      return true
+    } catch (error) {
+      console.error('Error in resumeSLA:', error)
+      return false
     }
   }
 }
 
 // Create singleton instance
-export const slaService = new SLAService() 
+export const slaService = new SLAService()

@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server'
-import type { CustomFieldValue } from '@/types/custom-field'
 
 export async function PUT(
   request: Request,

@@ -37,10 +37,14 @@ export default function AgentsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [roleFilter, setRoleFilter] = useState('all')
   const [showAddDialog, setShowAddDialog] = useState(false)
-  const [newAgent, setNewAgent] = useState({
+  const [newAgent, setNewAgent] = useState<{
+    name: string;
+    email: string;
+    role: 'agent' | 'admin' | 'supervisor';
+  }>({
     name: '',
     email: '',
-    role: 'agent' as const,
+    role: 'agent',
   })
 
   // Fetch agents on load

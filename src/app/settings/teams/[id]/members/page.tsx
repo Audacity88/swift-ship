@@ -1,4 +1,5 @@
-'use client';
+'use client';;
+import { use } from "react";
 
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -7,12 +8,13 @@ import { ArrowLeft } from 'lucide-react';
 import { TeamMembers } from '@/components/features/teams/TeamMembers';
 
 interface TeamMembersPageProps {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 }
 
-export default function TeamMembersPage({ params }: TeamMembersPageProps) {
+export default function TeamMembersPage(props: TeamMembersPageProps) {
+  const params = use(props.params);
   const router = useRouter();
 
   const handleUpdate = () => {

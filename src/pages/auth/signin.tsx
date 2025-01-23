@@ -3,6 +3,7 @@ import { createBrowserClient } from '@supabase/ssr'
 import Link from 'next/link'
 import { useRouter } from 'next/router'
 import { COLORS } from '@/lib/constants'
+import { generatePKCEChallenge } from '@/lib/auth/pkce'
 
 export default function SignIn() {
   const [email, setEmail] = useState('')
@@ -44,9 +45,20 @@ export default function SignIn() {
     setLoading(true)
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      // Generate PKCE challenge
+      const { codeVerifier, codeChallenge } = await generatePKCEChallenge()
+      
+      // Store code verifier securely in session storage (will be cleared after use)
+      sessionStorage.setItem('pkce_code_verifier', codeVerifier)
+
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
+        options: {
+          pkceVerifier: codeVerifier,
+          pkceChallenge: codeChallenge,
+          pkceChallengeMethod: 'S256'
+        }
       })
 
       if (error) {
@@ -54,9 +66,20 @@ export default function SignIn() {
         return
       }
 
+      // Verify user immediately after sign in
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (userError || !user) {
+        setError('Failed to verify user authentication')
+        return
+      }
+
+      // Clear PKCE verifier
+      sessionStorage.removeItem('pkce_code_verifier')
+
       router.push('/')
     } catch (err) {
       setError('An unexpected error occurred')
+      console.error('Sign in error:', err)
     } finally {
       setLoading(false)
     }

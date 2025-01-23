@@ -1,51 +1,59 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
-import type { Tag } from '@/types/ticket'
 
-const createClient = () => {
+const createClient = async () => {
+  const cookieStore = await cookies()
+  
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        async get(name: string) {
-          const cookieStore = await cookies()
+        get(name: string) {
           return cookieStore.get(name)?.value
+        },
+        set(name: string, value: string, options: Record<string, unknown>) {
+          try {
+            cookieStore.set({ name, value, ...options })
+          } catch {
+            // Handle cookie setting error silently
+          }
+        },
+        remove(name: string, options: Record<string, unknown>) {
+          try {
+            cookieStore.set({ name, value: '', ...options })
+          } catch {
+            // Handle cookie removal error silently
+          }
         },
       },
     }
   )
 }
 
-export async function GET(request: Request) {
+// GET /api/tags - Get all tags
+export async function GET() {
   try {
     const supabase = await createClient()
-    const { searchParams } = new URL(request.url)
-    const search = searchParams.get('search')
-    const parentId = searchParams.get('parent_id')
-
-    let query = supabase
+    const { data: tags, error } = await supabase
       .from('tags')
       .select('*')
+      .order('name')
 
-    if (search) {
-      query = query.ilike('name', `%${search}%`)
+    if (error) {
+      console.error('Failed to fetch tags:', error)
+      return NextResponse.json(
+        { error: 'Failed to fetch tags' },
+        { status: 500 }
+      )
     }
-
-    if (parentId) {
-      query = query.eq('parent_id', parentId)
-    }
-
-    const { data: tags, error } = await query.order('name')
-
-    if (error) throw error
 
     return NextResponse.json(tags)
-  } catch (error) {
-    console.error('Failed to fetch tags:', error)
+  } catch (err) {
+    console.error('Error in tags API:', err)
     return NextResponse.json(
-      { error: 'Failed to fetch tags' },
+      { error: 'Internal server error' },
       { status: 500 }
     )
   }

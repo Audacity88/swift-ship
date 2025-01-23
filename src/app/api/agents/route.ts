@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
-import { UserRole } from '@/types/role'
+
+// Define types for database responses
+type AgentRole = {
+  role: 'admin' | 'agent'
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -29,13 +33,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify the current user is an admin
-    const { data: currentAgent, error: currentAgentError } = await supabase
+    const { data: currentAgent } = await supabase
       .from('agents')
       .select('role')
       .eq('id', authUser.id)
-      .single()
+      .single<AgentRole>()
 
-    if (currentAgentError || !currentAgent || currentAgent.role !== 'admin') {
+    if (!currentAgent || currentAgent.role !== 'admin') {
       return NextResponse.json(
         { error: 'Unauthorized - Admin access required' },
         { status: 403 }
@@ -119,7 +123,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const cookieStore = await cookies()
     const supabase = createServerClient(
@@ -145,13 +149,13 @@ export async function GET(request: NextRequest) {
     }
 
     // Verify the current user is an admin
-    const { data: currentAgent, error: currentAgentError } = await supabase
+    const { data: currentAgent } = await supabase
       .from('agents')
       .select('role')
       .eq('id', authUser.id)
-      .single()
+      .single<AgentRole>()
 
-    if (currentAgentError || !currentAgent || currentAgent.role !== 'admin') {
+    if (!currentAgent || currentAgent.role !== 'admin') {
       return NextResponse.json(
         { error: 'Unauthorized - Admin access required' },
         { status: 403 }
@@ -179,4 +183,8 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
+}
+
+export async function DELETE() {
+  // ... existing code ...
 } 

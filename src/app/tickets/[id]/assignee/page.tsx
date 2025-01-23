@@ -1,67 +1,71 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useRouter, useParams } from 'next/navigation'
 import Image from 'next/image'
 import { Search, UserPlus, History, Check } from 'lucide-react'
 import type { Agent } from '@/types/ticket'
 
 // Mock data - replace with actual API calls
-const mockAgents: Agent[] = [
-  {
-    id: '1',
-    name: 'Sarah Wilson',
-    email: 'sarah@example.com',
-    role: 'agent',
-    avatar: 'https://picsum.photos/200',
-  },
-  {
-    id: '2',
-    name: 'Michael Chen',
-    email: 'michael@example.com',
-    role: 'agent',
-    avatar: 'https://picsum.photos/201',
-  },
-  {
-    id: '3',
-    name: 'Emma Davis',
-    email: 'emma@example.com',
-    role: 'agent',
-    avatar: 'https://picsum.photos/202',
-  },
-]
-
-const mockAssignmentHistory = [
-  {
-    id: '1',
-    agent: mockAgents[0],
-    assignedAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-    assignedBy: {
-      id: '4',
-      name: 'Admin User',
-      email: 'admin@example.com',
-      role: 'admin',
-    },
-  },
-  {
-    id: '2',
-    agent: mockAgents[1],
-    assignedAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(),
-    assignedBy: {
-      id: '4',
-      name: 'Admin User',
-      email: 'admin@example.com',
-      role: 'admin',
-    },
-  },
-]
+// We'll remove the mocks. We'll store agents in state and assignmentHistory in another state or skip it.
 
 export default function TicketAssigneePage() {
   const [searchQuery, setSearchQuery] = useState('')
+  const [agents, setAgents] = useState<Agent[]>([])
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null)
   const [isAssigning, setIsAssigning] = useState(false)
+  const [assignmentHistory, setAssignmentHistory] = useState<Array<{
+    id: string
+    agent: {
+      name: string
+      avatar?: string
+    }
+    assignedBy: {
+      name: string
+    }
+    assignedAt: string
+  }>>([])
 
-  // Filter agents based on search query
-  const filteredAgents = mockAgents.filter((agent) => {
+  const router = useRouter()
+  const params = useParams()
+  const ticketId = params?.id as string
+
+  useEffect(() => {
+    const loadAgents = async () => {
+      try {
+        const response = await fetch('/api/agents')
+        if (!response.ok) throw new Error('Failed to fetch agents')
+        const data = await response.json()
+        setAgents(data)
+      } catch (error) {
+        console.error('Failed to load agents:', error)
+      }
+    }
+    loadAgents()
+  }, [])
+
+  useEffect(() => {
+    const loadHistory = async () => {
+      try {
+        const response = await fetch('/api/tickets/' + ticketId + '/assignment-history', {
+          credentials: 'include'
+        })
+        if (!response.ok) {
+          const error = await response.json()
+          throw new Error(error.error || 'Failed to fetch assignment history')
+        }
+        const data = await response.json()
+        setAssignmentHistory(data)
+      } catch (error) {
+        console.error('Failed to load assignment history:', error)
+        // TODO: Add toast notification here
+      }
+    }
+    loadHistory()
+  }, [ticketId])
+
+  // Filter
+  const filteredAgents = agents.filter((agent) => {
     if (!searchQuery) return true
     const query = searchQuery.toLowerCase()
     return (
@@ -74,11 +78,22 @@ export default function TicketAssigneePage() {
     if (!selectedAgent) return
     setIsAssigning(true)
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      // Handle successful assignment
+      const response = await fetch('/api/tickets/' + ticketId, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assigneeId: selectedAgent }),
+        credentials: 'include'
+      })
+      
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to assign ticket')
+      }
+      
+      router.refresh()
     } catch (error) {
       console.error('Failed to assign ticket:', error)
+      // TODO: Add toast notification here
     } finally {
       setIsAssigning(false)
     }
@@ -168,11 +183,11 @@ export default function TicketAssigneePage() {
           </div>
 
           <div className="space-y-6">
-            {mockAssignmentHistory.map((assignment) => (
+            {assignmentHistory.map((assignment) => (
               <div key={assignment.id} className="flex items-start gap-4">
                 <div className="relative w-8 h-8 rounded-full overflow-hidden flex-shrink-0">
                   <Image
-                    src={assignment.agent.avatar || 'https://picsum.photos/200'}
+                    src={assignment.agent.avatar || '/images/default-avatar.png'}
                     alt={assignment.agent.name}
                     fill
                     className="object-cover"

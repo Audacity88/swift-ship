@@ -21,7 +21,7 @@ import {
   Redo,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { saveArticle, publishArticle } from '@/lib/services/knowledge-service'
+import { knowledgeService } from '@/lib/services'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -86,7 +86,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({
     setError(null)
 
     try {
-      await saveArticle(article)
+      await knowledgeService.saveArticle(article)
     } catch (err) {
       setError('Failed to save article')
     } finally {
@@ -101,7 +101,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({
     setError(null)
 
     try {
-      await publishArticle(article)
+      await knowledgeService.publishArticle(article)
       setArticle(prev => ({ ...prev, status: ArticleStatus.PUBLISHED }))
     } catch (err) {
       setError('Failed to publish article')

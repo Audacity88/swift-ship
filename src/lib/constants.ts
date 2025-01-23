@@ -45,5 +45,6 @@ export const ROUTES = {
   },
   admin: {
     knowledge: '/admin/knowledge',
+    quotes: '/admin/quotes',
   }
 } as const 

@@ -265,7 +265,7 @@ export const SearchInterface = ({
           <CardHeader>
             <CardTitle>No results found</CardTitle>
             <CardDescription>
-              Try adjusting your search or filters to find what you're looking for
+              Try adjusting your search or filters to find what you&apos;re looking for
             </CardDescription>
           </CardHeader>
         </Card>

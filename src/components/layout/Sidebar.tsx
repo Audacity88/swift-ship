@@ -29,10 +29,16 @@ const navItems: NavItem[] = [
     roles: [RoleType.CUSTOMER, RoleType.AGENT, RoleType.SUPERVISOR]
   },
   { 
-    icon: BarChart, 
-    label: 'Analytics', 
-    href: ROUTES.analytics,
-    roles: [RoleType.ADMIN, RoleType.SUPERVISOR]
+    icon: Quote,
+    label: 'Manage Quotes',
+    href: ROUTES.admin.quotes,
+    roles: [RoleType.ADMIN, RoleType.AGENT, RoleType.SUPERVISOR]
+  },
+  { 
+    icon: Package, 
+    label: 'Pickup', 
+    href: ROUTES.pickup,
+    roles: [RoleType.CUSTOMER, RoleType.AGENT, RoleType.SUPERVISOR]
   },
   { 
     icon: Truck, 
@@ -41,10 +47,10 @@ const navItems: NavItem[] = [
     roles: [RoleType.CUSTOMER, RoleType.AGENT, RoleType.SUPERVISOR]
   },
   { 
-    icon: Package, 
-    label: 'Pickup', 
-    href: ROUTES.pickup,
-    roles: [RoleType.CUSTOMER, RoleType.AGENT, RoleType.SUPERVISOR]
+    icon: BarChart, 
+    label: 'Analytics', 
+    href: ROUTES.analytics,
+    roles: [RoleType.ADMIN, RoleType.SUPERVISOR]
   },
   { 
     icon: LifeBuoy, 

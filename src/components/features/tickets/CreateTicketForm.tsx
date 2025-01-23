@@ -11,9 +11,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { CustomerSearch } from '@/components/features/customers/CustomerSearch'
 import { TagSelect } from '@/components/features/tags/TagSelect'
-import { createTicket } from '@/lib/services/ticket-service'
+import { createTicket, TicketPriority } from '@/lib/services'
 import { useToast } from '@/components/ui/use-toast'
-import { TicketPriority } from '@/types/ticket'
 
 const ticketFormSchema = z.object({
   title: z.string().min(1).max(255),
