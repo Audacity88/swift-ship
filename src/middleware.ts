@@ -70,6 +70,7 @@ const AGENT_ROUTES = [
   '/analytics/[id]',
   '/knowledge',
   '/knowledge/[id]',
+  '/admin/quotes',
 ]
 
 // Define routes that require admin permissions

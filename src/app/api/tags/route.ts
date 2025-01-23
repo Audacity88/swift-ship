@@ -36,23 +36,13 @@ const createClient = async () => {
 export async function GET() {
   try {
     const supabase = await createClient()
-    const { data: { session } } = await supabase.auth.getSession()
-
-    if (!session) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
-    }
-
-    // Get all tags
-    const { data: tags } = await supabase
+    const { data: tags, error } = await supabase
       .from('tags')
       .select('*')
       .order('name')
 
-    if (tagsError) {
-      console.error('Failed to fetch tags:', tagsError)
+    if (error) {
+      console.error('Failed to fetch tags:', error)
       return NextResponse.json(
         { error: 'Failed to fetch tags' },
         { status: 500 }
@@ -60,10 +50,10 @@ export async function GET() {
     }
 
     return NextResponse.json(tags)
-  } catch (error) {
-    console.error('Error fetching tags:', error)
+  } catch (err) {
+    console.error('Error in tags API:', err)
     return NextResponse.json(
-      { error: 'Failed to fetch tags' },
+      { error: 'Internal server error' },
       { status: 500 }
     )
   }
