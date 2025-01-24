@@ -121,9 +121,8 @@ export function StatusTransition({
   }
 
   // Check if status has conditions
-  const getStatusConditions = (status: TicketStatus): TransitionCondition[] => {
-    const transition = availableTransitions.find(t => t.toStatus === status)
-    return transition?.conditions || []
+  const getStatusConditions = (transition: StatusTransitionType): TransitionCondition[] => {
+    return transition.conditions || []
   }
 
   if (error) {
@@ -138,6 +137,14 @@ export function StatusTransition({
       </div>
     )
   }
+
+  // Group transitions by toStatus to remove duplicates and filter out current status
+  const uniqueTransitions = Array.from(
+    new Map(availableTransitions
+      .filter(t => t.toStatus !== currentStatus)
+      .map(t => [t.toStatus, t])
+    ).values()
+  )
 
   return (
     <div className={className}>
@@ -158,15 +165,15 @@ export function StatusTransition({
             )}
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-56 p-2">
+        <PopoverContent className="w-50 p-2" align="start">
           <div className="grid gap-1">
-            {availableTransitions.map(transition => {
-              const conditions = getStatusConditions(transition.toStatus)
+            {uniqueTransitions.map(transition => {
+              const conditions = getStatusConditions(transition)
               const hasConditions = conditions.length > 0
 
               return (
                 <Button
-                  key={transition.toStatus}
+                  key={`${transition.fromStatus}-${transition.toStatus}`}
                   variant="ghost"
                   className="justify-start font-normal"
                   onClick={() => {
@@ -198,11 +205,11 @@ export function StatusTransition({
           </DialogHeader>
 
           {/* Status Conditions */}
-          {selectedStatus && getStatusConditions(selectedStatus).length > 0 && (
+          {selectedStatus && getStatusConditions(availableTransitions.find(t => t.toStatus === selectedStatus) || {} as StatusTransitionType).length > 0 && (
             <div className="space-y-2">
               <h4 className="font-medium text-yellow-500">Requirements</h4>
               <ul className="space-y-1 text-sm">
-                {getStatusConditions(selectedStatus).map((condition, index) => (
+                {getStatusConditions(availableTransitions.find(t => t.toStatus === selectedStatus) || {} as StatusTransitionType).map((condition, index) => (
                   <li key={index} className="flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4 text-yellow-500" />
                     {condition.message}

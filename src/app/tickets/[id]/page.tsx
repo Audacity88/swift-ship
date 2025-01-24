@@ -468,13 +468,6 @@ export default function TicketPage() {
               />
             </div>
           )}
-
-          {/* Conversation View */}
-          <TicketConversation
-            ticketId={ticket.id}
-            currentUserId={currentUserId || ''}
-            isAgent={true}
-          />
         </div>
       </div>
     </div>

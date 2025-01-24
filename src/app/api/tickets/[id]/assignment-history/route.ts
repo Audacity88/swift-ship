@@ -60,7 +60,7 @@ export async function GET(
         actor_type,
         changes
       `)
-      .eq('entity_type', 'ticket')
+      .or('entity_type.eq.ticket,entity_type.eq.tickets')
       .eq('entity_id', id)
       .or('action.eq.update,action.eq.create')
       .not('changes', 'is', null)

@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useParams, usePathname } from 'next/navigation'
 import { 
   Info, Users, Tag, AlertCircle, Link as LinkIcon,
-  History, FileText, UserCheck
+  History, FileText, UserCheck, MessageSquare
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -17,6 +17,7 @@ const tabItems = [
   { icon: AlertCircle, label: 'Priority', href: '/priority' },
   { icon: LinkIcon, label: 'Linked Problems', href: '/linked-problem' },
   { icon: History, label: 'History', href: '/history' },
+  { icon: MessageSquare, label: 'Messages', href: '/messages' },
 ]
 
 export default function TicketLayout({

@@ -10,7 +10,7 @@ const COOKIE_OPTIONS = {
 }
 
 export async function middleware(request: NextRequest) {
-  console.log('\n[Middleware] Starting middleware check for:', request.nextUrl.pathname)
+  // console.log('\n[Middleware] Starting middleware check for:', request.nextUrl.pathname)
   
   // Skip middleware for API routes and public assets
   if (
@@ -18,7 +18,7 @@ export async function middleware(request: NextRequest) {
     request.nextUrl.pathname.startsWith('/api/') ||
     request.nextUrl.pathname.startsWith('/public')
   ) {
-    console.log('[Middleware] Skipping middleware for system path')
+    // console.log('[Middleware] Skipping middleware for system path')
     return NextResponse.next()
   }
 
@@ -38,9 +38,9 @@ export async function middleware(request: NextRequest) {
       cookies: {
         get(name: string) {
           const cookie = request.cookies.get(name)
-          if (cookie?.value) {
-            console.log('[Middleware] Found cookie:', name)
-          }
+          // if (cookie?.value) {
+          //   console.log('[Middleware] Found cookie:', name)
+          // }
           return cookie?.value
         },
         set(name: string, value: string, options: any) {
@@ -70,7 +70,7 @@ export async function middleware(request: NextRequest) {
   try {
     // Check for session
     const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-    console.log('[Middleware] Session check:', { hasSession: !!session, error: sessionError?.message })
+    // console.log('[Middleware] Session check:', { hasSession: !!session, error: sessionError?.message })
 
     // Handle auth pages
     if (request.nextUrl.pathname.startsWith('/auth/')) {

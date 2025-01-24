@@ -201,21 +201,18 @@ export async function GET(request: NextRequest) {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         cookies: {
-          async get(name: string) {
-            const cookieStore = await cookies()
+          get(name: string) {
             return cookieStore.get(name)?.value
           },
-          async set(name: string, value: string, options: Record<string, unknown>) {
+          set(name: string, value: string, options: Record<string, unknown>) {
             try {
-              const cookieStore = await cookies()
               cookieStore.set(name, value, { ...options })
             } catch (error) {
               // Handle cookie setting error silently
             }
           },
-          async remove(name: string, options: Record<string, unknown>) {
+          remove(name: string, options: Record<string, unknown>) {
             try {
-              const cookieStore = await cookies()
               cookieStore.delete(name)
             } catch (error) {
               // Handle cookie removal error silently

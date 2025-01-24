@@ -1,6 +1,8 @@
 /** @type {import('next').NextConfig} */
 
 // Suppress Node.js deprecation warnings
+process.noDeprecation = true;  // This will suppress all deprecation warnings
+
 const nextConfig = {
   images: {
     remotePatterns: [
@@ -35,6 +37,8 @@ const nextConfig = {
       enabled: true
     }
   },
+  // Move serverExternalPackages to root level
+  serverExternalPackages: ['@aws-sdk'],
   // Optimize production build
   productionBrowserSourceMaps: false,
   typescript: {
@@ -49,12 +53,13 @@ const nextConfig = {
     ignoreDuringBuilds: true,
   },
   webpack: (config, { isServer }) => {
-    if (!isServer) {
-      config.resolve.fallback = {
-        ...config.resolve.fallback,
-        ws: false,
-      }
+    // Handle punycode deprecation for both client and server
+    config.resolve.fallback = {
+      ...config.resolve.fallback,
+      punycode: false,
+      ws: false,
     }
+    
     return config
   },
   // Add middleware configuration

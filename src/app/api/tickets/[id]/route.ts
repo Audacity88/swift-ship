@@ -7,7 +7,8 @@ import { cookies } from 'next/headers'
 const updateTicketSchema = z.object({
   status: z.string().optional(),
   created_by: z.string().optional(),
-  metadata: z.record(z.unknown()).optional()
+  metadata: z.record(z.unknown()).optional(),
+  assigneeId: z.string().uuid().optional()
 })
 
 // Initialize Supabase client with cookie handling
@@ -31,6 +32,62 @@ const createClient = async () => {
       },
     }
   )
+}
+
+// GET /api/tickets/[id] - Get a single ticket
+export async function GET(
+  request: Request,
+  context: { params: Promise<{ id: string }> }
+) {
+  try {
+    // Initialize Supabase with cookie handling
+    const supabase = await createClient()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
+    // Get route params
+    const { id } = await context.params
+
+    // Get ticket with related data
+    const { data: ticket, error: ticketError } = await supabase
+      .from('tickets')
+      .select(`
+        *,
+        customer:customer_id(*),
+        assignee:assignee_id(*)
+      `)
+      .eq('id', id)
+      .single()
+
+    if (ticketError) {
+      console.error('Error fetching ticket:', ticketError)
+      return NextResponse.json(
+        { error: 'Failed to fetch ticket' },
+        { status: 500 }
+      )
+    }
+
+    if (!ticket) {
+      return NextResponse.json(
+        { error: 'Ticket not found' },
+        { status: 404 }
+      )
+    }
+
+    return NextResponse.json({ ticket })
+  } catch (error) {
+    console.error('Failed to fetch ticket:', error)
+    return NextResponse.json(
+      { error: 'Failed to fetch ticket' },
+      { status: 500 }
+    )
+  }
 }
 
 // PATCH /api/tickets/[id] - Update a ticket
@@ -76,7 +133,9 @@ export async function PATCH(
 
     // Update ticket
     const updates = {
-      ...body,
+      ...(body.status && { status: body.status }),
+      ...(body.assigneeId && { assignee_id: body.assigneeId }),
+      ...(body.metadata && { metadata: body.metadata }),
       updated_at: new Date().toISOString(),
       updated_by: user.id
     }
@@ -112,7 +171,9 @@ export async function PATCH(
         actor_id: user.id,
         actor_type: actorType,
         changes: {
-          ...body
+          ...(body.status && { status: body.status }),
+          ...(body.assigneeId && { assignee_id: body.assigneeId }),
+          ...(body.metadata && { metadata: body.metadata })
         }
       })
 

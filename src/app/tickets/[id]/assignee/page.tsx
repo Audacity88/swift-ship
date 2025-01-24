@@ -226,9 +226,10 @@ export default function TicketAssigneePage() {
             {filteredAgents.map((agent) => (
               <button
                 key={agent.id}
-                onClick={() => setSelectedAgent(
-                  selectedAgent === agent.id ? null : agent.id
-                )}
+                onClick={() => {
+                  setSelectedAgent(selectedAgent === agent.id ? null : agent.id);
+                  setIsSuccess(false);  // Reset success message when selecting a different agent
+                }}
                 className={`flex items-center gap-4 p-4 rounded-lg border transition-colors ${
                   selectedAgent === agent.id
                     ? 'border-primary bg-primary/5'
