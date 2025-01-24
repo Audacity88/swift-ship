@@ -5,7 +5,7 @@ ADD COLUMN updated_by UUID REFERENCES agents(id);
 
 -- Add created_by column to tickets table for consistency
 ALTER TABLE tickets
-ADD COLUMN created_by UUID REFERENCES agents(id);
+ADD COLUMN created_by UUID REFERENCES auth.users(id);
 
 -- Update the audit trigger to handle these new columns
 CREATE OR REPLACE FUNCTION update_updated_at_column()

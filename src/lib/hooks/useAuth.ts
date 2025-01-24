@@ -37,6 +37,21 @@ export function useAuth() {
   const [initialized, setInitialized] = useState(false)
   const router = useRouter()
 
+  // Add signOut function
+  const signOut = async () => {
+    try {
+      const { error } = await supabase.auth.signOut()
+      if (error) {
+        log.error('Error signing out', error)
+        return false
+      }
+      return true
+    } catch (error) {
+      log.error('Exception during sign out', error)
+      return false
+    }
+  }
+
   // Add debug logging for slow auth
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -285,5 +300,9 @@ export function useAuth() {
     }
   }, [initialized, router])
 
-  return { user, loading, initialized }
+  return {
+    user,
+    loading,
+    signOut
+  }
 } 

@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Card } from '@/components/ui/card'
 import { ArrowLeft } from 'lucide-react'
 import { ticketService } from '@/lib/services'
+import { TIME_SLOTS } from '@/types/time-slots'
 import type { QuoteRequest } from '@/types/quote'
 
 interface PackageDetails {
@@ -25,6 +26,7 @@ interface Destination {
   from: string
   to: string
   pickupDate: string
+  pickupTimeSlot: string
 }
 
 const serviceOptions = [
@@ -268,6 +270,23 @@ export default function EditQuotePage({ params }: { params: Promise<{ id: string
                   value={destination.pickupDate}
                   onChange={(e) => setDestination({ ...destination, pickupDate: e.target.value })}
                 />
+              </div>
+
+              <div>
+                <Label htmlFor="pickupTimeSlot">Pickup Time Slot</Label>
+                <select
+                  id="pickupTimeSlot"
+                  value={destination.pickupTimeSlot}
+                  onChange={(e) => setDestination({ ...destination, pickupTimeSlot: e.target.value })}
+                  className="w-full p-2 border border-gray-200 rounded-lg"
+                >
+                  <option value="">Select a time slot</option>
+                  {TIME_SLOTS.map(slot => (
+                    <option key={slot.id} value={slot.id}>
+                      {slot.label}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>

@@ -265,20 +265,43 @@ export const tagService = {
         throw new Error('Unauthorized')
       }
 
+      console.debug('Updating ticket tags:', { operation, tagIds, ticketIds })
+
       if (operation === 'add') {
         // Create tag-ticket associations
         const associations = ticketIds.flatMap(ticketId =>
           tagIds.map(tagId => ({
             ticket_id: ticketId,
-            tag_id: tagId,
-            created_by: user.id,
-            created_at: new Date().toISOString()
+            tag_id: tagId
           }))
         )
 
+        console.debug('Creating associations:', associations)
+
+        // First verify the tags exist
+        const { data: existingTags, error: tagCheckError } = await supabase
+          .from('tags')
+          .select('id')
+          .in('id', tagIds)
+
+        if (tagCheckError) {
+          console.error('Error checking tags:', tagCheckError)
+          throw tagCheckError
+        }
+
+        console.debug('Found existing tags:', existingTags)
+
+        if (!existingTags || existingTags.length !== tagIds.length) {
+          throw new Error('Some tags do not exist')
+        }
+
+        // Insert the associations
         const { error } = await supabase
           .from('ticket_tags')
-          .upsert(associations)
+          .insert(associations, {
+            returning: 'minimal',
+            count: null
+          })
 
         if (error) {
           console.error('Failed to add tags to tickets:', error)

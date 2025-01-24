@@ -1,5 +1,8 @@
 import type { QuoteRequest } from '@/types/quote'
 import { getServerSupabase, type ServerContext } from '@/lib/supabase-client'
+import { getSupabase } from '@/lib/supabase-client'
+import { SupabaseClient } from '@supabase/supabase-js'
+import { tagService } from './tag-service'
 
 export const quoteService = {
   async fetchQuotes(
@@ -72,73 +75,133 @@ export const quoteService = {
       metadata: any
     }
   ): Promise<QuoteRequest> {
+    const supabase = getServerSupabase(context)
+
     try {
-      const supabase = getServerSupabase(context)
-      
+      // Determine priority based on delivery time
+      let priority = 'medium'
+      if (data.metadata?.destination?.pickupDate) {
+        const pickupDate = new Date(data.metadata.destination.pickupDate)
+        const today = new Date()
+        
+        // Set to next day if pickup is tomorrow
+        const tomorrow = new Date(today)
+        tomorrow.setDate(tomorrow.getDate() + 1)
+        
+        if (
+          pickupDate.getDate() === tomorrow.getDate() &&
+          pickupDate.getMonth() === tomorrow.getMonth() &&
+          pickupDate.getFullYear() === tomorrow.getFullYear()
+        ) {
+          priority = 'high'
+        }
+      }
+
+      // First, get or create the tags we need
+      const getOrCreateTag = async (name: string, color: string) => {
+        console.debug(`Getting or creating tag: ${name}`)
+        
+        // Try to get existing tag
+        const { data: existingTag } = await supabase
+          .from('tags')
+          .select('id')
+          .eq('name', name)
+          .single()
+
+        if (existingTag?.id) {
+          console.debug(`Found existing tag: ${name}`, existingTag)
+          return existingTag.id
+        }
+
+        // Create new tag if it doesn't exist
+        const { data: newTag, error } = await supabase
+          .from('tags')
+          .insert({ name, color })
+          .select('id')
+          .single()
+
+        if (error) {
+          console.error(`Error creating tag ${name}:`, error)
+          return null
+        }
+
+        console.debug(`Created new tag: ${name}`, newTag)
+        return newTag?.id
+      }
+
+      // Get or create the tags before creating the ticket
+      const quoteTagId = await getOrCreateTag('quote', '#6366F1')
+      let serviceTagId = null
+      if (data.metadata?.selectedService) {
+        const serviceColors = {
+          express_freight: '#EF4444',
+          standard_freight: '#3B82F6',
+          eco_freight: '#10B981'
+        }
+        const serviceName = data.metadata.selectedService
+        const serviceColor = serviceColors[serviceName as keyof typeof serviceColors] || '#6B7280'
+        serviceTagId = await getOrCreateTag(serviceName, serviceColor)
+      }
+
       // Create the ticket
       const { data: ticket, error: ticketError } = await supabase
         .from('tickets')
         .insert({
           title: data.title,
           description: data.description,
-          priority: 'medium',
-          type: 'task',
           customer_id: data.customerId,
+          status: 'open',
+          type: 'task',
+          priority,
           source: 'web',
-          metadata: data.metadata,
-          status: 'open'
+          metadata: {
+            ...data.metadata,
+            isQuote: true
+          }
         })
         .select()
         .single()
 
       if (ticketError) throw ticketError
+      if (!ticket) throw new Error('Failed to create ticket')
 
-      // Ensure the quote tag exists
-      const { data: existingTag } = await supabase
-        .from('tags')
-        .select('id, name')
-        .eq('name', 'quote')
-        .single()
-
-      let tagId: string
-      if (existingTag) {
-        tagId = existingTag.id
-      } else {
-        const { data: newTag, error: createTagError } = await supabase
-          .from('tags')
-          .insert({ name: 'quote', color: '#FF5722' })
-          .select('id')
-          .single()
-
-        if (createTagError || !newTag) {
-          throw new Error('Failed to create quote tag')
-        }
-        tagId = newTag.id
+      // Add tags using tagService
+      const tagIds = [quoteTagId]
+      if (serviceTagId) {
+        tagIds.push(serviceTagId)
       }
 
-      // Add the tag to the ticket
-      const { error: tagError } = await supabase
-        .from('ticket_tags')
-        .insert({
-          ticket_id: ticket.id,
-          tag_id: tagId
-        })
+      console.debug('About to add tags:', {
+        tagIds,
+        quoteTagId,
+        serviceTagId,
+        ticketId: ticket.id
+      })
 
-      if (tagError) throw tagError
+      try {
+        if (!quoteTagId) {
+          console.error('No quote tag ID available')
+          return
+        }
+        
+        await tagService.bulkUpdateTicketTags(context, 'add', tagIds.filter(Boolean), [ticket.id])
+      } catch (error) {
+        console.error('Error adding tags to ticket:', error)
+      }
 
-      // Add initial message
-      const { error: messageError } = await supabase
-        .from('messages')
-        .insert({
-          ticket_id: ticket.id,
-          content: 'Your quote request has been received! We will process it shortly.',
-          author_type: 'system',
-          author_id: '00000000-0000-0000-0000-000000000000'
-        })
-
-      if (messageError) throw messageError
-
-      return ticket as QuoteRequest
+      // Return the created quote request
+      return {
+        id: ticket.id,
+        title: ticket.title,
+        status: ticket.status,
+        customer: {
+          id: data.customerId,
+          name: '', // These will be populated by the UI layer
+          email: ''
+        },
+        metadata: ticket.metadata,
+        created_at: ticket.created_at
+      }
     } catch (error) {
       console.error('Error in createQuoteRequest:', error)
       throw error

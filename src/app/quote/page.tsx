@@ -20,6 +20,9 @@ import { quoteService, shipmentService, ticketService } from '@/lib/services'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { QuoteDetailView } from '@/components/features/quotes/QuoteDetailView'
 import { TIME_SLOTS } from '@/types/time-slots'
+import { AddressAutocomplete } from '@/components/features/quotes/AddressAutocomplete'
+import type { RadarAddress } from '@/types/quote'
+import { radarService, type RouteInfo } from '@/lib/services/radar-service'
 
 type Step = 'package' | 'destination' | 'service' | 'summary' | 'done'
 
@@ -33,21 +36,6 @@ interface PackageDetails {
   specialRequirements: string
 }
 
-interface Destination {
-  from: string
-  to: string
-  pickupDate: string
-  pickupTimeSlot: string
-}
-
-interface ServiceOption {
-  id: string
-  name: string
-  price: number
-  duration: string
-  description: string
-}
-
 interface Quote {
   id: string
   title: string
@@ -56,7 +44,28 @@ interface Quote {
   is_archived: boolean
   metadata: {
     packageDetails: PackageDetails
-    destination: Destination
+    destination: {
+      from: {
+        address: string
+        coordinates?: {
+          latitude: number
+          longitude: number
+        }
+        formattedAddress?: string
+        placeDetails?: RadarAddress
+      }
+      to: {
+        address: string
+        coordinates?: {
+          latitude: number
+          longitude: number
+        }
+        formattedAddress?: string
+        placeDetails?: RadarAddress
+      }
+      pickupDate: string
+      pickupTimeSlot: string
+    }
     selectedService: string
     quotedPrice?: number
   }
@@ -73,11 +82,51 @@ interface QuoteRequest {
   }
   metadata: {
     packageDetails: PackageDetails
-    destination: Destination
+    destination: {
+      from: {
+        address: string
+        coordinates?: {
+          latitude: number
+          longitude: number
+        }
+        formattedAddress?: string
+        placeDetails?: RadarAddress
+      }
+      to: {
+        address: string
+        coordinates?: {
+          latitude: number
+          longitude: number
+        }
+        formattedAddress?: string
+        placeDetails?: RadarAddress
+      }
+      pickupDate: string
+      pickupTimeSlot: string
+    }
     selectedService: string
     quotedPrice?: number
   }
   created_at: string
+}
+
+interface ServiceOption {
+  id: string
+  name: string
+  price: number
+  duration: string
+  description: string
+}
+
+interface ValidationErrors {
+  pickup?: string
+  delivery?: string
+  date?: string
+  timeSlot?: string
+  weight?: string
+  volume?: string
+  type?: string
+  service?: string
 }
 
 const initialPackageDetails: PackageDetails = {
@@ -90,36 +139,68 @@ const initialPackageDetails: PackageDetails = {
   specialRequirements: ''
 }
 
-const initialDestination: Destination = {
-  from: '',
-  to: '',
+const initialDestination: {
+  from: {
+    address: string
+    coordinates?: {
+      latitude: number
+      longitude: number
+    }
+    formattedAddress?: string
+    placeDetails?: RadarAddress
+  }
+  to: {
+    address: string
+    coordinates?: {
+      latitude: number
+      longitude: number
+    }
+    formattedAddress?: string
+    placeDetails?: RadarAddress
+  }
+  pickupDate: string
+  pickupTimeSlot: string
+} = {
+  from: {
+    address: '',
+  },
+  to: {
+    address: '',
+  },
   pickupDate: '',
   pickupTimeSlot: '',
 }
 
-const serviceOptions: ServiceOption[] = [
-  {
-    id: 'express_freight',
-    name: 'Express Freight',
-    price: 2499.99,
-    duration: '2-3 Business Days',
-    description: 'Dedicated truck with priority routing and handling',
+// Base rates per kilometer for different services
+const SERVICE_RATES = {
+  express_freight: {
+    basePrice: 1500,      // Base price for any distance
+    perKm: 2.5,          // Cost per kilometer
+    perM3: 8,            // Cost per cubic meter of volume
+    perTon: 15,          // Cost per metric ton
+    perPallet: 12,       // Cost per pallet
+    speedFactor: 1.0,    // Multiplier for estimated duration
+    rushFactor: 1.5      // Price multiplier for expedited delivery
   },
-  {
-    id: 'standard_freight',
-    name: 'Standard Freight',
-    price: 1499.99,
-    duration: '5-7 Business Days',
-    description: 'Regular service with optimized routing',
+  standard_freight: {
+    basePrice: 1000,
+    perKm: 1.8,
+    perM3: 6,
+    perTon: 12,
+    perPallet: 10,
+    speedFactor: 1.3,
+    rushFactor: 1.0
   },
-  {
-    id: 'eco_freight',
-    name: 'Eco Freight',
-    price: 999.99,
-    duration: '7-10 Business Days',
-    description: 'Cost-effective option with consolidated shipments',
-  },
-]
+  eco_freight: {
+    basePrice: 800,
+    perKm: 1.2,
+    perM3: 4,
+    perTon: 8,
+    perPallet: 8,
+    speedFactor: 1.6,
+    rushFactor: 0.8
+  }
+}
 
 export default function QuotePage() {
   const router = useRouter()
@@ -132,11 +213,43 @@ export default function QuotePage() {
 
   const [currentStep, setCurrentStep] = useState<Step>('package')
   const [packageDetails, setPackageDetails] = useState<PackageDetails>(initialPackageDetails)
-  const [destination, setDestination] = useState<Destination>(initialDestination)
+  const [destination, setDestination] = useState<{
+    from: {
+      address: string
+      coordinates?: {
+        latitude: number
+        longitude: number
+      }
+      formattedAddress?: string
+      placeDetails?: RadarAddress
+    }
+    to: {
+      address: string
+      coordinates?: {
+        latitude: number
+        longitude: number
+      }
+      formattedAddress?: string
+      placeDetails?: RadarAddress
+    }
+    pickupDate: string
+    pickupTimeSlot: string
+  }>({
+    from: {
+      address: '',
+    },
+    to: {
+      address: '',
+    },
+    pickupDate: '',
+    pickupTimeSlot: '',
+  })
   const [selectedService, setSelectedService] = useState<string>('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [validationErrors, setValidationErrors] = useState<ValidationErrors>({})
+  const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null)
 
   const steps: { id: Step; label: string }[] = [
     { id: 'package', label: 'Package Details' },
@@ -191,31 +304,229 @@ export default function QuotePage() {
     void fetchQuotes()
   }, [user])
 
-  const handleNext = () => {
-    // Validate current step
-    if (currentStep === 'package') {
-      if (!packageDetails.type || !packageDetails.weight || !packageDetails.volume) {
-        setError('Please fill in all required package details')
-        return
+  // Calculate service options based on distance and volume
+  const calculateServiceOptions = (route: RouteInfo | null): ServiceOption[] => {
+    if (!route) return []
+
+    const volume = parseFloat(packageDetails.volume) || 0
+    const weight = parseFloat(packageDetails.weight) || 0
+    const palletCount = parseInt(packageDetails.palletCount || '0') || 0
+    const isRushDelivery = route.duration.hours < 24 // Consider it rush delivery if less than 24 hours
+
+    const calculatePrice = (rates: typeof SERVICE_RATES.express_freight) => {
+      // For intra-city deliveries (less than 50km), use a simplified calculation
+      if (route.distance.kilometers <= 50) {
+        const baseAmount = rates.basePrice + 
+          (volume * rates.perM3) +
+          (weight * rates.perTon) +
+          (palletCount * rates.perPallet)
+        
+        // Apply rush factor if it's a rush delivery
+        const rushMultiplier = isRushDelivery ? rates.rushFactor : 1.0
+        
+        // Round to nearest $1000
+        return Math.ceil(baseAmount * rushMultiplier / 1000) * 1000
       }
-    } else if (currentStep === 'destination') {
-      if (!destination.from || !destination.to || !destination.pickupDate || !destination.pickupTimeSlot) {
-        setError('Please fill in all destination details and select a pickup time slot')
-        return
-      }
-      // Validate that selected time slot is available
-      const selectedSlot = TIME_SLOTS.find(slot => slot.id === destination.pickupTimeSlot)
-      if (!selectedSlot?.available) {
-        setError('Please select an available time slot')
-        return
-      }
-    } else if (currentStep === 'service') {
-      if (!selectedService) {
-        setError('Please select a service option')
-        return
+
+      // For longer distances, include per-kilometer rates
+      const baseAmount = rates.basePrice + 
+        (route.distance.kilometers * rates.perKm) + 
+        (volume * rates.perM3) +
+        (weight * rates.perTon) +
+        (palletCount * rates.perPallet)
+      
+      // Apply rush factor if it's a rush delivery
+      const rushMultiplier = isRushDelivery ? rates.rushFactor : 1.0
+      
+      // Round to nearest $1000
+      return Math.ceil(baseAmount * rushMultiplier / 1000) * 1000
+    }
+
+    // Calculate business days based on distance and speed
+    const calculateDeliveryTime = (speedFactor: number): string => {
+      // Base calculation: assume average speed of 80 km/h
+      const travelHours = route.distance.kilometers / 80
+      
+      // Apply speed factor and add handling time (4h for loading/unloading)
+      const totalHours = (travelHours * speedFactor) + 4
+      
+      // Convert to business days (10 hours per business day)
+      const businessDays = Math.ceil(totalHours / 10)
+      
+      // Format the delivery time estimate
+      if (totalHours <= 10) {
+        // For deliveries that can be done in one business day
+        if (totalHours <= 4) {
+          return "Same day delivery"
+        } else {
+          return "Next business day"
+        }
+      } else if (businessDays === 2) {
+        return "2 business days"
+      } else {
+        return `${businessDays} business days`
       }
     }
 
+    return [
+      {
+        id: 'express_freight',
+        name: 'Express Freight',
+        price: calculatePrice(SERVICE_RATES.express_freight),
+        duration: calculateDeliveryTime(SERVICE_RATES.express_freight.speedFactor),
+        description: 'Dedicated truck with priority routing and handling'
+      },
+      {
+        id: 'standard_freight',
+        name: 'Standard Freight',
+        price: calculatePrice(SERVICE_RATES.standard_freight),
+        duration: calculateDeliveryTime(SERVICE_RATES.standard_freight.speedFactor),
+        description: 'Regular service with optimized routing'
+      },
+      {
+        id: 'eco_freight',
+        name: 'Eco Freight',
+        price: calculatePrice(SERVICE_RATES.eco_freight),
+        duration: calculateDeliveryTime(SERVICE_RATES.eco_freight.speedFactor),
+        description: 'Cost-effective option with consolidated shipments'
+      }
+    ]
+  }
+
+  // Calculate route when origin and destination coordinates are available
+  useEffect(() => {
+    const calculateDistance = async () => {
+      // Clear route info when coordinates change
+      setRouteInfo(null)
+
+      // Check if we have valid coordinates
+      if (!destination.from.coordinates || !destination.to.coordinates) {
+        console.log('Missing coordinates for route calculation')
+        return
+      }
+
+      console.log('Calculating route with coordinates:', {
+        from: destination.from.coordinates,
+        to: destination.to.coordinates
+      })
+
+      try {
+        const route = await radarService.calculateRoute(
+          destination.from.coordinates,
+          destination.to.coordinates
+        )
+
+        if (route) {
+          console.log('Route calculated successfully:', route)
+          setRouteInfo(route)
+        } else {
+          console.error('Failed to calculate route - no route returned')
+          // Fallback to approximate straight-line distance calculation
+          const fallbackRoute = calculateFallbackRoute(
+            destination.from.coordinates,
+            destination.to.coordinates
+          )
+          console.log('Using fallback route calculation:', fallbackRoute)
+          setRouteInfo(fallbackRoute)
+        }
+      } catch (error) {
+        console.error('Error calculating route:', error)
+        // Fallback to approximate straight-line distance calculation
+        const fallbackRoute = calculateFallbackRoute(
+          destination.from.coordinates,
+          destination.to.coordinates
+        )
+        console.log('Using fallback route calculation after error:', fallbackRoute)
+        setRouteInfo(fallbackRoute)
+      }
+    }
+
+    void calculateDistance()
+  }, [destination.from.coordinates, destination.to.coordinates])
+
+  // Fallback route calculation using straight-line distance (Haversine formula)
+  const calculateFallbackRoute = (
+    from: { latitude: number; longitude: number },
+    to: { latitude: number; longitude: number }
+  ): RouteInfo => {
+    const R = 6371 // Earth's radius in kilometers
+
+    const dLat = toRad(to.latitude - from.latitude)
+    const dLon = toRad(to.longitude - from.longitude)
+    const lat1 = toRad(from.latitude)
+    const lat2 = toRad(to.latitude)
+
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.sin(dLon/2) * Math.sin(dLon/2) * Math.cos(lat1) * Math.cos(lat2)
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+    const distanceKm = R * c
+
+    // Assume average speed of 60 km/h for duration estimate
+    const durationHours = distanceKm / 60
+
+    return {
+      distance: {
+        kilometers: Math.round(distanceKm * 10) / 10,
+        miles: Math.round(distanceKm * 0.621371 * 10) / 10
+      },
+      duration: {
+        minutes: Math.round(durationHours * 60),
+        hours: Math.round(durationHours * 10) / 10
+      }
+    }
+  }
+
+  // Helper function to convert degrees to radians
+  const toRad = (degrees: number): number => {
+    return degrees * (Math.PI / 180)
+  }
+
+  const handleNext = () => {
+    const errors: ValidationErrors = {}
+
+    // Validate current step
+    if (currentStep === 'package') {
+      if (!packageDetails.type) {
+        errors.type = 'Please select a shipment type'
+      }
+      if (!packageDetails.weight) {
+        errors.weight = 'Please enter the weight'
+      }
+      if (!packageDetails.volume) {
+        errors.volume = 'Please enter the volume'
+      }
+      if (parseFloat(packageDetails.volume) < 0) {
+        errors.volume = 'Volume cannot be negative'
+      }
+      if (parseFloat(packageDetails.weight) < 0) {
+        errors.weight = 'Weight cannot be negative'
+      }
+    } else if (currentStep === 'destination') {
+      if (!destination.from.address) {
+        errors.pickup = 'Please enter a pickup location'
+      }
+      if (!destination.to.address) {
+        errors.delivery = 'Please enter a delivery location'
+      }
+      if (!destination.pickupDate) {
+        errors.date = 'Please select a pickup date'
+      }
+      if (!destination.pickupTimeSlot) {
+        errors.timeSlot = 'Please select a pickup time slot'
+      }
+    } else if (currentStep === 'service') {
+      if (!selectedService) {
+        errors.service = 'Please select a service option'
+      }
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setValidationErrors(errors)
+      setError('Please fill in all required fields')
+      return
+    }
+
+    setValidationErrors({})
     setError(null)
     const stepOrder: Step[] = ['package', 'destination', 'service', 'summary', 'done']
     const currentIndex = stepOrder.indexOf(currentStep)
@@ -257,15 +568,12 @@ export default function QuotePage() {
         setSuccessMessage('Your quote has been updated successfully.')
       } else {
         // Create new quote
-        const ticket = await quoteService.createQuoteRequest(undefined, {
+        await quoteService.createQuoteRequest(undefined, {
           title: 'Quote Request',
           description: 'New quote request from customer portal',
           customerId: user.id,
           metadata
         })
-
-        // Create shipment from quote
-        await shipmentService.createFromQuote(undefined, ticket.id, user.id)
         setSuccessMessage('Your quote request has been submitted.')
       }
 
@@ -313,7 +621,7 @@ export default function QuotePage() {
   // Helper function to calculate estimated delivery based on service type
   const calculateEstimatedDelivery = (pickupDate: string, serviceId: string): string => {
     const pickup = new Date(pickupDate)
-    const service = serviceOptions.find(s => s.id === serviceId)
+    const service = calculateServiceOptions(routeInfo).find(s => s.id === serviceId)
     
     if (!service) return ''
 
@@ -374,10 +682,54 @@ export default function QuotePage() {
     if (!user) return
 
     try {
-      await shipmentService.createFromQuote(undefined, quoteId, user.id)
-      void router.refresh()
+      // Create the shipment
+      const response = await fetch('/api/shipments', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          quote_id: quoteId,
+          type: packageDetails.type,
+          origin: destination.from.address,
+          destination: destination.to.address,
+          scheduled_pickup: destination.pickupDate,
+          estimated_delivery: calculateEstimatedDelivery(destination.pickupDate, selectedService)
+        })
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.message || 'Failed to create shipment')
+      }
+
+      // Update the ticket status
+      const ticketResponse = await fetch(`/api/tickets/${quoteId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          status: 'in_progress',
+          created_by: user.id,
+          metadata: {
+            isShipment: true,
+            shipmentStatus: 'created',
+            createdAt: new Date().toISOString()
+          }
+        })
+      })
+
+      if (!ticketResponse.ok) {
+        const error = await ticketResponse.json()
+        throw new Error(error.message || 'Failed to update ticket')
+      }
+
+      // Redirect to shipments page
+      router.push('/shipments')
     } catch (error) {
       console.error('Error creating shipment:', error)
+      setError(error instanceof Error ? error.message : 'Failed to create shipment')
     }
   }
 
@@ -513,7 +865,7 @@ export default function QuotePage() {
           <div className="bg-white rounded-xl border border-gray-200 p-6">
             {currentStep === 'package' && (
               <div className="space-y-6">
-                <h2 className="text-xl font-semibold">Cargo Details</h2>
+  
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -522,13 +874,16 @@ export default function QuotePage() {
                     <select
                       value={packageDetails.type}
                       onChange={(e) => setPackageDetails({ ...packageDetails, type: e.target.value as any })}
-                      className="w-full p-2 border border-gray-200 rounded-lg"
+                      className={`w-full p-2 border rounded-lg ${validationErrors.type ? 'border-red-500' : 'border-gray-200'}`}
                     >
                       <option value="full_truckload">Full Truckload (FTL)</option>
                       <option value="less_than_truckload">Less Than Truckload (LTL)</option>
                       <option value="sea_container">Sea Container</option>
                       <option value="bulk_freight">Bulk Freight</option>
                     </select>
+                    {validationErrors.type && (
+                      <p className="text-sm text-red-500 mt-1">{validationErrors.type}</p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -538,9 +893,12 @@ export default function QuotePage() {
                       type="number"
                       value={packageDetails.weight}
                       onChange={(e) => setPackageDetails({ ...packageDetails, weight: e.target.value })}
-                      className="w-full p-2 border border-gray-200 rounded-lg"
+                      className={`w-full p-2 border rounded-lg ${validationErrors.weight ? 'border-red-500' : 'border-gray-200'}`}
                       placeholder="Enter weight in metric tons"
                     />
+                    {validationErrors.weight && (
+                      <p className="text-sm text-red-500 mt-1">{validationErrors.weight}</p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -550,9 +908,12 @@ export default function QuotePage() {
                       type="number"
                       value={packageDetails.volume}
                       onChange={(e) => setPackageDetails({ ...packageDetails, volume: e.target.value })}
-                      className="w-full p-2 border border-gray-200 rounded-lg"
-                      placeholder="Enter volume in m³"
+                      className={`w-full p-2 border rounded-lg ${validationErrors.volume ? 'border-red-500' : 'border-gray-200'}`}
+                      placeholder="Enter volume in cubic meters"
                     />
+                    {validationErrors.volume && (
+                      <p className="text-sm text-red-500 mt-1">{validationErrors.volume}</p>
+                    )}
                   </div>
                   {packageDetails.type === 'sea_container' && (
                     <div>
@@ -616,62 +977,106 @@ export default function QuotePage() {
 
             {currentStep === 'destination' && (
               <div className="space-y-6">
-                <h2 className="text-xl font-semibold">Pickup &amp; Delivery</h2>
+                <h2 className="text-xl font-semibold">Pickup & Delivery Details</h2>
                 <div className="grid grid-cols-1 gap-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Pickup Location
                     </label>
-                    <input
-                      type="text"
-                      value={destination.from}
-                      onChange={(e) => setDestination({ ...destination, from: e.target.value })}
-                      className="w-full p-2 border border-gray-200 rounded-lg"
-                      placeholder="Enter pickup location"
+                    <AddressAutocomplete
+                      value={destination.from.address}
+                      onChange={(address, details) => {
+                        setDestination(prev => ({
+                          ...prev,
+                          from: {
+                            address,
+                            coordinates: details ? {
+                              latitude: details.latitude,
+                              longitude: details.longitude
+                            } : undefined,
+                            formattedAddress: details?.formattedAddress,
+                            placeDetails: details
+                          }
+                        }))
+                        setValidationErrors(prev => ({ ...prev, pickup: undefined }))
+                      }}
+                      placeholder="Enter pickup address"
+                      error={validationErrors.pickup}
                     />
                   </div>
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Delivery Location
                     </label>
-                    <input
-                      type="text"
-                      value={destination.to}
-                      onChange={(e) => setDestination({ ...destination, to: e.target.value })}
-                      className="w-full p-2 border border-gray-200 rounded-lg"
-                      placeholder="Enter delivery location"
+                    <AddressAutocomplete
+                      value={destination.to.address}
+                      onChange={(address, details) => {
+                        setDestination(prev => ({
+                          ...prev,
+                          to: {
+                            address,
+                            coordinates: details ? {
+                              latitude: details.latitude,
+                              longitude: details.longitude
+                            } : undefined,
+                            formattedAddress: details?.formattedAddress,
+                            placeDetails: details
+                          }
+                        }))
+                        setValidationErrors(prev => ({ ...prev, delivery: undefined }))
+                      }}
+                      placeholder="Enter delivery address"
+                      error={validationErrors.delivery}
                     />
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Pickup Date
-                      </label>
-                      <input
-                        type="date"
-                        value={destination.pickupDate}
-                        onChange={(e) => setDestination({ ...destination, pickupDate: e.target.value })}
-                        className="w-full p-2 border border-gray-200 rounded-lg"
-                        min={format(new Date(), 'yyyy-MM-dd')}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Pickup Time
-                      </label>
-                      <select
-                        value={destination.pickupTimeSlot}
-                        onChange={(e) => setDestination({ ...destination, pickupTimeSlot: e.target.value })}
-                        className="w-full p-2 border border-gray-200 rounded-lg"
-                      >
-                        <option value="">Select a time slot</option>
-                        {TIME_SLOTS.map((slot) => (
-                          <option key={slot.id} value={slot.id}>
-                            {slot.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Pickup Date
+                    </label>
+                    <input
+                      type="date"
+                      value={destination.pickupDate}
+                      onChange={(e) => {
+                        setDestination({ ...destination, pickupDate: e.target.value })
+                        setValidationErrors(prev => ({ ...prev, date: undefined }))
+                      }}
+                      className={`w-full p-2 border rounded-lg ${validationErrors.date ? 'border-red-500' : 'border-gray-200'}`}
+                      min={new Date().toISOString().split('T')[0]}
+                    />
+                    {validationErrors.date && (
+                      <p className="text-sm text-red-500 mt-1">{validationErrors.date}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Preferred Pickup Time
+                    </label>
+                    <select
+                      value={destination.pickupTimeSlot}
+                      onChange={(e) => {
+                        setDestination({ ...destination, pickupTimeSlot: e.target.value })
+                        setValidationErrors(prev => ({ ...prev, timeSlot: undefined }))
+                      }}
+                      className={`w-full p-2 border rounded-lg ${validationErrors.timeSlot ? 'border-red-500' : 'border-gray-200'}`}
+                    >
+                      <option value="">Select a time slot</option>
+                      {TIME_SLOTS.map((slot) => (
+                        <option 
+                          key={slot.id} 
+                          value={slot.id}
+                          disabled={!slot.available}
+                        >
+                          {slot.label}
+                          {!slot.available && ' (Unavailable)'}
+                        </option>
+                      ))}
+                    </select>
+                    {validationErrors.timeSlot && (
+                      <p className="text-sm text-red-500 mt-1">{validationErrors.timeSlot}</p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -679,44 +1084,61 @@ export default function QuotePage() {
 
             {currentStep === 'service' && (
               <div className="space-y-6">
-                <div>
-                  <h2 className="text-xl font-semibold">Select Service</h2>
-                  <p className="text-sm text-gray-500 mt-1">
-                    These are estimated costs. Final pricing will be confirmed after our team reviews your cargo details.
-                  </p>
-                </div>
-                <div className="space-y-4">
-                  {serviceOptions.map((service) => (
-                    <button
-                      key={service.id}
-                      onClick={() => setSelectedService(service.id)}
-                      className={`w-full p-4 rounded-lg border text-left transition-all \
-                        ${selectedService === service.id
-                          ? 'border-primary ring-1 ring-primary'
-                          : 'border-gray-200 hover:border-gray-300'}`}
-                      style={selectedService === service.id ? { borderColor: COLORS.primary } : {}}
-                    >
-                      <div className="flex justify-between items-start mb-2">
+                <h2 className="text-xl font-semibold">Select Service</h2>
+                
+                {routeInfo ? (
+                  <>
+                    <div className="bg-blue-50 p-4 rounded-lg mb-6">
+                      <div className="flex items-center justify-between text-blue-700">
                         <div>
-                          <h3 className="font-medium">{service.name}</h3>
-                          <p className="text-sm text-gray-500">{service.description}</p>
+                          <p className="font-medium">Estimated Distance</p>
+                          <p className="text-sm">{routeInfo.distance.kilometers} km ({routeInfo.distance.miles} miles)</p>
                         </div>
                         <div className="text-right">
-                          <span className="text-lg font-semibold">~${service.price}</span>
-                          <p className="text-xs text-gray-500">Estimated cost</p>
+                          <p className="font-medium">Shipment Details</p>
+                          <p className="text-sm">
+                            {packageDetails.weight} tons • {packageDetails.volume} m³
+                            {packageDetails.palletCount ? ` • ${packageDetails.palletCount} pallets` : ''}
+                          </p>
                         </div>
                       </div>
-                      <div className="text-sm text-gray-500">
-                        Estimated delivery: {service.duration}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-                <div className="bg-blue-50 p-4 rounded-lg mt-4">
-                  <p className="text-sm text-blue-700">
-                    Note: Final pricing may vary based on factors such as fuel surcharges, exact weight/dimensions, route specifics, and special handling requirements.
-                  </p>
-                </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4">
+                      {calculateServiceOptions(routeInfo).map((service) => (
+                        <div
+                          key={service.id}
+                          className={`p-4 border rounded-lg cursor-pointer transition-colors ${
+                            selectedService === service.id
+                              ? 'border-blue-500 bg-blue-50'
+                              : 'border-gray-200 hover:border-blue-200'
+                          }`}
+                          onClick={() => setSelectedService(service.id)}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <h3 className="text-lg font-medium">{service.name}</h3>
+                            <div className="text-right">
+                              <p className="text-lg font-medium">~${service.price.toLocaleString()}</p>
+                              <p className="text-xs text-gray-500">Estimated Price*</p>
+                            </div>
+                          </div>
+                          <p className="text-gray-600 mb-2">{service.description}</p>
+                          <p className="text-sm text-gray-500">Estimated delivery time: {service.duration}</p>
+                        </div>
+                      ))}
+                    </div>
+                    
+                    <p className="text-xs text-gray-500 mt-4">
+                      *Prices are estimates based on distance, weight, volume, and number of pallets. 
+                      Final price may vary based on actual shipment details and conditions.
+                    </p>
+                  </>
+                ) : (
+                  <div className="text-center py-8 bg-gray-50 rounded-lg">
+                    <Clock className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                    <p className="text-gray-500">Calculating route and service options...</p>
+                  </div>
+                )}
               </div>
             )}
 
@@ -744,8 +1166,8 @@ export default function QuotePage() {
                 <div>
                   <h3 className="text-lg font-medium text-gray-900 mb-4">Destination Details</h3>
                   <div className="bg-gray-50 p-4 rounded-lg space-y-2">
-                    <p><span className="font-medium">From:</span> {destination.from}</p>
-                    <p><span className="font-medium">To:</span> {destination.to}</p>
+                    <p><span className="font-medium">From:</span> {destination.from.address}</p>
+                    <p><span className="font-medium">To:</span> {destination.to.address}</p>
                     <p><span className="font-medium">Pickup Date:</span> {format(new Date(destination.pickupDate), 'PPP')}</p>
                     <p>
                       <span className="font-medium">Pickup Time:</span>{' '}
@@ -761,15 +1183,15 @@ export default function QuotePage() {
                       <>
                         <p>
                           <span className="font-medium">Service:</span>{' '}
-                          {serviceOptions.find(option => option.id === selectedService)?.name}
+                          {calculateServiceOptions(routeInfo).find(option => option.id === selectedService)?.name}
                         </p>
                         <p>
                           <span className="font-medium">Duration:</span>{' '}
-                          {serviceOptions.find(option => option.id === selectedService)?.duration}
+                          {calculateServiceOptions(routeInfo).find(option => option.id === selectedService)?.duration}
                         </p>
                         <p>
                           <span className="font-medium">Price:</span> $
-                          {serviceOptions.find(option => option.id === selectedService)?.price.toFixed(2)}
+                          {calculateServiceOptions(routeInfo).find(option => option.id === selectedService)?.price.toFixed(2)}
                         </p>
                       </>
                     )}

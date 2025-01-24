@@ -30,18 +30,21 @@ export const shipmentService = {
         .insert({
           quote_id: quoteId,
           customer_id: customerId,
-          type: quote.metadata.type,
+          type: quote.metadata.packageDetails.type,
           status: 'quote_requested',
-          origin: quote.metadata.origin,
-          destination: quote.metadata.destination,
+          origin: quote.metadata.destination.from,
+          destination: quote.metadata.destination.to,
+          scheduled_pickup: quote.metadata.destination.pickupDate,
           tracking_number: generateTrackingNumber(),
           metadata: {
-            weight: quote.metadata.weight,
-            volume: quote.metadata.volume,
-            container_size: quote.metadata.containerSize,
-            pallet_count: quote.metadata.palletCount,
-            hazardous: quote.metadata.hazardous,
-            special_requirements: quote.metadata.specialRequirements
+            weight: quote.metadata.packageDetails.weight,
+            volume: quote.metadata.packageDetails.volume,
+            container_size: quote.metadata.packageDetails.containerSize,
+            pallet_count: quote.metadata.packageDetails.palletCount,
+            hazardous: quote.metadata.packageDetails.hazardous,
+            special_requirements: quote.metadata.packageDetails.specialRequirements,
+            selected_service: quote.metadata.selectedService,
+            quoted_price: quote.metadata.quotedPrice
           },
           created_by: user.id,
           updated_by: user.id,
@@ -325,7 +328,7 @@ export const shipmentService = {
   },
 
   async createShipment(
-    context: ServerContext,
+    context: { supabase: any },
     data: {
       quote_id: string
       type: ShipmentType
@@ -336,7 +339,7 @@ export const shipmentService = {
     }
   ): Promise<Shipment> {
     try {
-      const supabase = getServerSupabase(context)
+      const { supabase } = context
       const { data: { user }, error: userError } = await supabase.auth.getUser()
       
       if (userError || !user) {
@@ -369,12 +372,10 @@ export const shipmentService = {
         estimated_delivery: data.estimated_delivery || null,
         tracking_number: generateTrackingNumber(),
         metadata: {
-          quote_metadata: quote.metadata
-        },
-        created_by: user.id,
-        updated_by: user.id,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+          quote_metadata: quote.metadata,
+          created_by: user.id,
+          updated_by: user.id
+        }
       }
 
       // Create the shipment
@@ -396,8 +397,7 @@ export const shipmentService = {
           shipment_id: shipment.id,
           status: 'quote_requested',
           notes: 'Quote request submitted',
-          created_by: quote.customer_id,
-          created_at: new Date().toISOString()
+          created_by: quote.customer_id
         })
 
       if (eventError) {
