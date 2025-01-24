@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { COLORS } from '@/lib/constants'
 import { authService } from '@/lib/services'
+import { cn } from '@/lib/utils'
 
 export default function SignIn() {
   const [email, setEmail] = useState('')
@@ -82,17 +83,19 @@ export default function SignIn() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+    <div className={cn(
+      "min-h-screen flex flex-col justify-center py-12 sm:px-6 lg:px-8",
+      "bg-background"
+    )}>
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <h2 className="mt-6 text-center text-3xl font-bold tracking-tight text-gray-900">
+        <h2 className="mt-6 text-center text-3xl font-bold tracking-tight">
           Sign in to your account
         </h2>
-        <p className="mt-2 text-center text-sm text-gray-600">
+        <p className="mt-2 text-center text-sm text-muted-foreground">
           Or{' '}
           <Link
             href="/auth/signup"
-            className="font-medium hover:text-primary transition-colors"
-            style={{ color: COLORS.primary }}
+            className="font-medium text-primary hover:text-primary/90 transition-colors"
           >
             create a new account
           </Link>
@@ -100,16 +103,22 @@ export default function SignIn() {
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
+        <div className={cn(
+          "py-8 px-4 shadow sm:rounded-lg sm:px-10",
+          "bg-card"
+        )}>
           <form onSubmit={handleSignIn} className="space-y-6">
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-600 rounded-lg p-4 text-sm">
+              <div className={cn(
+                "rounded-lg p-4 text-sm",
+                "bg-destructive/10 text-destructive"
+              )}>
                 {error}
               </div>
             )}
             
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="email" className="block text-sm font-medium">
                 Email address
               </label>
               <div className="mt-1">
@@ -119,18 +128,22 @@ export default function SignIn() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="block w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  className={cn(
+                    "block w-full rounded-lg px-3 py-2 text-sm",
+                    "bg-background border border-input",
+                    "focus:outline-none focus:ring-2 focus:ring-ring"
+                  )}
                   required
                   suppressHydrationWarning
                 />
               </div>
               {validationErrors.email && (
-                <p className="mt-1 text-sm text-red-600">{validationErrors.email}</p>
+                <p className="mt-1 text-sm text-destructive">{validationErrors.email}</p>
               )}
             </div>
 
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="password" className="block text-sm font-medium">
                 Password
               </label>
               <div className="mt-1">
@@ -140,13 +153,17 @@ export default function SignIn() {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="block w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  className={cn(
+                    "block w-full rounded-lg px-3 py-2 text-sm",
+                    "bg-background border border-input",
+                    "focus:outline-none focus:ring-2 focus:ring-ring"
+                  )}
                   required
                   suppressHydrationWarning
                 />
               </div>
               {validationErrors.password && (
-                <p className="mt-1 text-sm text-red-600">{validationErrors.password}</p>
+                <p className="mt-1 text-sm text-destructive">{validationErrors.password}</p>
               )}
             </div>
 
@@ -154,8 +171,7 @@ export default function SignIn() {
               <div className="text-sm">
                 <Link
                   href="/auth/reset-password"
-                  className="font-medium hover:text-primary transition-colors"
-                  style={{ color: COLORS.primary }}
+                  className="font-medium text-primary hover:text-primary/90 transition-colors"
                 >
                   Forgot your password?
                 </Link>
@@ -166,8 +182,13 @@ export default function SignIn() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full rounded-lg px-3 py-2 text-sm font-semibold text-white shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                style={{ backgroundColor: loading ? `${COLORS.primary}80` : COLORS.primary }}
+                className={cn(
+                  "w-full rounded-lg px-3 py-2 text-sm font-semibold",
+                  "bg-primary text-primary-foreground",
+                  "shadow-sm transition-colors",
+                  "hover:bg-primary/90",
+                  "disabled:opacity-50 disabled:cursor-not-allowed"
+                )}
               >
                 {loading ? 'Signing in...' : 'Sign in'}
               </button>

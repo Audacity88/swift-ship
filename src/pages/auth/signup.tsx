@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/router'
 import { COLORS } from '@/lib/constants'
 import { authService } from '@/lib/services'
+import { cn } from '@/lib/utils'
 
 export default function SignUp() {
   const [email, setEmail] = useState('')
@@ -52,19 +53,21 @@ export default function SignUp() {
 
   if (success) {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+      <div className={cn(
+        "min-h-screen flex flex-col justify-center py-12 sm:px-6 lg:px-8",
+        "bg-background"
+      )}>
         <div className="sm:mx-auto sm:w-full sm:max-w-md">
-          <h2 className="mt-6 text-center text-3xl font-bold tracking-tight text-gray-900">
+          <h2 className="mt-6 text-center text-3xl font-bold tracking-tight">
             Check your email
           </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
+          <p className="mt-2 text-center text-sm text-muted-foreground">
             We&apos;ve sent you a confirmation link. Please check your email to complete your registration.
           </p>
           <div className="mt-4 text-center">
             <Link
               href="/auth/signin"
-              className="font-medium hover:text-primary transition-colors"
-              style={{ color: COLORS.primary }}
+              className="font-medium text-primary hover:text-primary/90 transition-colors"
             >
               Return to sign in
             </Link>
@@ -75,17 +78,19 @@ export default function SignUp() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+    <div className={cn(
+      "min-h-screen flex flex-col justify-center py-12 sm:px-6 lg:px-8",
+      "bg-background"
+    )}>
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <h2 className="mt-6 text-center text-3xl font-bold tracking-tight text-gray-900">
+        <h2 className="mt-6 text-center text-3xl font-bold tracking-tight">
           Create your account
         </h2>
-        <p className="mt-2 text-center text-sm text-gray-600">
+        <p className="mt-2 text-center text-sm text-muted-foreground">
           Already have an account?{' '}
           <Link
             href="/auth/signin"
-            className="font-medium hover:text-primary transition-colors"
-            style={{ color: COLORS.primary }}
+            className="font-medium text-primary hover:text-primary/90 transition-colors"
           >
             Sign in
           </Link>
@@ -93,16 +98,22 @@ export default function SignUp() {
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
+        <div className={cn(
+          "py-8 px-4 shadow sm:rounded-lg sm:px-10",
+          "bg-card"
+        )}>
           <form className="space-y-6" onSubmit={handleSignUp}>
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-600 rounded-lg p-4 text-sm">
+              <div className={cn(
+                "rounded-lg p-4 text-sm",
+                "bg-destructive/10 text-destructive"
+              )}>
                 {error}
               </div>
             )}
             
             <div>
-              <label htmlFor="name" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="name" className="block text-sm font-medium">
                 Full Name
               </label>
               <div className="mt-1">
@@ -115,15 +126,18 @@ export default function SignUp() {
                   spellCheck="false"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="block w-full appearance-none rounded-lg border border-gray-200 \
-                    px-3 py-2 placeholder-gray-400 focus:border-primary focus:outline-none \
-                    focus:ring-primary sm:text-sm"
+                  className={cn(
+                    "block w-full rounded-lg px-3 py-2 text-sm",
+                    "bg-background border border-input",
+                    "focus:outline-none focus:ring-2 focus:ring-ring",
+                    "placeholder:text-muted-foreground"
+                  )}
                 />
               </div>
             </div>
 
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="email" className="block text-sm font-medium">
                 Email address
               </label>
               <div className="mt-1">
@@ -136,15 +150,18 @@ export default function SignUp() {
                   spellCheck="false"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="block w-full appearance-none rounded-lg border border-gray-200 \
-                    px-3 py-2 placeholder-gray-400 focus:border-primary focus:outline-none \
-                    focus:ring-primary sm:text-sm"
+                  className={cn(
+                    "block w-full rounded-lg px-3 py-2 text-sm",
+                    "bg-background border border-input",
+                    "focus:outline-none focus:ring-2 focus:ring-ring",
+                    "placeholder:text-muted-foreground"
+                  )}
                 />
               </div>
             </div>
 
             <div>
-              <label htmlFor="company" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="company" className="block text-sm font-medium">
                 Company (Optional)
               </label>
               <div className="mt-1">
@@ -156,15 +173,18 @@ export default function SignUp() {
                   spellCheck="false"
                   value={company}
                   onChange={(e) => setCompany(e.target.value)}
-                  className="block w-full appearance-none rounded-lg border border-gray-200 \
-                    px-3 py-2 placeholder-gray-400 focus:border-primary focus:outline-none \
-                    focus:ring-primary sm:text-sm"
+                  className={cn(
+                    "block w-full rounded-lg px-3 py-2 text-sm",
+                    "bg-background border border-input",
+                    "focus:outline-none focus:ring-2 focus:ring-ring",
+                    "placeholder:text-muted-foreground"
+                  )}
                 />
               </div>
             </div>
 
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="password" className="block text-sm font-medium">
                 Password
               </label>
               <div className="mt-1">
@@ -177,15 +197,18 @@ export default function SignUp() {
                   spellCheck="false"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="block w-full appearance-none rounded-lg border border-gray-200 \
-                    px-3 py-2 placeholder-gray-400 focus:border-primary focus:outline-none \
-                    focus:ring-primary sm:text-sm"
+                  className={cn(
+                    "block w-full rounded-lg px-3 py-2 text-sm",
+                    "bg-background border border-input",
+                    "focus:outline-none focus:ring-2 focus:ring-ring",
+                    "placeholder:text-muted-foreground"
+                  )}
                 />
               </div>
             </div>
 
             <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="confirmPassword" className="block text-sm font-medium">
                 Confirm Password
               </label>
               <div className="mt-1">
@@ -198,9 +221,12 @@ export default function SignUp() {
                   spellCheck="false"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="block w-full appearance-none rounded-lg border border-gray-200 \
-                    px-3 py-2 placeholder-gray-400 focus:border-primary focus:outline-none \
-                    focus:ring-primary sm:text-sm"
+                  className={cn(
+                    "block w-full rounded-lg px-3 py-2 text-sm",
+                    "bg-background border border-input",
+                    "focus:outline-none focus:ring-2 focus:ring-ring",
+                    "placeholder:text-muted-foreground"
+                  )}
                 />
               </div>
             </div>
@@ -209,12 +235,15 @@ export default function SignUp() {
               <button
                 type="submit"
                 disabled={loading}
-                className="flex w-full justify-center rounded-lg px-3 py-2 text-sm \
-                  font-semibold text-white shadow-sm hover:bg-primary/90 \
-                  focus-visible:outline focus-visible:outline-2 \
-                  focus-visible:outline-offset-2 focus-visible:outline-primary \
-                  disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                style={{ backgroundColor: COLORS.primary }}
+                className={cn(
+                  "flex w-full justify-center rounded-lg px-3 py-2 text-sm font-semibold",
+                  "bg-primary text-primary-foreground",
+                  "shadow-sm transition-colors",
+                  "hover:bg-primary/90",
+                  "focus-visible:outline focus-visible:outline-2",
+                  "focus-visible:outline-offset-2 focus-visible:outline-ring",
+                  "disabled:opacity-50 disabled:cursor-not-allowed"
+                )}
               >
                 {loading ? 'Creating account...' : 'Create account'}
               </button>
