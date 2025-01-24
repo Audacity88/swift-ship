@@ -13,6 +13,16 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useToast } from '@/components/ui/use-toast'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 interface EditAgentDialogProps {
   open: boolean
@@ -34,6 +44,7 @@ export function EditAgentDialog({ open, onOpenChange, agentId }: EditAgentDialog
   const { toast } = useToast()
   const [isLoading, setIsLoading] = useState(false)
   const [agent, setAgent] = useState<Agent | null>(null)
+  const [showDeleteAlert, setShowDeleteAlert] = useState(false)
 
   useEffect(() => {
     if (open && agentId) {
@@ -103,70 +114,135 @@ export function EditAgentDialog({ open, onOpenChange, agentId }: EditAgentDialog
     }
   }
 
+  const handleDeleteAgent = async () => {
+    setIsLoading(true)
+    try {
+      const response = await fetch(`/api/agents?id=${agentId}`, {
+        method: 'DELETE',
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to delete agent')
+      }
+
+      onOpenChange(false)
+      
+      toast({
+        title: 'Success',
+        description: 'Agent deleted successfully',
+      })
+      
+      router.refresh()
+    } catch (error) {
+      console.error('Error deleting agent:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to delete agent. Please try again.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsLoading(false)
+      setShowDeleteAlert(false)
+    }
+  }
+
   if (!agent) {
     return null
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Edit Agent</DialogTitle>
-          <DialogDescription>
-            Update the agent's information.
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleEditAgent} className="space-y-4">
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-700">Name</label>
-            <Input
-              value={agent.name}
-              onChange={(e) => setAgent(prev => prev ? ({ ...prev, name: e.target.value }) : null)}
-              placeholder="Enter agent name"
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-700">Email</label>
-            <Input
-              type="email"
-              value={agent.email}
-              onChange={(e) => setAgent(prev => prev ? ({ ...prev, email: e.target.value }) : null)}
-              placeholder="Enter agent email"
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-700">Role</label>
-            <Select
-              value={agent.role}
-              onValueChange={(value: 'agent' | 'admin') => 
-                setAgent(prev => prev ? ({ ...prev, role: value }) : null)
-              }
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Agent</DialogTitle>
+            <DialogDescription>
+              Update the agent's information.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleEditAgent} className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-gray-700">Name</label>
+              <Input
+                value={agent.name}
+                onChange={(e) => setAgent(prev => prev ? ({ ...prev, name: e.target.value }) : null)}
+                placeholder="Enter agent name"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-gray-700">Email</label>
+              <Input
+                type="email"
+                value={agent.email}
+                onChange={(e) => setAgent(prev => prev ? ({ ...prev, email: e.target.value }) : null)}
+                placeholder="Enter agent email"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-gray-700">Role</label>
+              <Select
+                value={agent.role}
+                onValueChange={(value: 'agent' | 'admin') => 
+                  setAgent(prev => prev ? ({ ...prev, role: value }) : null)
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select role" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="agent">Support Agent</SelectItem>
+                  <SelectItem value="admin">Administrator</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex justify-between pt-4">
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => setShowDeleteAlert(true)}
+                disabled={isLoading}
+              >
+                Delete Agent
+              </Button>
+              <div className="flex gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => onOpenChange(false)}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={isLoading}>
+                  {isLoading ? 'Updating...' : 'Update Agent'}
+                </Button>
+              </div>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={showDeleteAlert} onOpenChange={setShowDeleteAlert}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the agent
+              and remove their access to the system.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteAgent}
+              className="bg-red-600 hover:bg-red-700"
             >
-              <SelectTrigger>
-                <SelectValue placeholder="Select role" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="agent">Support Agent</SelectItem>
-                <SelectItem value="admin">Administrator</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex justify-end gap-3 pt-4">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isLoading}>
-              {isLoading ? 'Updating...' : 'Update Agent'}
-            </Button>
-          </div>
-        </form>
-      </DialogContent>
-    </Dialog>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   )
 } 

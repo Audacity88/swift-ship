@@ -28,7 +28,7 @@ export interface User {
   email: string
   role: RoleType
   isAgent: boolean
-  avatar?: string | null
+  avatar_url?: string | null
 }
 
 export function useAuth() {
@@ -131,7 +131,7 @@ export function useAuth() {
             email: customer.email || authUser.email,
             role: RoleType.CUSTOMER,
             isAgent: false,
-            avatar: customer.avatar
+            avatar_url: customer.avatar
           })
           setLoading(false)
           setInitialized(true)
@@ -159,7 +159,7 @@ export function useAuth() {
             email: agent.email || authUser.email,
             role: agent.role || RoleType.AGENT,
             isAgent: true,
-            avatar: agent.avatar
+            avatar_url: agent.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(agent.name.toLowerCase())}`
           })
           setLoading(false)
           setInitialized(true)
@@ -190,7 +190,7 @@ export function useAuth() {
               email: newCustomer.email,
               role: RoleType.CUSTOMER,
               isAgent: false,
-              avatar: newCustomer.avatar
+              avatar_url: newCustomer.avatar
             })
             setLoading(false)
             setInitialized(true)
@@ -261,7 +261,7 @@ export function useAuth() {
               email: agent.email || authUser.email || '',
               role: RoleType[role],
               isAgent: true,
-              avatar: agent.avatar
+              avatar_url: agent.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(agent.name.toLowerCase())}`
             })
             setLoading(false)
             return
@@ -281,7 +281,7 @@ export function useAuth() {
               email: customer.email || authUser.email,
               role: RoleType.CUSTOMER,
               isAgent: false,
-              avatar: customer.avatar
+              avatar_url: customer.avatar
             })
           } else {
             setUser(null)

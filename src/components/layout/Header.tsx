@@ -169,7 +169,7 @@ export function Header() {
           </div>
         )}
         
-        {!isTicketRoute && (
+        {!isTicketRoute && !user?.isAgent && (
           <Link
             href="/settings/subscription"
             className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-lg \
@@ -201,7 +201,7 @@ export function Header() {
           >
             <div className="relative w-8 h-8 rounded-full overflow-hidden bg-gray-100">
               <Image
-                src={user?.avatar || "/images/default-avatar.png"}
+                src={user?.avatar_url || `/images/default-avatar.png`}
                 alt={user?.name || "Profile"}
                 width={32}
                 height={32}

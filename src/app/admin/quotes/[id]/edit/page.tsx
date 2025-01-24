@@ -11,6 +11,8 @@ import { ArrowLeft } from 'lucide-react'
 import { ticketService } from '@/lib/services'
 import { TIME_SLOTS } from '@/types/time-slots'
 import type { QuoteRequest } from '@/types/quote'
+import { AddressAutocomplete } from '@/components/features/quotes/AddressAutocomplete'
+import type { RadarAddress } from '@/types/quote'
 
 interface PackageDetails {
   type: 'full_truckload' | 'less_than_truckload' | 'sea_container' | 'bulk_freight'
@@ -23,8 +25,24 @@ interface PackageDetails {
 }
 
 interface Destination {
-  from: string
-  to: string
+  from: {
+    address: string
+    coordinates?: {
+      latitude: number
+      longitude: number
+    }
+    formattedAddress?: string
+    placeDetails?: RadarAddress
+  }
+  to: {
+    address: string
+    coordinates?: {
+      latitude: number
+      longitude: number
+    }
+    formattedAddress?: string
+    placeDetails?: RadarAddress
+  }
   pickupDate: string
   pickupTimeSlot: string
 }
@@ -77,7 +95,32 @@ export default function EditQuotePage({ params }: { params: Promise<{ id: string
         }
         setQuote(quoteData)
         setPackageDetails(data.metadata.packageDetails)
-        setDestination(data.metadata.destination)
+
+        // Handle both old and new address formats
+        const destinationData = data.metadata.destination
+        if (typeof destinationData.from === 'string') {
+          // Convert old format to new format
+          setDestination({
+            from: {
+              address: destinationData.from,
+              coordinates: undefined,
+              formattedAddress: undefined,
+              placeDetails: undefined
+            },
+            to: {
+              address: destinationData.to,
+              coordinates: undefined,
+              formattedAddress: undefined,
+              placeDetails: undefined
+            },
+            pickupDate: destinationData.pickupDate,
+            pickupTimeSlot: destinationData.pickupTimeSlot || ''
+          })
+        } else {
+          // New format, use as is
+          setDestination(destinationData)
+        }
+        
         setSelectedService(data.metadata.selectedService || '')
       } catch (error) {
         console.error('Error fetching quote:', error)
@@ -244,21 +287,45 @@ export default function EditQuotePage({ params }: { params: Promise<{ id: string
               
               <div>
                 <Label htmlFor="from">Pickup Location</Label>
-                <Input
-                  id="from"
-                  type="text"
-                  value={destination.from}
-                  onChange={(e) => setDestination({ ...destination, from: e.target.value })}
+                <AddressAutocomplete
+                  value={destination.from.address}
+                  onChange={(address, details) => {
+                    setDestination(prev => ({
+                      ...prev,
+                      from: {
+                        address,
+                        coordinates: details ? {
+                          latitude: details.latitude,
+                          longitude: details.longitude
+                        } : undefined,
+                        formattedAddress: details?.formattedAddress,
+                        placeDetails: details
+                      }
+                    }))
+                  }}
+                  placeholder="Enter pickup address"
                 />
               </div>
 
               <div>
                 <Label htmlFor="to">Delivery Location</Label>
-                <Input
-                  id="to"
-                  type="text"
-                  value={destination.to}
-                  onChange={(e) => setDestination({ ...destination, to: e.target.value })}
+                <AddressAutocomplete
+                  value={destination.to.address}
+                  onChange={(address, details) => {
+                    setDestination(prev => ({
+                      ...prev,
+                      to: {
+                        address,
+                        coordinates: details ? {
+                          latitude: details.latitude,
+                          longitude: details.longitude
+                        } : undefined,
+                        formattedAddress: details?.formattedAddress,
+                        placeDetails: details
+                      }
+                    }))
+                  }}
+                  placeholder="Enter delivery address"
                 />
               </div>
 

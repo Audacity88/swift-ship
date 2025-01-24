@@ -15,7 +15,7 @@ const agentSchema = z.object({
   email: z.string().email(),
   role: z.enum(['agent', 'admin']),
   team_id: z.string().uuid().optional(),
-  avatar_url: z.string().url().optional()
+  avatar: z.string().url().optional()
 })
 
 export async function POST(request: NextRequest) {
@@ -139,6 +139,7 @@ export async function POST(request: NextRequest) {
           name: validatedData.name,
           email: validatedData.email,
           role: validatedData.role,
+          avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(validatedData.name.toLowerCase())}`,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
@@ -156,10 +157,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Send password reset email
-      const { error: resetError } = await adminClient.auth.admin.generateLink({
-        type: 'recovery',
-        email: validatedData.email,
-      })
+      const { error: resetError } = await adminClient.auth.admin.sendPasswordResetEmail(validatedData.email)
 
       if (resetError) {
         console.error('Password reset email error:', resetError)
@@ -242,7 +240,13 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    return NextResponse.json(agents)
+    // Map the avatar field to avatar_url for consistency
+    const agentsWithAvatars = agents.map(agent => ({
+      ...agent,
+      avatar_url: agent.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(agent.name.toLowerCase())}`
+    }))
+
+    return NextResponse.json(agentsWithAvatars)
   } catch (error) {
     console.error('Error in GET /api/agents:', error)
     return NextResponse.json(

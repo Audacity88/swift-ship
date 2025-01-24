@@ -57,6 +57,7 @@ export interface QuoteRequest {
     destination: QuoteDestination
     selectedService?: string
     quotedPrice?: number
+    estimatedPrice?: number
   }
   status: string
   created_at: string

@@ -69,6 +69,7 @@ interface Quote {
     selectedService: string
     quotedPrice?: number
     estimatedDelivery?: string
+    estimatedPrice?: number
   }
 }
 
@@ -292,7 +293,8 @@ export default function QuotePage() {
             },
             selectedService: quote.metadata.selectedService || '',
             quotedPrice: quote.metadata.quotedPrice,
-            estimatedDelivery: quote.metadata.estimatedDelivery
+            estimatedDelivery: quote.metadata.estimatedDelivery,
+            estimatedPrice: quote.metadata.estimatedPrice
           }
         }))
         setQuotes(transformedQuotes)
@@ -326,8 +328,8 @@ export default function QuotePage() {
         // Apply rush factor if it's a rush delivery
         const rushMultiplier = isRushDelivery ? rates.rushFactor : 1.0
         
-        // Round to nearest $1000
-        return Math.ceil(baseAmount * rushMultiplier / 1000) * 1000
+        // Round to nearest $100
+        return Math.ceil(baseAmount * rushMultiplier / 100) * 100
       }
 
       // For longer distances, include per-kilometer rates
@@ -554,6 +556,11 @@ export default function QuotePage() {
         throw new Error('You must be signed in to request a quote.')
       }
 
+      // Get the selected service option to get the estimated price
+      const selectedServiceOption = calculateServiceOptions(routeInfo).find(
+        option => option.id === selectedService
+      )
+
       // Gather all form data in metadata
       const metadata = {
         packageDetails,
@@ -562,7 +569,8 @@ export default function QuotePage() {
         estimatedDelivery: calculateEstimatedDelivery(
           destination.pickupDate,
           selectedService
-        )
+        ),
+        estimatedPrice: selectedServiceOption?.price
       }
 
       if (selectedQuote) {
@@ -676,7 +684,8 @@ export default function QuotePage() {
           pickupTimeSlot: quote.metadata.destination.pickupTimeSlot || ''
         },
         selectedService: quote.metadata.selectedService || '',
-        quotedPrice: quote.metadata.quotedPrice
+        quotedPrice: quote.metadata.quotedPrice,
+        estimatedPrice: quote.metadata.estimatedPrice
       },
       created_at: quote.createdAt
     }

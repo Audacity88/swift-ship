@@ -148,7 +148,13 @@ export function QuoteDetailView({
             {mode === 'quoted' && quote.metadata.quotedPrice && (
               <div className="flex items-center gap-2 text-sm font-medium">
                 <DollarSign className="w-4 h-4" />
-                <span>Quoted Price: ${quote.metadata.quotedPrice}</span>
+                <span>Quoted Price: ${quote.metadata.quotedPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </div>
+            )}
+            {mode === 'pending' && !quote.metadata.quotedPrice && quote.metadata.estimatedPrice && (
+              <div className="mt-2 flex items-center gap-2 text-sm font-medium text-gray-700">
+                <DollarSign className="w-4 h-4" />
+                <span>Estimated Price: ${quote.metadata.estimatedPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               </div>
             )}
           </div>
