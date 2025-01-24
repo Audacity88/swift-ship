@@ -28,18 +28,21 @@ export async function POST(request: NextRequest) {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         cookies: {
-          get(name: string) {
+          async get(name: string) {
+            const cookieStore = await cookies()
             return cookieStore.get(name)?.value
           },
-          set(name: string, value: string, options: Record<string, unknown>) {
+          async set(name: string, value: string, options: Record<string, unknown>) {
             try {
+              const cookieStore = await cookies()
               cookieStore.set(name, value, { ...options })
             } catch (error) {
               console.error('Cookie set error:', error)
             }
           },
-          remove(name: string, options: Record<string, unknown>) {
+          async remove(name: string, options: Record<string, unknown>) {
             try {
+              const cookieStore = await cookies()
               cookieStore.delete(name)
             } catch (error) {
               console.error('Cookie remove error:', error)
@@ -192,18 +195,21 @@ export async function GET(request: NextRequest) {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         cookies: {
-          get(name: string) {
+          async get(name: string) {
+            const cookieStore = await cookies()
             return cookieStore.get(name)?.value
           },
-          set(name: string, value: string, options: Record<string, unknown>) {
+          async set(name: string, value: string, options: Record<string, unknown>) {
             try {
+              const cookieStore = await cookies()
               cookieStore.set(name, value, { ...options })
             } catch (error) {
               // Handle cookie setting error silently
             }
           },
-          remove(name: string, options: Record<string, unknown>) {
+          async remove(name: string, options: Record<string, unknown>) {
             try {
+              const cookieStore = await cookies()
               cookieStore.delete(name)
             } catch (error) {
               // Handle cookie removal error silently
@@ -255,18 +261,21 @@ export async function DELETE(request: NextRequest) {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         cookies: {
-          get(name: string) {
+          async get(name: string) {
+            const cookieStore = await cookies()
             return cookieStore.get(name)?.value
           },
-          set(name: string, value: string, options: Record<string, unknown>) {
+          async set(name: string, value: string, options: Record<string, unknown>) {
             try {
+              const cookieStore = await cookies()
               cookieStore.set(name, value, { ...options })
             } catch (error) {
               // Handle cookie setting error silently
             }
           },
-          remove(name: string, options: Record<string, unknown>) {
+          async remove(name: string, options: Record<string, unknown>) {
             try {
+              const cookieStore = await cookies()
               cookieStore.delete(name)
             } catch (error) {
               // Handle cookie removal error silently

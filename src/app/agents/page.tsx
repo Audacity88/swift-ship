@@ -1,21 +1,46 @@
+'use client'
+
+import { useState, useEffect } from 'react'
 import { UserCog, Mail, Shield } from 'lucide-react'
 import Image from 'next/image'
 import { agentService } from '@/lib/services/agent-service'
 import { COLORS } from '@/lib/constants'
 import { AddAgentButton } from '@/components/features/agents/AddAgentButton'
+import { EditAgentDialog } from '@/components/features/agents/EditAgentDialog'
+
+interface Agent {
+  id: string
+  name: string
+  email: string
+  role: 'agent' | 'admin'
+  avatar_url?: string
+}
 
 export const dynamic = 'force-dynamic'
 
-export default async function AgentsPage() {
-  let agents = []
-  let error = null
+export default function AgentsPage() {
+  const [agents, setAgents] = useState<Agent[]>([])
+  const [editingAgentId, setEditingAgentId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
-  try {
-    agents = await agentService.fetchAgents()
-  } catch (e) {
-    console.error('Error loading agents:', e)
-    error = e instanceof Error ? e.message : 'Failed to load agents'
+  const fetchAgents = async () => {
+    try {
+      const response = await fetch('/api/agents')
+      if (!response.ok) {
+        throw new Error('Failed to load agents')
+      }
+      const data = await response.json()
+      setAgents(data)
+    } catch (e) {
+      console.error('Error loading agents:', e)
+      setError(e instanceof Error ? e.message : 'Failed to load agents')
+    }
   }
+
+  // Fetch agents on mount
+  useEffect(() => {
+    fetchAgents()
+  }, [])
 
   if (error) {
     return (
@@ -63,7 +88,7 @@ export default async function AgentsPage() {
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full overflow-hidden bg-gray-100">
                         <Image
-                          src={agent.avatar || '/images/default-avatar.png'}
+                          src={agent.avatar_url || '/images/default-avatar.png'}
                           alt={agent.name}
                           width={32}
                           height={32}
@@ -103,6 +128,7 @@ export default async function AgentsPage() {
                     <button 
                       className="text-sm hover:text-primary-dark"
                       style={{ color: COLORS.primary }}
+                      onClick={() => setEditingAgentId(agent.id)}
                     >
                       Edit
                     </button>
@@ -113,6 +139,12 @@ export default async function AgentsPage() {
           </tbody>
         </table>
       </div>
+
+      <EditAgentDialog
+        open={!!editingAgentId}
+        onOpenChange={(open) => !open && setEditingAgentId(null)}
+        agentId={editingAgentId || ''}
+      />
     </div>
   )
 } 
