@@ -68,6 +68,7 @@ interface Quote {
     }
     selectedService: string
     quotedPrice?: number
+    estimatedDelivery?: string
   }
 }
 
@@ -290,7 +291,8 @@ export default function QuotePage() {
               pickupTimeSlot: quote.metadata.destination.pickupTimeSlot || ''
             },
             selectedService: quote.metadata.selectedService || '',
-            quotedPrice: quote.metadata.quotedPrice
+            quotedPrice: quote.metadata.quotedPrice,
+            estimatedDelivery: quote.metadata.estimatedDelivery
           }
         }))
         setQuotes(transformedQuotes)
@@ -343,19 +345,18 @@ export default function QuotePage() {
     }
 
     // Calculate business days based on distance and speed
-    const calculateDeliveryTime = (speedFactor: number): string => {
+    const calculateDeliveryTime = (speedFactor: number, handlingHours: number): string => {
       // Base calculation: assume average speed of 80 km/h
       const travelHours = route.distance.kilometers / 80
       
-      // Apply speed factor and add handling time (4h for loading/unloading)
-      const totalHours = (travelHours * speedFactor) + 4
+      // Apply speed factor and add handling time (varies by service level)
+      const totalHours = (travelHours * speedFactor) + handlingHours
       
-      // Convert to business days (10 hours per business day)
-      const businessDays = Math.ceil(totalHours / 10)
+      // Convert to business days (8 hours per business day)
+      const businessDays = Math.ceil(totalHours / 8)
       
       // Format the delivery time estimate
-      if (totalHours <= 10) {
-        // For deliveries that can be done in one business day
+      if (businessDays <= 1) {
         if (totalHours <= 4) {
           return "Same day delivery"
         } else {
@@ -373,22 +374,22 @@ export default function QuotePage() {
         id: 'express_freight',
         name: 'Express Freight',
         price: calculatePrice(SERVICE_RATES.express_freight),
-        duration: calculateDeliveryTime(SERVICE_RATES.express_freight.speedFactor),
-        description: 'Dedicated truck with priority routing and handling'
+        duration: calculateDeliveryTime(SERVICE_RATES.express_freight.speedFactor, 2), // 2 hours handling
+        description: 'Priority handling and expedited transport'
       },
       {
         id: 'standard_freight',
         name: 'Standard Freight',
         price: calculatePrice(SERVICE_RATES.standard_freight),
-        duration: calculateDeliveryTime(SERVICE_RATES.standard_freight.speedFactor),
-        description: 'Regular service with optimized routing'
+        duration: calculateDeliveryTime(SERVICE_RATES.standard_freight.speedFactor, 8), // 1 business day handling
+        description: 'Regular service with standard handling'
       },
       {
         id: 'eco_freight',
         name: 'Eco Freight',
         price: calculatePrice(SERVICE_RATES.eco_freight),
-        duration: calculateDeliveryTime(SERVICE_RATES.eco_freight.speedFactor),
-        description: 'Cost-effective option with consolidated shipments'
+        duration: calculateDeliveryTime(SERVICE_RATES.eco_freight.speedFactor, 16), // 2 business days handling
+        description: 'Cost-effective with consolidated handling'
       }
     ]
   }
@@ -557,7 +558,11 @@ export default function QuotePage() {
       const metadata = {
         packageDetails,
         destination,
-        selectedService
+        selectedService,
+        estimatedDelivery: calculateEstimatedDelivery(
+          destination.pickupDate,
+          selectedService
+        )
       }
 
       if (selectedQuote) {
@@ -682,26 +687,48 @@ export default function QuotePage() {
     if (!user) return
 
     try {
+      // Find the quote data
+      const quote = quotes.find(q => q.id === quoteId)
+      if (!quote) {
+        throw new Error('Quote not found')
+      }
+
+      // Ensure we have all required data
+      if (!quote.metadata.destination.from || !quote.metadata.destination.to) {
+        throw new Error('Missing origin or destination address')
+      }
+
+      const shipmentData = {
+        quote_id: quoteId,
+        type: quote.metadata.packageDetails.type,
+        origin: quote.metadata.destination.from.formattedAddress || quote.metadata.destination.from.address,
+        destination: quote.metadata.destination.to.formattedAddress || quote.metadata.destination.to.address,
+        scheduled_pickup: quote.metadata.destination.pickupDate,
+        estimated_delivery: quote.metadata.estimatedDelivery || calculateEstimatedDelivery(
+          quote.metadata.destination.pickupDate, 
+          quote.metadata.selectedService
+        ),
+        customer_id: user.id
+      }
+
+      console.log('Sending shipment creation request:', shipmentData)
+
       // Create the shipment
       const response = await fetch('/api/shipments', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          quote_id: quoteId,
-          type: packageDetails.type,
-          origin: destination.from.address,
-          destination: destination.to.address,
-          scheduled_pickup: destination.pickupDate,
-          estimated_delivery: calculateEstimatedDelivery(destination.pickupDate, selectedService)
-        })
+        body: JSON.stringify(shipmentData)
       })
 
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.message || 'Failed to create shipment')
+        const errorData = await response.json()
+        console.error('Failed to create shipment:', errorData)
+        throw new Error(errorData.error || 'Failed to create shipment')
       }
+
+      const data = await response.json()
 
       // Update the ticket status
       const ticketResponse = await fetch(`/api/tickets/${quoteId}`, {
@@ -711,7 +738,6 @@ export default function QuotePage() {
         },
         body: JSON.stringify({
           status: 'in_progress',
-          created_by: user.id,
           metadata: {
             isShipment: true,
             shipmentStatus: 'created',
@@ -826,39 +852,41 @@ export default function QuotePage() {
           </div>
 
           {/* Progress Steps */}
-          <div className="mb-8">
-            <div className="flex justify-between">
-              {steps.map((step, index) => {
-                const isActive = currentStep === step.id
-                const isCompleted = steps.findIndex(s => s.id === currentStep) > index
+          {currentStep !== 'done' && (
+            <div className="mb-8">
+              <div className="flex justify-between">
+                {steps.map((step, index) => {
+                  const isActive = currentStep === step.id
+                  const isCompleted = steps.findIndex(s => s.id === currentStep) > index
 
-                return (
-                  <div key={step.id} className="flex flex-col items-center w-full">
-                    <div className="relative flex items-center justify-center w-full">
-                      <div
-                        className={`w-10 h-10 rounded-full flex items-center justify-center \
-                          ${isActive || isCompleted ? 'bg-primary text-white' : 'bg-gray-100 text-gray-400'}`}
-                        style={isActive || isCompleted ? { backgroundColor: COLORS.primary } : {}}
-                      >
-                        {index + 1}
+                  return (
+                    <div key={step.id} className="flex flex-col items-center w-full">
+                      <div className="relative flex items-center justify-center w-full">
+                        <div
+                          className={`w-10 h-10 rounded-full flex items-center justify-center \
+                            ${isActive || isCompleted ? 'bg-primary text-white' : 'bg-gray-100 text-gray-400'}`}
+                          style={isActive || isCompleted ? { backgroundColor: COLORS.primary } : {}}
+                        >
+                          {index + 1}
+                        </div>
+                        {index < steps.length - 1 && (
+                          <div className={`${isCompleted ? 'bg-primary' : 'bg-gray-200'} h-[2px] flex-1 mx-4`} />
+                        )}
                       </div>
-                      {index < steps.length - 1 && (
-                        <div className={`${isCompleted ? 'bg-primary' : 'bg-gray-200'} h-[2px] flex-1 mx-4`} />
-                      )}
+                      <span className={`mt-2 text-sm font-medium ${isActive ? 'text-primary' : 'text-gray-500'}`}>
+                        {step.label}
+                      </span>
                     </div>
-                    <span className={`mt-2 text-sm font-medium ${isActive ? 'text-primary' : 'text-gray-500'}`}>
-                      {step.label}
-                    </span>
-                  </div>
-                )
-              })}
+                  )
+                })}
+              </div>
             </div>
-          </div>
+          )}
 
           {error && (
             <div className="text-red-500 mb-4">{error}</div>
           )}
-          {successMessage && (
+          {successMessage && currentStep !== 'done' && (
             <div className="text-green-500 mb-4">{successMessage}</div>
           )}
 
@@ -1193,6 +1221,10 @@ export default function QuotePage() {
                           <span className="font-medium">Price:</span> $
                           {calculateServiceOptions(routeInfo).find(option => option.id === selectedService)?.price.toFixed(2)}
                         </p>
+                        <p>
+                          <span className="font-medium">Estimated Delivery:</span>{' '}
+                          {format(new Date(calculateEstimatedDelivery(destination.pickupDate, selectedService)), 'PPP')}
+                        </p>
                       </>
                     )}
                   </div>
@@ -1201,44 +1233,46 @@ export default function QuotePage() {
             )}
 
             {/* Navigation Buttons */}
-            <div className="flex justify-between mt-8">
-              {currentStep !== 'package' && (
-                <button
-                  onClick={handleBack}
-                  className="px-6 py-2 rounded-lg border border-gray-200 font-medium"
-                >
-                  <div className="flex items-center gap-2">
-                    <ArrowLeft className="w-4 h-4" />
-                    Back
-                  </div>
-                </button>
-              )}
-              
-              {currentStep === 'summary' ? (
-                <button
-                  className="px-6 py-2 rounded-lg text-white font-medium flex items-center gap-2"
-                  style={{ backgroundColor: COLORS.primary }}
-                  onClick={handleSubmitQuote}
-                  disabled={isSubmitting}
-                >
-                  {isSubmitting ? 'Submitting...' : (
-                    <>
-                      {selectedQuote ? 'Update Quote' : 'Submit Request'}
-                      <ArrowRight className="w-4 h-4" />
-                    </>
-                  )}
-                </button>
-              ) : (
-                <button
-                  onClick={handleNext}
-                  className="px-6 py-2 rounded-lg text-white font-medium flex items-center gap-2"
-                  style={{ backgroundColor: COLORS.primary }}
-                >
-                  Continue
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-              )}
-            </div>
+            {/* {currentStep !== 'done' && ( */}
+              <div className="flex justify-between mt-8">
+                {currentStep !== 'package' && (
+                  <button
+                    onClick={handleBack}
+                    className="px-6 py-2 rounded-lg border border-gray-200 font-medium"
+                  >
+                    <div className="flex items-center gap-2">
+                      <ArrowLeft className="w-4 h-4" />
+                      Back
+                    </div>
+                  </button>
+                )}
+                
+                {currentStep === 'summary' ? (
+                  <button
+                    className="px-6 py-2 rounded-lg text-white font-medium flex items-center gap-2"
+                    style={{ backgroundColor: COLORS.primary }}
+                    onClick={handleSubmitQuote}
+                    disabled={isSubmitting}
+                  >
+                    {isSubmitting ? 'Submitting...' : (
+                      <>
+                        {selectedQuote ? 'Update Quote' : 'Submit Request'}
+                        <ArrowRight className="w-4 h-4" />
+                      </>
+                    )}
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleNext}
+                    className="px-6 py-2 rounded-lg text-white font-medium flex items-center gap-2"
+                    style={{ backgroundColor: COLORS.primary }}
+                  >
+                    Continue
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            {/* )} */}
           </div>
 
           {currentStep === 'done' && (

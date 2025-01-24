@@ -91,7 +91,43 @@ export default function ShipmentDetailsPage() {
   }
 
   const StatusIcon = statusColors[shipment.status].icon
-  const currentLocation = shipment.events?.[0]?.location || 'Location not available'
+
+  const calculateCurrentLocation = () => {
+    const now = new Date()
+    const pickupTime = shipment.scheduled_pickup ? new Date(shipment.scheduled_pickup) : null
+    const deliveryTime = shipment.estimated_delivery ? new Date(shipment.estimated_delivery) : null
+
+    // If no scheduled times, return the latest event location or default message
+    if (!pickupTime || !deliveryTime) {
+      return shipment.events?.[0]?.location || 'Location not available'
+    }
+
+    // Before pickup - show origin
+    if (now < pickupTime) {
+      return shipment.origin
+    }
+
+    // After delivery - show destination
+    if (now > deliveryTime) {
+      return shipment.destination
+    }
+
+    // In transit - calculate intermediate location
+    const totalJourneyTime = deliveryTime.getTime() - pickupTime.getTime()
+    const timeElapsed = now.getTime() - pickupTime.getTime()
+    const progress = Math.min(Math.max(timeElapsed / totalJourneyTime, 0), 1)
+
+    // If we have a current event location, use that for more accuracy
+    if (shipment.events?.[0]?.location) {
+      return shipment.events[0].location
+    }
+
+    // Otherwise return a general progress message
+    const progressPercent = Math.round(progress * 100)
+    return `${progressPercent}% of the way from ${shipment.origin} to ${shipment.destination}`
+  }
+
+  const currentLocation = calculateCurrentLocation()
 
   return (
     <div className="max-w-4xl mx-auto p-6">

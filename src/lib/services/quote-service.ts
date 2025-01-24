@@ -101,32 +101,27 @@ export const quoteService = {
       const getOrCreateTag = async (name: string, color: string) => {
         console.debug(`Getting or creating tag: ${name}`)
         
-        // Try to get existing tag
-        const { data: existingTag } = await supabase
-          .from('tags')
-          .select('id')
-          .eq('name', name)
-          .single()
+        try {
+          // Try to get existing tag
+          const { data: existingTags } = await supabase
+            .from('tags')
+            .select('id')
+            .eq('name', name)
 
-        if (existingTag?.id) {
-          console.debug(`Found existing tag: ${name}`, existingTag)
-          return existingTag.id
-        }
+          const existingTag = existingTags?.[0]
+          if (existingTag?.id) {
+            console.debug(`Found existing tag: ${name}`, existingTag)
+            return existingTag.id
+          }
 
-        // Create new tag if it doesn't exist
-        const { data: newTag, error } = await supabase
-          .from('tags')
-          .insert({ name, color })
-          .select('id')
-          .single()
-
-        if (error) {
-          console.error(`Error creating tag ${name}:`, error)
+          // Create new tag using tagService
+          const newTag = await tagService.createTag(context, name, color)
+          console.debug(`Created new tag: ${name}`, newTag)
+          return newTag.id
+        } catch (error) {
+          console.error(`Error in getOrCreateTag for ${name}:`, error)
           return null
         }
-
-        console.debug(`Created new tag: ${name}`, newTag)
-        return newTag?.id
       }
 
       // Get or create the tags before creating the ticket

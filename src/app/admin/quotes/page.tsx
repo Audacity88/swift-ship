@@ -110,18 +110,19 @@ export default function QuotesPage() {
               No pending quote requests
             </div>
           ) : (
-            quotes?.map((quote) => (
-              <QuoteDetailView
-                key={quote.id}
-                quote={quote}
-                onSubmitQuote={handleSubmitQuote}
-                onEditQuote={handleEditQuote}
-                onDeleteQuote={handleDeleteQuote}
-                mode="pending"
-                isAdmin={true}
-                isDeleting={isDeleting}
-              />
-            ))
+            quotes?.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+              .map((quote) => (
+                <QuoteDetailView
+                  key={quote.id}
+                  quote={quote}
+                  onSubmitQuote={handleSubmitQuote}
+                  onEditQuote={handleEditQuote}
+                  onDeleteQuote={handleDeleteQuote}
+                  mode="pending"
+                  isAdmin={true}
+                  isDeleting={isDeleting}
+                />
+              ))
           )}
         </TabsContent>
 
@@ -133,17 +134,18 @@ export default function QuotesPage() {
               No quoted requests
             </div>
           ) : (
-            quotes?.map((quote) => (
-              <QuoteDetailView
-                key={quote.id}
-                quote={quote}
-                onEditQuote={handleEditQuote}
-                onDeleteQuote={handleDeleteQuote}
-                mode="quoted"
-                isAdmin={true}
-                isDeleting={isDeleting}
-              />
-            ))
+            quotes?.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+              .map((quote) => (
+                <QuoteDetailView
+                  key={quote.id}
+                  quote={quote}
+                  onEditQuote={handleEditQuote}
+                  onDeleteQuote={handleDeleteQuote}
+                  mode="quoted"
+                  isAdmin={true}
+                  isDeleting={isDeleting}
+                />
+              ))
           )}
         </TabsContent>
       </Tabs>

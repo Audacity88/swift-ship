@@ -83,23 +83,41 @@ export async function POST(request: Request) {
     const json = await request.json()
     console.log('Received shipment creation request:', json)
 
-    const { quote_id, type, origin, destination, scheduled_pickup, estimated_delivery } = json
+    const { quote_id, type, origin, destination, scheduled_pickup, estimated_delivery, customer_id } = json
+
+    // Validate required fields
+    if (!type || !origin || !destination || !customer_id) {
+      console.error('Missing required fields:', { type, origin, destination, customer_id })
+      return NextResponse.json(
+        { error: 'Missing required fields' },
+        { status: 400 }
+      )
+    }
 
     // Create shipment using the service with server context
-    const shipment = await shipmentService.createShipment({ supabase }, {
-      quote_id,
-      type,
-      origin,
-      destination,
-      scheduled_pickup,
-      estimated_delivery
-    })
-
-    return NextResponse.json(shipment)
+    try {
+      const shipment = await shipmentService.createShipment({ supabase }, {
+        quote_id,
+        type,
+        origin,
+        destination,
+        scheduled_pickup,
+        estimated_delivery,
+        customer_id,
+        status: 'quote_accepted'
+      })
+      return NextResponse.json(shipment)
+    } catch (serviceError) {
+      console.error('Service error creating shipment:', serviceError)
+      return NextResponse.json(
+        { error: serviceError instanceof Error ? serviceError.message : 'Failed to create shipment', details: serviceError },
+        { status: 500 }
+      )
+    }
   } catch (error) {
     console.error('Error in shipments POST route:', error)
     return NextResponse.json(
-      { error: 'Internal server error', details: error },
+      { error: error instanceof Error ? error.message : 'Internal server error', details: error },
       { status: 500 }
     )
   }

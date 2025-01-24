@@ -298,9 +298,9 @@ export const tagService = {
         // Insert the associations
         const { error } = await supabase
           .from('ticket_tags')
-          .insert(associations, {
-            returning: 'minimal',
-            count: null
+          .upsert(associations, {
+            onConflict: 'ticket_id,tag_id',
+            ignoreDuplicates: true
           })
 
         if (error) {

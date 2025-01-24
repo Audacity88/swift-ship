@@ -112,7 +112,6 @@ export const shipmentService = {
         .from('shipments')
         .update({ 
           status,
-          updated_by: user.id,
           updated_at: new Date().toISOString()
         })
         .eq('id', shipmentId)
@@ -354,112 +353,42 @@ export const shipmentService = {
     }
   },
 
-  async createShipment(
-    context: { supabase: any },
-    data: {
-      quote_id: string
-      type: ShipmentType
-      origin?: string
-      destination?: string
-      scheduled_pickup?: string
-      estimated_delivery?: string
-    }
-  ): Promise<Shipment> {
+  async createShipment(context: ServerContext, data: {
+    quote_id?: string
+    type: ShipmentType
+    origin: string
+    destination: string
+    scheduled_pickup?: string
+    estimated_delivery?: string
+    customer_id: string
+    created_by?: string
+    status?: string
+  }): Promise<Shipment> {
     try {
-      const { supabase } = context
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      
-      if (userError || !user) {
-        throw new Error('Unauthorized')
-      }
-
-      // Verify the quote exists
-      const { data: quote, error: quoteError } = await supabase
-        .from('tickets')
-        .select('id, customer_id, metadata, status')
-        .eq('id', data.quote_id)
-        .single()
-
-      if (quoteError || !quote) {
-        console.error('Failed to get quote:', quoteError)
-        throw new Error('Quote not found or invalid')
-      }
-
-      // Extract destination info from quote metadata if not provided
-      const quoteDestination = quote.metadata?.destination || {}
-      
-      const shipmentData = {
-        quote_id: data.quote_id,
-        customer_id: quote.customer_id,
-        type: data.type,
-        status: 'quote_requested' as ShipmentStatus,
-        origin: data.origin || (quoteDestination.from?.address || quoteDestination.from || null),
-        destination: data.destination || (quoteDestination.to?.address || quoteDestination.to || null),
-        scheduled_pickup: data.scheduled_pickup || (quoteDestination.pickupDate ? new Date(quoteDestination.pickupDate).toISOString() : null),
-        estimated_delivery: data.estimated_delivery || null,
-        tracking_number: generateTrackingNumber(),
-        metadata: {
-          quote_metadata: quote.metadata,
-          created_by: user.id,
-          updated_by: user.id
-        }
-      }
-
-      // Create the shipment
-      const { data: shipment, error: shipmentError } = await supabase
+      const supabase = context.supabase || getServerSupabase(context)
+      const { data: shipment, error } = await supabase
         .from('shipments')
-        .insert(shipmentData)
+        .insert({
+          ...data,
+          status: data.status || 'quote_accepted',
+          tracking_number: generateTrackingNumber(),
+          metadata: {},
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
         .select()
         .single()
 
-      if (shipmentError || !shipment) {
-        console.error('Failed to create shipment:', shipmentError)
-        throw new Error('Failed to create shipment')
+      if (error) {
+        console.error('Failed to create shipment:', error)
+        throw error
       }
 
-      // Create initial shipment event
-      const { error: eventError } = await supabase
-        .from('shipment_events')
-        .insert({
-          shipment_id: shipment.id,
-          status: 'quote_requested',
-          notes: 'Quote request submitted',
-          created_by: quote.customer_id
-        })
-
-      if (eventError) {
-        console.error('Failed to create shipment event:', eventError)
-        // Don't fail the request, but log the error
+      if (!shipment) {
+        throw new Error('Failed to create shipment - no record returned')
       }
 
-      // Ensure status is set to quote_accepted
-      const { error: updateError } = await supabase
-        .from('shipments')
-        .update({ 
-          status: 'quote_accepted',
-          updated_by: user.id,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', shipment.id)
-
-      if (updateError) {
-        console.error('Failed to update shipment status:', updateError)
-        throw updateError
-      }
-
-      // Get the updated shipment
-      const { data: updatedShipment, error: fetchError } = await supabase
-        .from('shipments')
-        .select('*')
-        .eq('id', shipment.id)
-        .single()
-
-      if (fetchError) {
-        console.error('Failed to fetch updated shipment:', fetchError)
-        throw fetchError
-      }
-
-      return updatedShipment
+      return shipment
     } catch (error) {
       console.error('Error in createShipment:', error)
       throw error
