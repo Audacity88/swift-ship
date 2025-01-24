@@ -1,10 +1,8 @@
 import { useState } from 'react'
+import { createBrowserClient } from '@supabase/ssr'
 import Link from 'next/link'
 import { useRouter } from 'next/router'
 import { COLORS } from '@/lib/constants'
-import { generatePKCEChallenge } from '@/lib/auth/pkce'
-import { authService } from '@/lib/services'
-import { createBrowserClient } from '@supabase/ssr'
 
 export default function SignIn() {
   const [email, setEmail] = useState('')
@@ -16,6 +14,19 @@ export default function SignIn() {
     password?: string;
   }>({})
   const router = useRouter()
+  const { next } = router.query
+
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: false
+      }
+    }
+  )
 
   const validateForm = () => {
     const errors: { email?: string; password?: string } = {}
@@ -41,62 +52,32 @@ export default function SignIn() {
     setLoading(true)
 
     try {
-      console.log('[SignIn] Starting sign in process')
-      
-      // Create Supabase client
-      const supabase = createBrowserClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-      )
-
-      // Sign in directly with browser client
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password
       })
 
       if (error) {
-        console.error('[SignIn] Sign in error:', error)
         setError(error.message)
         return
       }
 
       if (!data.session) {
-        console.error('[SignIn] No session returned')
-        setError('Failed to establish session')
+        setError('No session returned from sign in')
         return
       }
 
-      console.log('[SignIn] Sign in successful, session established')
-
-      // Get the next URL from query params, message, or default to '/'
-      let nextUrl = '/'
-      
-      // If we have a message, add it to the destination
-      if (router.query.message) {
-        const destination = router.query.next as string || '/'
-        const url = new URL(destination, window.location.origin)
-        url.searchParams.set('message', router.query.message as string)
-        nextUrl = url.pathname + url.search
-      } 
-      // If we have a next URL that isn't /signin, use it
-      else if (router.query.next && router.query.next !== '/signin' && router.query.next !== '/auth/signin') {
-        nextUrl = router.query.next as string
-      }
-
-      // Verify session one more time
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-      if (!session || sessionError) {
-        console.error('[SignIn] Failed to verify final session:', sessionError)
-        setError('Failed to establish session. Please try again.')
+      // Verify user immediately after sign in
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (userError || !user) {
+        setError('Failed to verify user authentication')
         return
       }
 
-      console.log('[SignIn] Session verified, redirecting to:', nextUrl)
-      router.push(nextUrl)
+      router.push(next as string || '/home')
     } catch (err) {
-      console.error('[SignIn] Unexpected error:', err)
       setError('An unexpected error occurred')
+      console.error('Sign in error:', err)
     } finally {
       setLoading(false)
     }
@@ -140,7 +121,6 @@ export default function SignIn() {
                   type="email"
                   autoComplete="email"
                   required
-                  spellCheck="false"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="block w-full appearance-none rounded-lg border border-gray-200 \
@@ -164,7 +144,6 @@ export default function SignIn() {
                   type="password"
                   autoComplete="current-password"
                   required
-                  spellCheck="false"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="block w-full appearance-none rounded-lg border border-gray-200 \
