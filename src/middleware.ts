@@ -91,6 +91,15 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(redirectUrl)
     }
 
+    // Check admin routes access
+    if (request.nextUrl.pathname.startsWith('/admin/')) {
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (user?.user_metadata?.type !== 'admin' && user?.user_metadata?.type !== 'agent') {
+        console.log('[Middleware] Non-admin/agent user attempting to access admin route, redirecting to home')
+        return NextResponse.redirect(new URL('/', request.url))
+      }
+    }
+
     console.log('[Middleware] User authenticated')
     return response
   } catch (err) {

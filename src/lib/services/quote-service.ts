@@ -78,9 +78,11 @@ export const quoteService = {
     const supabase = getServerSupabase(context)
 
     try {
-      // Determine priority based on delivery time
+      // Determine priority based on delivery time and shipment type
       let priority = 'medium'
-      if (data.metadata?.destination?.pickupDate) {
+      if (data.metadata?.packageDetails?.type === 'eco-freight') {
+        priority = 'low'
+      } else if (data.metadata?.destination?.pickupDate) {
         const pickupDate = new Date(data.metadata.destination.pickupDate)
         const today = new Date()
         
@@ -125,8 +127,8 @@ export const quoteService = {
         .insert({
           ticket_id: ticket.id,
           content: `New quote request received for ${data.metadata.packageDetails.type} shipment from ${data.metadata.destination.from.address} to ${data.metadata.destination.to.address}.`,
-          author_type: 'customer',
-          author_id: data.customerId
+          author_type: 'agent',
+          author_id: '00000000-0000-0000-0000-000000000000'
         })
 
       if (messageError) throw messageError

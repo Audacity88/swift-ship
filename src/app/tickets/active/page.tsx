@@ -17,10 +17,11 @@ export default function ActiveTicketsPage() {
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list')
   const [selectedStatus, setSelectedStatus] = useState<TicketStatus[]>([])
   const [selectedPriority, setSelectedPriority] = useState<TicketPriority[]>([])
+  const [showUnassigned, setShowUnassigned] = useState(false)
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
 
   const { data: response = { data: [] }, isLoading } = useQuery<{ data: TicketListItem[] }>({
-    queryKey: ['active-tickets', selectedStatus, selectedPriority, sortOrder],
+    queryKey: ['active-tickets', selectedStatus, selectedPriority, showUnassigned, sortOrder],
     queryFn: async () => {
       const params = new URLSearchParams()
       
@@ -34,6 +35,10 @@ export default function ActiveTicketsPage() {
         selectedPriority.forEach(priority => {
           params.append('priority', priority.toLowerCase());
         });
+      }
+      // Add unassigned filter
+      if (showUnassigned) {
+        params.append('unassigned', 'true');
       }
       // Add sorting
       params.set('sortField', 'created_at')
@@ -140,6 +145,24 @@ export default function ActiveTicketsPage() {
                   {priority.charAt(0).toUpperCase() + priority.slice(1)}
                 </button>
               ))}
+            </div>
+          </div>
+
+          {/* Assignment Filter */}
+          <div>
+            <label className="text-sm text-gray-600 mb-1.5 block">Assignment</label>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setShowUnassigned(prev => !prev)}
+                className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
+                  showUnassigned
+                    ? 'bg-primary text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+                style={showUnassigned ? { backgroundColor: '#0052CC' } : {}}
+              >
+                Unassigned
+              </button>
             </div>
           </div>
         </div>

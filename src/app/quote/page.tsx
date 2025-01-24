@@ -1289,7 +1289,7 @@ export default function QuotePage() {
           {currentStep === 'done' && (
             <div className="bg-white rounded-xl border border-gray-200 p-6 text-center">
               <h2 className="text-xl font-semibold mb-4">Thank you!</h2>
-              <p className="text-gray-700">Your quote request has been submitted.</p>
+              {/* <p className="text-gray-700">Your quote request has been submitted.</p> */}
               {successMessage && (
                 <p className="text-green-500 mt-2">{successMessage}</p>
               )}

@@ -137,7 +137,7 @@ export const TicketList: React.FC<TicketListProps> = ({
               <TableCell>
                 <Badge>{ticket.status}</Badge>
               </TableCell>
-              <TableCell>{formatDate(ticket.createdAt)}</TableCell>
+              <TableCell>{formatDate(ticket.created_at)}</TableCell>
             </TableRow>
           ))}
         </TableBody>

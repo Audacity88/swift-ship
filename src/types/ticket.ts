@@ -1,5 +1,6 @@
 import type { CustomFieldValue } from './custom-field'
 import { User } from './user'
+import { z } from 'zod'
 
 export enum TicketStatus {
   OPEN = 'open',
@@ -126,4 +127,14 @@ export interface TicketListItem {
   createdAt: string
   updatedAt: string
   tags: Tag[]
-} 
+}
+
+export const ticketFiltersSchema = z.object({
+  status: z.array(z.string()).optional(),
+  priority: z.array(z.string()).optional(),
+  type: z.string().nullish(),
+  search: z.string().nullish(),
+  dateFrom: z.string().nullish(),
+  dateTo: z.string().nullish(),
+  unassigned: z.boolean().optional()
+}) 

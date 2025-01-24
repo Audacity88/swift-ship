@@ -40,7 +40,8 @@ const ticketFiltersSchema = z.object({
   type: z.string().optional(),
   search: z.string().nullish(),
   dateFrom: z.string().nullish(),
-  dateTo: z.string().nullish()
+  dateTo: z.string().nullish(),
+  unassigned: z.boolean().optional()
 })
 
 const paginationSchema = z.object({
@@ -114,7 +115,8 @@ export async function GET(request: NextRequest) {
         type: searchParams.get('type'),
         search: searchParams.get('search'),
         dateFrom: searchParams.get('dateFrom'),
-        dateTo: searchParams.get('dateTo')
+        dateTo: searchParams.get('dateTo'),
+        unassigned: searchParams.get('unassigned') === 'true'
       })
 
       // Start building the query
@@ -131,11 +133,6 @@ export async function GET(request: NextRequest) {
           assignee:agents!tickets_assignee_id_fkey(*)
         `, { count: 'exact' })
 
-      // If user is not an admin, only show tickets assigned to them
-      if (user.type === 'agent' && user.role !== 'admin') {
-        query = query.eq('assignee_id', user.id)
-      }
-
       // Apply filters
       if (filters.status?.length) {
         console.log('Applying status filter:', filters.status)
@@ -145,11 +142,18 @@ export async function GET(request: NextRequest) {
         console.log('Applying priority filter:', filters.priority)
         query = query.in('priority', filters.priority)
       }
+      if (filters.unassigned) {
+        console.log('Applying unassigned filter')
+        query = query.is('assignee_id', null)
+      }
+
+      // Add sorting
+      const sortField = searchParams.get('sortField') || 'created_at'
 
       // Execute query
       console.log('Executing query...')
       const { data: tickets, count, error: ticketsError } = await query
-        .order('created_at', { ascending: false })
+        .order(sortField, { ascending: false })
 
       if (ticketsError) {
         console.error('Database error:', ticketsError)

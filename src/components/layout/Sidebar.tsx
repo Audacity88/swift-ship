@@ -34,6 +34,7 @@ const navItems: NavItem[] = [
     icon: Ticket,
     label: 'Tickets',
     href: '/tickets/active',
+    roles: [RoleType.AGENT, RoleType.ADMIN],
   },
   {
     icon: Quote,
@@ -42,9 +43,16 @@ const navItems: NavItem[] = [
     roles: [RoleType.CUSTOMER],
   },
   {
+    icon: Truck,
+    label: 'Shipments',
+    href: '/shipments',
+    roles: [RoleType.CUSTOMER],
+  },
+  {
     icon: FileText,
     label: 'Manage Quotes',
-    href: '/quotes',
+    href: '/admin/quotes',
+    roles: [RoleType.AGENT, RoleType.ADMIN],
   },
   {
     icon: BarChart2,
@@ -53,11 +61,17 @@ const navItems: NavItem[] = [
     roles: [RoleType.ADMIN],
   },
   {
-    icon: Settings,
-    label: 'Settings',
-    href: '/settings',
+    icon: UserCog,
+    label: 'Agents',
+    href: '/agents',
     roles: [RoleType.ADMIN],
   },
+  {
+    icon: UsersRound,
+    label: 'Teams',
+    href: '/teams',
+    roles: [RoleType.ADMIN],
+  }
 ]
 
 const quickAccessItems: NavItem[] = [
