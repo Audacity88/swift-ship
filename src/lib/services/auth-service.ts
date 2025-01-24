@@ -94,7 +94,7 @@ export const authService = {
   ): Promise<{ success: boolean; error?: string }> {
     const supabase = getServerSupabase(context)
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data: signInData, error } = await supabase.auth.signInWithPassword({
         email: data.email,
         password: data.password,
         options: {
@@ -108,7 +108,22 @@ export const authService = {
         return { success: false, error: error.message }
       }
 
-      // Verify user immediately after sign in
+      if (!signInData.session) {
+        return { success: false, error: 'No session returned from sign in' }
+      }
+
+      // Set the session explicitly
+      const { error: sessionError } = await supabase.auth.setSession({
+        access_token: signInData.session.access_token,
+        refresh_token: signInData.session.refresh_token,
+      })
+
+      if (sessionError) {
+        console.error('Session set error:', sessionError)
+        return { success: false, error: 'Failed to establish session' }
+      }
+
+      // Verify user after setting session
       const { data: { user }, error: userError } = await supabase.auth.getUser()
       if (userError || !user) {
         return { success: false, error: 'Failed to verify user authentication' }
