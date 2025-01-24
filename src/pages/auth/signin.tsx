@@ -4,6 +4,7 @@ import { useRouter } from 'next/router'
 import { COLORS } from '@/lib/constants'
 import { generatePKCEChallenge } from '@/lib/auth/pkce'
 import { authService } from '@/lib/services'
+import { createBrowserClient } from '@supabase/ssr'
 
 export default function SignIn() {
   const [email, setEmail] = useState('')
@@ -40,32 +41,62 @@ export default function SignIn() {
     setLoading(true)
 
     try {
-      // Generate PKCE challenge
-      const { codeVerifier, codeChallenge } = await generatePKCEChallenge()
+      console.log('[SignIn] Starting sign in process')
       
-      // Store code verifier securely in session storage (will be cleared after use)
-      sessionStorage.setItem('pkce_code_verifier', codeVerifier)
+      // Create Supabase client
+      const supabase = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      )
 
-      const result = await authService.signIn({}, {
+      // Sign in directly with browser client
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
-        password,
-        pkceVerifier: codeVerifier,
-        pkceChallenge: codeChallenge,
-        pkceChallengeMethod: 'S256'
+        password
       })
 
-      if (!result.success) {
-        setError(result.error)
+      if (error) {
+        console.error('[SignIn] Sign in error:', error)
+        setError(error.message)
         return
       }
 
-      // Clear PKCE verifier
-      sessionStorage.removeItem('pkce_code_verifier')
+      if (!data.session) {
+        console.error('[SignIn] No session returned')
+        setError('Failed to establish session')
+        return
+      }
 
-      router.push('/')
+      console.log('[SignIn] Sign in successful, session established')
+
+      // Get the next URL from query params, message, or default to '/'
+      let nextUrl = '/'
+      
+      // If we have a message, add it to the destination
+      if (router.query.message) {
+        const destination = router.query.next as string || '/'
+        const url = new URL(destination, window.location.origin)
+        url.searchParams.set('message', router.query.message as string)
+        nextUrl = url.pathname + url.search
+      } 
+      // If we have a next URL that isn't /signin, use it
+      else if (router.query.next && router.query.next !== '/signin' && router.query.next !== '/auth/signin') {
+        nextUrl = router.query.next as string
+      }
+
+      // Verify session one more time
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      if (!session || sessionError) {
+        console.error('[SignIn] Failed to verify final session:', sessionError)
+        setError('Failed to establish session. Please try again.')
+        return
+      }
+
+      console.log('[SignIn] Session verified, redirecting to:', nextUrl)
+      router.push(nextUrl)
     } catch (err) {
+      console.error('[SignIn] Unexpected error:', err)
       setError('An unexpected error occurred')
-      console.error('Sign in error:', err)
     } finally {
       setLoading(false)
     }
