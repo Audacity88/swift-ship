@@ -42,50 +42,36 @@ export async function GET() {
 // POST /api/tags - Create a new tag
 export async function POST(request: Request) {
   try {
-    const supabase = getServerSupabase()
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    
-    if (userError || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
-    }
+    const { operation, tagIds, ticketIds }: {
+      operation: 'add' | 'remove'
+      tagIds: string[]
+      ticketIds: string[]
+    } = await request.json()
 
-    const tag = await request.json()
-
-    if (!tag.name) {
+    if (!tagIds?.length || !ticketIds?.length) {
       return NextResponse.json(
-        { error: 'Tag name is required' },
+        { error: 'Tag IDs and ticket IDs are required' },
         { status: 400 }
       )
     }
 
-    const { data, error } = await supabase
-      .from('tags')
-      .insert({
-        ...tag,
-        created_by: user.id,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      })
-      .select()
-      .single()
-
-    if (error) {
-      console.error('Error creating tag:', error)
-      return NextResponse.json(
-        { error: 'Failed to create tag' },
-        { status: 500 }
+    // Process each tag-ticket pair individually
+    await Promise.all(
+      ticketIds.flatMap(ticketId =>
+        tagIds.map(tagId =>
+          operation === 'add'
+            ? tagService.addTagToTicket(undefined, tagId, ticketId)
+            : tagService.removeTagFromTicket(undefined, tagId, ticketId)
+        )
       )
-    }
+    )
 
-    return NextResponse.json(data)
-  } catch (error) {
-    console.error('Error in POST /api/tags:', error)
+    return NextResponse.json({ success: true })
+  } catch (error: any) {
+    console.error('Failed to perform tag operation:', error)
     return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
+      { error: error.message || 'Internal server error' },
+      { status: error.status || 500 }
     )
   }
 }

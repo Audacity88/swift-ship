@@ -1233,7 +1233,7 @@ export default function QuotePage() {
             )}
 
             {/* Navigation Buttons */}
-            {/* {currentStep !== 'done' && ( */}
+            {currentStep !== 'done' && (
               <div className="flex justify-between mt-8">
                 {currentStep !== 'package' && (
                   <button
@@ -1272,7 +1272,9 @@ export default function QuotePage() {
                   </button>
                 )}
               </div>
+              )}
             {/* )} */}
+            
           </div>
 
           {currentStep === 'done' && (

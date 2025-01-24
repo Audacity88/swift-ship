@@ -97,47 +97,6 @@ export const quoteService = {
         }
       }
 
-      // First, get or create the tags we need
-      const getOrCreateTag = async (name: string, color: string) => {
-        console.debug(`Getting or creating tag: ${name}`)
-        
-        try {
-          // Try to get existing tag
-          const { data: existingTags } = await supabase
-            .from('tags')
-            .select('id')
-            .eq('name', name)
-
-          const existingTag = existingTags?.[0]
-          if (existingTag?.id) {
-            console.debug(`Found existing tag: ${name}`, existingTag)
-            return existingTag.id
-          }
-
-          // Create new tag using tagService
-          const newTag = await tagService.createTag(context, name, color)
-          console.debug(`Created new tag: ${name}`, newTag)
-          return newTag.id
-        } catch (error) {
-          console.error(`Error in getOrCreateTag for ${name}:`, error)
-          return null
-        }
-      }
-
-      // Get or create the tags before creating the ticket
-      const quoteTagId = await getOrCreateTag('quote', '#6366F1')
-      let serviceTagId = null
-      if (data.metadata?.selectedService) {
-        const serviceColors = {
-          express_freight: '#EF4444',
-          standard_freight: '#3B82F6',
-          eco_freight: '#10B981'
-        }
-        const serviceName = data.metadata.selectedService
-        const serviceColor = serviceColors[serviceName as keyof typeof serviceColors] || '#6B7280'
-        serviceTagId = await getOrCreateTag(serviceName, serviceColor)
-      }
-
       // Create the ticket
       const { data: ticket, error: ticketError } = await supabase
         .from('tickets')
@@ -159,30 +118,6 @@ export const quoteService = {
 
       if (ticketError) throw ticketError
       if (!ticket) throw new Error('Failed to create ticket')
-
-      // Add tags using tagService
-      const tagIds = [quoteTagId]
-      if (serviceTagId) {
-        tagIds.push(serviceTagId)
-      }
-
-      console.debug('About to add tags:', {
-        tagIds,
-        quoteTagId,
-        serviceTagId,
-        ticketId: ticket.id
-      })
-
-      try {
-        if (!quoteTagId) {
-          console.error('No quote tag ID available')
-          return
-        }
-        
-        await tagService.bulkUpdateTicketTags(context, 'add', tagIds.filter(Boolean), [ticket.id])
-      } catch (error) {
-        console.error('Error adding tags to ticket:', error)
-      }
 
       // Return the created quote request
       return {

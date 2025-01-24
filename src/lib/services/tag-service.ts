@@ -1,6 +1,11 @@
 import { getServerSupabase, type ServerContext } from '@/lib/supabase-client'
 import type { Tag, TagSuggestion } from '@/types/tag'
 
+interface TicketTag {
+  ticket_id: string
+  tag_id: string
+}
+
 export const tagService = {
   async getSuggestions(context: ServerContext, ticketId: string): Promise<TagSuggestion[]> {
     try {
@@ -265,7 +270,7 @@ export const tagService = {
         throw new Error('Unauthorized')
       }
 
-      console.debug('Updating ticket tags:', { operation, tagIds, ticketIds })
+      console.debug('Bulk updating ticket tags:', { operation, tagIds, ticketIds })
 
       if (operation === 'add') {
         // Create tag-ticket associations
@@ -328,6 +333,75 @@ export const tagService = {
       }
     } catch (error) {
       console.error('Error in bulkUpdateTicketTags:', error)
+      throw error
+    }
+  },
+
+  async addTagToTicket(context: ServerContext, tagId: string, ticketId: string): Promise<void> {
+    try {
+      const supabase = getServerSupabase(context)
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      
+      if (userError || !user) {
+        throw new Error('Unauthorized')
+      }
+
+      // First verify the tag exists
+      const { data: existingTag, error: tagCheckError } = await supabase
+        .from('tags')
+        .select('id')
+        .eq('id', tagId)
+        .single()
+
+      if (tagCheckError || !existingTag) {
+        throw new Error('Tag does not exist')
+      }
+
+      // Add the tag to the ticket
+      const { error: insertError } = await supabase
+        .from('ticket_tags')
+        .insert({ ticket_id: ticketId, tag_id: tagId })
+
+      if (insertError) {
+        // If it's a duplicate, that's fine - ignore the error
+        if (insertError.code === '23505') { // PostgreSQL unique violation code
+          return
+        }
+        throw insertError
+      }
+
+      // Update the tag usage count
+      await this.updateTagUsage(context, tagId, true)
+    } catch (error) {
+      console.error('Error in addTagToTicket:', error)
+      throw error
+    }
+  },
+
+  async removeTagFromTicket(context: ServerContext, tagId: string, ticketId: string): Promise<void> {
+    try {
+      const supabase = getServerSupabase(context)
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      
+      if (userError || !user) {
+        throw new Error('Unauthorized')
+      }
+
+      // Remove the tag from the ticket
+      const { error } = await supabase
+        .from('ticket_tags')
+        .delete()
+        .eq('ticket_id', ticketId)
+        .eq('tag_id', tagId)
+
+      if (error) {
+        throw error
+      }
+
+      // Update the tag usage count
+      await this.updateTagUsage(context, tagId, false)
+    } catch (error) {
+      console.error('Error in removeTagFromTicket:', error)
       throw error
     }
   }
