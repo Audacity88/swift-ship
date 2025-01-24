@@ -137,6 +137,11 @@ export async function GET(request: NextRequest) {
         assignee:agents!tickets_assignee_id_fkey(*)
       `, { count: 'exact' })
 
+    // If user is not an admin, only show tickets assigned to them
+    if (user.type === 'agent' && user.role !== 'admin') {
+      query = query.eq('assignee_id', user.id)
+    }
+
     // Apply filters
     if (filters.status?.length) {
       query = query.in('status', filters.status)

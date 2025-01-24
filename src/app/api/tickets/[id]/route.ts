@@ -80,6 +80,14 @@ export async function GET(
       )
     }
 
+    // Check if user has access to this ticket
+    if (user.type === 'agent' && user.role !== 'admin' && ticket.assignee_id !== user.id) {
+      return NextResponse.json(
+        { error: 'You do not have permission to view this ticket' },
+        { status: 403 }
+      )
+    }
+
     return NextResponse.json({ ticket })
   } catch (error) {
     console.error('Failed to fetch ticket:', error)

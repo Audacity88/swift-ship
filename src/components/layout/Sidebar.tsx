@@ -18,7 +18,7 @@ import { cn } from '@/lib/utils'
 
 interface NavItem {
   icon: React.ElementType
-  label: string
+  label: string | ((user: any) => string)
   href: string
   roles?: RoleType[]
   badge?: () => number | undefined
@@ -26,6 +26,20 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { icon: Home, label: 'Home', href: ROUTES.dashboard },
+  { 
+    icon: Ticket, 
+    label: ({ user }) => user?.role === RoleType.ADMIN ? 'All Tickets' : 'Tickets',
+    href: `${ROUTES.tickets}/overview`,
+    roles: [RoleType.ADMIN, RoleType.AGENT],
+    badge: () => useTicketStore.getState().tickets.length
+  },
+  { 
+    icon: ListChecks, 
+    label: 'Open Tickets', 
+    href: `${ROUTES.tickets}/active`,
+    roles: [RoleType.ADMIN],
+    badge: () => useTicketStore.getState().tickets.filter(t => t.status !== 'closed').length
+  },
   { 
     icon: Quote, 
     label: 'Quote', 
@@ -67,29 +81,6 @@ const navItems: NavItem[] = [
     label: 'Teams',
     href: ROUTES.teams,
     roles: [RoleType.ADMIN]
-  },
-]
-
-const ticketItems: NavItem[] = [
-  { 
-    icon: Ticket, 
-    label: 'Overview', 
-    href: `${ROUTES.tickets}/overview`,
-    badge: () => useTicketStore.getState().tickets.length
-  },
-  { 
-    icon: ListChecks, 
-    label: 'Active Tickets', 
-    href: `${ROUTES.tickets}/active`,
-    badge: () => useTicketStore.getState().tickets.filter(t => t.status !== 'closed').length
-  },
-  { icon: Search, label: 'Search Tickets', href: `${ROUTES.tickets}/search` },
-  { 
-    icon: Users, 
-    label: 'Team Queue', 
-    href: `${ROUTES.tickets}/queue`,
-    roles: [RoleType.AGENT, RoleType.ADMIN, RoleType.SUPERVISOR],
-    badge: () => useTicketStore.getState().tickets.filter(t => t.assigneeId).length
   },
 ]
 
@@ -164,7 +155,7 @@ export function Sidebar() {
               style={active ? { backgroundColor: theme === 'dark' ? '#FFFFFF' : '#0066FF' } : {}}
             >
               <Icon className="w-5 h-5" />
-              <span>{item.label}</span>
+              <span>{typeof item.label === 'function' ? item.label(user) : item.label}</span>
               {badge !== undefined && (
                 <span className={cn(
                   "ml-auto inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium",
@@ -178,48 +169,6 @@ export function Sidebar() {
             </Link>
           )
         })}
-
-        {/* Ticket Section */}
-        {role !== RoleType.CUSTOMER && (
-          <div className="pt-4">
-            <div className="px-3 mb-2 text-xs font-semibold text-gray-400 uppercase">
-              Tickets
-            </div>
-            {ticketItems.map((item) => {
-              if (!isAllowed(item)) return null
-              const Icon = item.icon
-              const active = isActive(item.href)
-              const badge = item.badge?.()
-
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={cn(
-                    "flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-lg transition-colors",
-                    active
-                      ? "bg-primary text-primary-foreground"
-                      : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800"
-                  )}
-                  style={active ? { backgroundColor: theme === 'dark' ? '#FFFFFF' : '#0066FF' } : {}}
-                >
-                  <Icon className="w-5 h-5" />
-                  <span>{item.label}</span>
-                  {badge !== undefined && (
-                    <span className={cn(
-                      "ml-auto inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium",
-                      active 
-                        ? "bg-white dark:bg-gray-900 text-primary dark:text-white" 
-                        : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400"
-                    )}>
-                      {badge}
-                    </span>
-                  )}
-                </Link>
-              )
-            })}
-          </div>
-        )}
 
         {/* Quick Access */}
         <div className="pt-4">
@@ -245,7 +194,7 @@ export function Sidebar() {
                 style={active ? { backgroundColor: theme === 'dark' ? '#FFFFFF' : '#0066FF' } : {}}
               >
                 <Icon className="w-5 h-5" />
-                <span>{item.label}</span>
+                <span>{typeof item.label === 'function' ? item.label(user) : item.label}</span>
                 {badge !== undefined && (
                   <span className={cn(
                     "ml-auto inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium",

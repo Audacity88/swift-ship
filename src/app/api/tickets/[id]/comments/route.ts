@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { sql, Transaction } from '@/lib/db'
 import { getServerSupabase } from '@/lib/supabase-client'
 
 // Types
@@ -46,71 +45,79 @@ export async function POST(request: Request, props: { params: Promise<{ id: stri
     const json = await request.json()
     const body = createCommentSchema.parse(json)
 
-    // Start a transaction
-    const result = await sql.transaction(async (tx: Transaction) => {
-      // Verify ticket exists
-      const [ticket] = await tx.execute(sql`
-        SELECT id FROM tickets WHERE id = ${params.id}
-      `)
+    // Verify ticket exists
+    const { data: ticket, error: ticketError } = await supabase
+      .from('tickets')
+      .select('id')
+      .eq('id', params.id)
+      .single()
 
-      if (!ticket) {
-        throw new Error('Ticket not found')
-      }
+    if (ticketError || !ticket) {
+      return NextResponse.json(
+        { error: 'Ticket not found' },
+        { status: 404 }
+      )
+    }
 
-      // Create the message
-      const [message] = await tx.execute<MessageResult>(sql`
-        INSERT INTO messages (
-          ticket_id,
-          content,
-          author_type,
-          author_id,
-          is_internal
-        ) VALUES (
-          ${params.id},
-          ${body.content},
-          ${user.type},
-          ${user.id},
-          ${body.isInternal}
-        )
-        RETURNING *
-      `)
+    // Create the message
+    const { data: message, error: messageError } = await supabase
+      .from('messages')
+      .insert({
+        ticket_id: params.id,
+        content: body.content,
+        author_type: user.type,
+        author_id: user.id,
+        is_internal: body.isInternal,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .select()
+      .single()
 
-      // Create audit log
-      await tx.execute(sql`
-        INSERT INTO audit_logs (
-          entity_type,
-          entity_id,
-          action,
-          actor_id,
-          actor_type,
-          changes
-        ) VALUES (
-          'ticket',
-          ${params.id},
-          'comment',
-          ${user.id},
-          ${user.type},
-          ${JSON.stringify({
-            messageId: message.id,
-            content: body.content,
-            isInternal: body.isInternal
-          })}::jsonb
-        )
-      `)
+    if (messageError) {
+      console.error('Error creating message:', messageError)
+      return NextResponse.json(
+        { error: 'Failed to create message' },
+        { status: 500 }
+      )
+    }
 
-      // Update ticket updated_at
-      await tx.execute(sql`
-        UPDATE tickets 
-        SET 
-          updated_at = NOW(),
-          updated_by = ${user.id}
-        WHERE id = ${params.id}
-      `)
+    // Create audit log
+    const { error: auditError } = await supabase
+      .from('audit_logs')
+      .insert({
+        entity_type: 'ticket',
+        entity_id: params.id,
+        action: 'comment',
+        actor_id: user.id,
+        actor_type: user.type,
+        changes: {
+          messageId: message.id,
+          content: body.content,
+          isInternal: body.isInternal
+        }
+      })
 
-      return message
-    })
+    if (auditError) {
+      console.error('Error creating audit log:', auditError)
+      // Don't fail if audit log fails
+    }
 
-    return NextResponse.json({ data: result })
+    // Update ticket updated_at
+    const { error: updateError } = await supabase
+      .from('tickets')
+      .update({
+        updated_at: new Date().toISOString(),
+        updated_by: user.id
+      })
+      .eq('id', params.id)
+
+    if (updateError) {
+      console.error('Error updating ticket:', updateError)
+      // Don't fail if update fails
+    }
+
+    return NextResponse.json({ data: message })
   } catch (error) {
     console.error('Failed to create comment:', error)
     if (error instanceof z.ZodError) {
@@ -146,40 +153,19 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
     const offset = (page - 1) * limit
 
     // Get comments with author details
-    const comments = await sql.execute<MessageResult>(sql`
-      SELECT 
-        m.*,
-        CASE m.author_type
-          WHEN 'customer' THEN json_build_object(
-            'id', c.id,
-            'name', c.name,
-            'email', c.email,
-            'avatar', c.avatar,
-            'type', 'customer'
-          )
-          WHEN 'agent' THEN json_build_object(
-            'id', a.id,
-            'name', a.name,
-            'email', a.email,
-            'avatar', a.avatar,
-            'role', a.role,
-            'type', 'agent'
-          )
-        END as author
-      FROM messages m
-      LEFT JOIN customers c ON m.author_type = 'customer' AND m.author_id = c.id
-      LEFT JOIN agents a ON m.author_type = 'agent' AND m.author_id = a.id
-      WHERE m.ticket_id = ${params.id}
-      ORDER BY m.created_at DESC
-      LIMIT ${limit} OFFSET ${offset}
-    `)
+    const comments = await supabase
+      .from('messages')
+      .select('*')
+      .eq('ticket_id', params.id)
+      .order('created_at', { ascending: false })
+      .limit(limit)
+      .offset(offset)
 
     // Get total count
-    const [{ count }] = await sql.execute<{ count: string }>(sql`
-      SELECT COUNT(*) 
-      FROM messages 
-      WHERE ticket_id = ${params.id}
-    `)
+    const { count } = await supabase
+      .from('messages')
+      .select('COUNT(*)')
+      .eq('ticket_id', params.id)
 
     return NextResponse.json({
       data: comments,

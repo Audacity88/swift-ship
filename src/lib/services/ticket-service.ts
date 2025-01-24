@@ -118,6 +118,11 @@ export const ticketService = {
         .from('tickets')
         .select('*, customer:customers(*), assignee:agents!tickets_assignee_id_fkey(*)', { count: 'exact' })
 
+      // If user is not an admin, only show tickets assigned to them
+      if (user.type === 'agent' && user.role !== 'admin') {
+        query = query.eq('assignee_id', user.id)
+      }
+
       // Apply filters
       if (options?.filters?.status?.length) {
         query = query.in('status', options.filters.status)
@@ -197,6 +202,9 @@ export const ticketService = {
         throw new Error('Unauthorized')
       }
 
+      // If the user is an agent, automatically assign the ticket to them
+      const assigneeId = user.type === 'agent' ? user.id : payload.assigneeId || null
+
       const { data, error } = await supabase
         .from('tickets')
         .insert({
@@ -205,7 +213,7 @@ export const ticketService = {
           status: 'open',
           priority: payload.priority,
           customer_id: payload.customerId,
-          assignee_id: payload.assigneeId || null,
+          assignee_id: assigneeId,
           metadata: {
             tags: payload.tags || [],
             ...payload.metadata

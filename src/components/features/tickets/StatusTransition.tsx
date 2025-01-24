@@ -26,6 +26,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { TicketStatus } from '@/types/enums'
 import { statusWorkflow } from '@/lib/services/status-workflow'
 import type { StatusTransition as StatusTransitionType, TransitionCondition } from '@/types/status-workflow'
+import { conversationService } from '@/lib/services'
 
 interface StatusTransitionProps {
   ticketId: string
@@ -105,6 +106,17 @@ export function StatusTransition({
       }
 
       await onStatusChange(selectedStatus, reason.trim() || undefined)
+
+      // If the status is changing to in_progress, send a message
+      if (selectedStatus === 'in_progress') {
+        try {
+          await conversationService.addMessage({}, ticketId, `🔄 Status Update: Ticket moved to In Progress\n${reason ? `\nReason: ${reason}` : ''}\n\nThis ticket is now being actively worked on. You'll be notified of any updates.`, 'agent')
+        } catch (error) {
+          console.error('Failed to send assignment message:', error)
+          // Don't block the status change if message fails
+        }
+      }
+
       setIsDialogOpen(false)
       setSelectedStatus(null)
       setReason('')

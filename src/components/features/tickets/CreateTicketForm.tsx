@@ -43,7 +43,6 @@ export function CreateTicketForm({ onSubmit: externalSubmit, onSuccess }: Create
       description: '',
       priority: TicketPriority.MEDIUM,
       customerId: '',
-      assigneeId: '',
       tags: [],
       metadata: {}
     }
@@ -77,7 +76,6 @@ export function CreateTicketForm({ onSubmit: externalSubmit, onSuccess }: Create
         description: data.description.trim(),
         priority: data.priority,
         customerId: data.customerId,
-        assigneeId: data.assigneeId?.trim() || undefined,
         tags: data.tags || [],
         metadata: data.metadata || {}
       }
@@ -185,25 +183,6 @@ export function CreateTicketForm({ onSubmit: externalSubmit, onSuccess }: Create
                     field.onChange(value)
                     form.trigger('customerId')
                   }}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="assigneeId"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Assignee (Optional)</FormLabel>
-              <FormControl>
-                <Input
-                  type="text"
-                  {...field}
-                  value={field.value || ''}
-                  placeholder="Enter assignee ID"
                 />
               </FormControl>
               <FormMessage />

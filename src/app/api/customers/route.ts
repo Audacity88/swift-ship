@@ -16,6 +16,21 @@ export async function GET(request: Request) {
       )
     }
 
+    // Get user role to check if they are an agent or admin
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+
+    // Only allow agents and admins to view customers
+    if (!agent) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Agent access required' },
+        { status: 403 }
+      )
+    }
+
     // Parse the URL to get the customer ID from the path
     const url = new URL(request.url)
     const pathParts = url.pathname.split('/')

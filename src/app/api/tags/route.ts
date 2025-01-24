@@ -16,6 +16,21 @@ export async function GET() {
       )
     }
 
+    // Get user role to check if they are an agent or admin
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+
+    // Only allow agents and admins to view tags
+    if (!agent) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Agent access required' },
+        { status: 403 }
+      )
+    }
+
     const { data: tags, error } = await supabase
       .from('tags')
       .select('*')
