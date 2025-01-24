@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { getServerSupabase } from '@/lib/supabase-client'
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
 
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url)
@@ -13,7 +14,48 @@ export async function GET(request: Request) {
   }
 
   try {
-    const supabase = getServerSupabase()
+    // Create a response to modify its headers
+    const response = NextResponse.redirect(new URL(next, requestUrl))
+
+    // Create a Supabase client with cookie handling
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
+            return cookies().get(name)?.value
+          },
+          set(name: string, value: string, options: any) {
+            // If the cookie is being set, add it to the response
+            response.cookies.set({
+              name,
+              value,
+              ...options,
+              sameSite: 'lax',
+              httpOnly: true,
+              secure: process.env.NODE_ENV === 'production',
+              path: '/',
+              domain: new URL(request.url).hostname
+            })
+          },
+          remove(name: string, options: any) {
+            // If the cookie is being removed, expire it
+            response.cookies.set({
+              name,
+              value: '',
+              ...options,
+              maxAge: 0,
+              sameSite: 'lax',
+              httpOnly: true,
+              secure: process.env.NODE_ENV === 'production',
+              path: '/',
+              domain: new URL(request.url).hostname
+            })
+          },
+        },
+      }
+    )
 
     // Exchange the code for a session
     const { data: { session }, error } = await supabase.auth.exchangeCodeForSession(code)
@@ -21,6 +63,11 @@ export async function GET(request: Request) {
     if (error) {
       console.error('Auth error:', error)
       return NextResponse.redirect(new URL('/auth/auth-error?error=exchange_failed', requestUrl))
+    }
+
+    if (!session) {
+      console.error('No session returned')
+      return NextResponse.redirect(new URL('/auth/auth-error?error=no_session', requestUrl))
     }
 
     // Verify the user exists
@@ -36,7 +83,6 @@ export async function GET(request: Request) {
     }
 
     // Clear PKCE parameters from cookies
-    const response = NextResponse.redirect(new URL(next, requestUrl))
     response.cookies.set('code_verifier', '', { maxAge: 0 })
     response.cookies.set('code_challenge', '', { maxAge: 0 })
 

@@ -9,7 +9,7 @@ export type ServerContext = GetServerSidePropsContext | { req: NextApiRequest; r
 export const getServerSupabase = (context?: ServerContext) => {
   // If we're in a server context (have req/res), create a server client
   if (context?.req) {
-    return createServerClient(
+    return createServerClient<Database>(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
@@ -43,28 +43,13 @@ export const getServerSupabase = (context?: ServerContext) => {
           detectSessionInUrl: true,
           flowType: 'pkce',
           storageKey: 'sb-auth-token',
-          storage: {
-            getItem: (key) => {
-              try {
-                return window.localStorage.getItem(key)
-              } catch {
-                return null
-              }
-            },
-            setItem: (key, value) => {
-              try {
-                window.localStorage.setItem(key, value)
-              } catch {
-                // Ignore storage errors
-              }
-            },
-            removeItem: (key) => {
-              try {
-                window.localStorage.removeItem(key)
-              } catch {
-                // Ignore storage errors
-              }
-            }
+          storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+          cookieOptions: {
+            name: 'sb-auth-token',
+            lifetime: 60 * 60 * 24 * 7, // 1 week
+            domain: window.location.hostname,
+            path: '/',
+            sameSite: 'lax'
           }
         },
         global: {
@@ -75,6 +60,24 @@ export const getServerSupabase = (context?: ServerContext) => {
       }
     )
   }
-
-  throw new Error('No Supabase client available')
+  // If we're in a server environment without req/res (e.g. middleware), create a basic server client
+  else {
+    return createServerClient<Database>(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
+            return undefined // Cookie handling will be done by the middleware
+          },
+          set(name: string, value: string, options: any) {
+            // Cookie handling will be done by the middleware
+          },
+          remove(name: string, options: any) {
+            // Cookie handling will be done by the middleware
+          },
+        },
+      }
+    )
+  }
 } 

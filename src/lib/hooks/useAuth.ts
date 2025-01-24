@@ -3,50 +3,20 @@ import { useRouter } from 'next/navigation'
 import { createBrowserClient } from '@supabase/ssr'
 import { RoleType } from '@/types/role'
 
-// Create a function to get a fresh client each time
-const getSupabaseClient = () => createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
-      flowType: 'pkce',
-      storageKey: 'sb-auth-token',
-      storage: {
-        getItem: (key) => {
-          try {
-            return window.localStorage.getItem(key)
-          } catch {
-            return null
-          }
-        },
-        setItem: (key, value) => {
-          try {
-            window.localStorage.setItem(key, value)
-          } catch {
-            // Ignore storage errors
-          }
-        },
-        removeItem: (key) => {
-          try {
-            window.localStorage.removeItem(key)
-          } catch {
-            // Ignore storage errors
-          }
-        }
-      }
-    }
-  }
-)
-
 // Debug logger with consistent format
 const log = {
   debug: (message: string, data?: any) => {
-    console.log(`${message}`, data ? data : '')
+    if (process.env.NODE_ENV === 'development') {
+      if (data && typeof data === 'string') {
+        data = data.substring(0, 20) + '...'
+      }
+      console.log(`[Auth Debug] ${message}`, data ? data : '')
+    }
   },
   warn: (message: string, data?: any) => {
+    if (data && typeof data === 'string') {
+      data = data.substring(0, 20) + '...'
+    }
     console.warn(`[Auth Warning] ${message}`, data ? data : '')
   },
   error: (message: string, error?: any) => {
@@ -54,21 +24,91 @@ const log = {
   }
 }
 
+// Cache for project ID and Supabase client
+let cachedProjectId: string | null = null
+let supabaseClient: ReturnType<typeof createBrowserClient> | null = null
+
+// Helper to get project ID from various sources
+const getProjectId = () => {
+  if (cachedProjectId) return cachedProjectId
+
+  // Try to get from env first
+  let projectId = process.env.NEXT_PUBLIC_SUPABASE_PROJECT_ID
+
+  // If not in env, try to extract from URL
+  if (!projectId && process.env.NEXT_PUBLIC_SUPABASE_URL) {
+    const match = process.env.NEXT_PUBLIC_SUPABASE_URL.match(/(?:db|api)\.([^.]+)\.supabase\.(co|net|dev)/) ||
+                 process.env.NEXT_PUBLIC_SUPABASE_URL.match(/https:\/\/([^.]+)\.supabase\.co/)
+    if (match) {
+      projectId = match[1]
+    }
+  }
+
+  // If still no project ID, try to get it from existing cookie
+  if (!projectId && typeof window !== 'undefined') {
+    const authCookie = document.cookie
+      .split(';')
+      .find(c => c.trim().startsWith('sb-') && c.trim().endsWith('-auth-token'))
+    
+    if (authCookie) {
+      const cookieMatch = authCookie.trim().match(/^sb-([^-]+)-auth-token/)
+      if (cookieMatch) {
+        projectId = cookieMatch[1]
+      }
+    }
+  }
+
+  cachedProjectId = projectId || ''
+  return projectId
+}
+
+// Create a function to get the client instance
+const getSupabaseClient = () => {
+  if (supabaseClient) return supabaseClient
+
+  const projectId = getProjectId()
+  const cookieName = projectId ? `sb-${projectId}-auth-token` : 'sb-auth-token'
+
+  supabaseClient = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        flowType: 'pkce',
+        storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+        cookieOptions: {
+          name: cookieName,
+          lifetime: 60 * 60 * 24 * 7, // 1 week
+          domain: typeof window !== 'undefined' ? window.location.hostname : undefined,
+          path: '/',
+          sameSite: 'lax'
+        }
+      }
+    }
+  )
+
+  return supabaseClient
+}
+
 export interface User {
   id: string
   email: string
   name: string
-  role: 'customer' | 'agent' | 'admin'
+  role: RoleType
   avatar?: string | null
 }
+
+// Cache for user data
+const userCache = new Map<string, User>()
 
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
-  const [initialized, setInitialized] = useState(false)
   const router = useRouter()
 
-  // Add signOut function
   const signOut = async () => {
     try {
       const supabase = getSupabaseClient()
@@ -78,18 +118,11 @@ export function useAuth() {
         return false
       }
 
-      // Clear local storage
-      try {
-        window.localStorage.clear()
-      } catch {
-        // Ignore storage errors
-      }
-
-      // Clear user state
+      // Clear caches
+      userCache.clear()
+      window.localStorage.clear()
       setUser(null)
       setLoading(false)
-
-      // Redirect to sign in
       router.replace('/auth/signin')
       return true
     } catch (error) {
@@ -98,257 +131,123 @@ export function useAuth() {
     }
   }
 
-  // Add debug logging for slow auth
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      if (loading) {
-        log.warn('Auth state still loading after 1 second', {
-          user,
-          loading,
-          initialized,
-          timestamp: new Date().toISOString()
-        })
-      }
-    }, 1000)
-
-    return () => clearTimeout(timeout)
-  }, [loading, user, initialized])
-
-  // Initialize auth state
   useEffect(() => {
     let mounted = true
     let initializationInProgress = false
+    let lastAuthEvent = ''
+    let lastEventTime = 0
+    const EVENT_DEBOUNCE = 1000 // Increased to 1 second
+
+    const fetchUserData = async (userId: string, supabase: ReturnType<typeof createBrowserClient>) => {
+      // Check cache first
+      const cachedUser = userCache.get(userId)
+      if (cachedUser) {
+        return cachedUser
+      }
+
+      // Fetch user data
+      const [{ data: agent }, { data: customer }] = await Promise.all([
+        supabase.from('agents').select('*').eq('id', userId).maybeSingle(),
+        supabase.from('customers').select('*').eq('id', userId).maybeSingle()
+      ])
+
+      let userData: User | null = null
+
+      if (agent) {
+        userData = {
+          id: agent.id,
+          email: agent.email,
+          name: agent.name,
+          role: agent.role,
+          avatar: agent.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(agent.name.toLowerCase())}`
+        }
+      } else if (customer) {
+        userData = {
+          id: customer.id,
+          email: customer.email,
+          name: customer.name,
+          role: 'customer',
+          avatar: customer.avatar
+        }
+      }
+
+      if (userData) {
+        userCache.set(userId, userData)
+      }
+
+      return userData
+    }
 
     const initializeAuth = async () => {
-      if (!mounted || initialized || initializationInProgress) {
-        log.debug('Skipping auth initialization', { mounted, initialized, initializationInProgress })
-        return
-      }
-      initializationInProgress = true
-      log.debug('Starting auth initialization...')
-
+      if (!mounted || initializationInProgress) return
+      
       try {
+        initializationInProgress = true
         const supabase = getSupabaseClient()
-        // Get authenticated user data
-        const { data: { user: authUser }, error: userError } = await supabase.auth.getUser()
-        log.debug('User check result', { 
-          hasUser: !!authUser, 
-          error: userError?.message,
-          userId: authUser?.id 
-        })
         
-        if (!authUser || userError) {
-          log.debug('No valid user found, setting user to null')
+        const { data: { session } } = await supabase.auth.getSession()
+        
+        if (!session?.user) {
           if (mounted) {
             setUser(null)
             setLoading(false)
-            setInitialized(true)
           }
           return
         }
 
-        if (!authUser?.id || !authUser?.email) {
-          log.debug('Invalid auth user data', { id: authUser?.id, email: authUser?.email })
-          if (mounted) {
-            setUser(null)
-            setLoading(false)
-            setInitialized(true)
-          }
-          return
-        }
-
-        // First check if user is a customer since that's more likely
-        const { data: customer, error: customerError } = await supabase
-          .from('customers')
-          .select('*')
-          .eq('id', authUser.id)
-          .maybeSingle()
-        log.debug('Customer check result', { 
-          hasCustomer: !!customer, 
-          error: customerError?.message,
-          customerId: customer?.id 
-        })
-
-        if (customer && !customerError) {
-          log.debug('Setting user as existing customer')
-          if (!mounted) return
-          const user: User = {
-            id: customer.id,
-            email: customer.email,
-            name: customer.name,
-            role: 'customer',
-            avatar: customer.avatar
-          }
-          setUser(user)
+        const userData = await fetchUserData(session.user.id, supabase)
+        
+        if (mounted) {
+          setUser(userData)
           setLoading(false)
-          setInitialized(true)
-          return
-        }
-
-        // If not a customer, check if agent
-        const { data: agent, error: agentError } = await supabase
-          .from('agents')
-          .select('*')
-          .eq('id', authUser.id)
-          .maybeSingle()
-        log.debug('Agent check result', { 
-          hasAgent: !!agent, 
-          error: agentError?.message,
-          agentId: agent?.id 
-        })
-
-        if (agent && !agentError) {
-          log.debug('Setting user as existing agent')
-          if (!mounted) return
-          const user: User = {
-            id: agent.id,
-            email: agent.email,
-            name: agent.name,
-            role: agent.role,
-            avatar: agent.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(agent.name.toLowerCase())}`
-          }
-          setUser(user)
-          setLoading(false)
-          setInitialized(true)
-          return
-        }
-
-        // Only create a new customer if neither customer nor agent record exists
-        if (!customer && !customerError && !agent && !agentError) {
-          log.debug('Creating new customer record', { userId: authUser.id })
-          const { data: newCustomer, error: createError } = await supabase
-            .from('customers')
-            .insert({
-              id: authUser.id,
-              name: authUser.user_metadata?.name || authUser.email?.split('@')[0] || 'Customer',
-              email: authUser.email,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString()
-            })
-            .select()
-            .maybeSingle()
-          log.debug('Customer creation result', { success: !!newCustomer, error: createError })
-
-          if (!createError && newCustomer && mounted) {
-            log.debug('Setting user as new customer')
-            const user: User = {
-              id: newCustomer.id,
-              email: newCustomer.email,
-              name: newCustomer.name,
-              role: 'customer',
-              avatar: newCustomer.avatar
-            }
-            setUser(user)
-            setLoading(false)
-            setInitialized(true)
-            return
-          }
         }
       } catch (error) {
-        log.error('Error in user type check', error)
-      }
-
-      // If we get here, something went wrong
-      log.error('Failed to initialize user')
-      if (mounted) {
-        setUser(null)
-        setLoading(false)
-        setInitialized(true)
-      }
-    }
-
-    // Start initialization
-    initializeAuth()
-
-    return () => {
-      mounted = false
-    }
-  }, [initialized]) // Only depend on initialized state
-
-  // Handle auth state changes
-  useEffect(() => {
-    if (!initialized) return
-
-    const supabase = getSupabaseClient()
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      log.debug('Auth state changed', { event, hasSession: !!session })
-      
-      if (event === 'SIGNED_OUT') {
-        log.debug('Processing sign out')
-        setUser(null)
-        setLoading(false)
-        router.replace('/auth/signin')
-        return
-      }
-
-      if (event === 'SIGNED_IN') {
-        log.debug('Processing sign in')
-        setLoading(true)
-
-        try {
-          const { data: { user: authUser }, error: userError } = await supabase.auth.getUser()
-          if (!authUser || userError) {
-            log.error('Failed to get authenticated user', userError)
-            setUser(null)
-            setLoading(false)
-            return
-          }
-
-          // Check if user is an agent
-          const { data: agent, error: agentError } = await supabase
-            .from('agents')
-            .select('*')
-            .eq('id', authUser.id)
-            .maybeSingle()
-
-          if (agent && !agentError) {
-            const user: User = {
-              id: agent.id,
-              email: agent.email,
-              name: agent.name,
-              role: agent.role,
-              avatar: agent.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(agent.name.toLowerCase())}`
-            }
-            setUser(user)
-            setLoading(false)
-            return
-          }
-
-          // If not an agent, check if customer
-          const { data: customer, error: customerError } = await supabase
-            .from('customers')
-            .select('*')
-            .eq('id', authUser.id)
-            .maybeSingle()
-
-          if (customer && !customerError) {
-            const user: User = {
-              id: customer.id,
-              email: customer.email,
-              name: customer.name,
-              role: 'customer',
-              avatar: customer.avatar
-            }
-            setUser(user)
-            setLoading(false)
-            return
-          }
-
-          // If we get here, something went wrong
-          setUser(null)
-          setLoading(false)
-        } catch (error) {
-          log.error('Error processing sign in', error)
+        log.error('Error in auth initialization', error)
+        if (mounted) {
           setUser(null)
           setLoading(false)
         }
+      } finally {
+        initializationInProgress = false
+      }
+    }
+
+    const supabase = getSupabaseClient()
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      const now = Date.now()
+      
+      // More aggressive debouncing of duplicate events
+      if (event === lastAuthEvent && now - lastEventTime < EVENT_DEBOUNCE) {
+        return
+      }
+      
+      lastAuthEvent = event
+      lastEventTime = now
+
+      if (event === 'SIGNED_OUT') {
+        userCache.clear()
+        if (mounted) {
+          setUser(null)
+          setLoading(false)
+        }
+        return
+      }
+
+      if (['SIGNED_IN', 'TOKEN_REFRESHED', 'INITIAL_SESSION'].includes(event) && session) {
+        await initializeAuth()
       }
     })
 
+    // Initial auth check
+    void initializeAuth()
+
     return () => {
+      mounted = false
       subscription.unsubscribe()
     }
-  }, [initialized, router])
+  }, [router])
 
   return {
     user,
