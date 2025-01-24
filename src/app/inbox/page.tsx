@@ -9,6 +9,7 @@ import { conversationService } from '@/lib/services'
 import { ConversationView } from '@/components/features/inbox/ConversationView'
 import { format } from 'date-fns'
 import { useAuth } from '@/lib/hooks/useAuth'
+import { cn } from '@/lib/utils'
 
 // We assume: The "messages" table is joined to "tickets" for the conversation thread.
 // We'll fetch: all messages for the logged in user, either as the ticket's customer or as message author.
@@ -119,38 +120,55 @@ export default function InboxPage() {
   return (
     <div className="flex h-full">
       {/* Tickets List */}
-      <div className="w-1/3 border-r border-gray-200 overflow-auto">
-        <div className="p-4 border-b border-gray-200">
+      <div className={cn(
+        "w-1/3",
+        "border-r border-border",
+        "overflow-auto"
+      )}>
+        <div className={cn(
+          "p-4",
+          "border-b border-border"
+        )}>
           <input
             type="text"
             placeholder="Search messages..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full p-2 border border-gray-200 rounded-lg"
+            className={cn(
+              "w-full p-2",
+              "border border-input rounded-lg",
+              "bg-background",
+              "placeholder:text-muted-foreground"
+            )}
           />
         </div>
-        <div className="divide-y divide-gray-200">
+        <div className="divide-y divide-border">
           {tickets.map((ticket) => (
             <div
               key={ticket.id}
               onClick={() => setSelectedTicketId(ticket.id)}
-              className={`p-4 hover:bg-gray-50 cursor-pointer ${
-                selectedTicketId === ticket.id ? 'bg-gray-50' : ''
-              }`}
+              className={cn(
+                "p-4 cursor-pointer",
+                "hover:bg-muted/50 transition-colors",
+                selectedTicketId === ticket.id && "bg-muted"
+              )}
             >
               <div className="flex justify-between items-start mb-2">
                 <h3 className="font-medium text-sm">{ticket.subject || 'No Subject'}</h3>
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-muted-foreground">
                   {format(new Date(ticket.createdAt), 'MMM d, h:mm a')}
                 </span>
               </div>
               <div className="flex justify-between items-start">
-                <p className="text-sm text-gray-600 truncate">
+                <p className="text-sm text-muted-foreground truncate">
                   {ticket.latestMessage?.content || 'No messages yet'}
                 </p>
-                <span className={`text-xs px-2 py-1 rounded-full ${
-                  ticket.status === 'open' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                }`}>
+                <span className={cn(
+                  "text-xs px-2 py-1 rounded-full",
+                  ticket.status === 'open' 
+                    ? "bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-100"
+                    : "bg-muted text-muted-foreground"
+                )}>
                   {ticket.status}
                 </span>
               </div>
@@ -164,6 +182,8 @@ export default function InboxPage() {
         <ConversationView
           ticketId={selectedTicketId}
           currentUserId={user?.id || ''}
+          title={tickets.find(t => t.id === selectedTicketId)?.subject || 'Untitled Conversation'}
+          status={tickets.find(t => t.id === selectedTicketId)?.status || 'open'}
         />
       </div>
 

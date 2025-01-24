@@ -14,6 +14,8 @@ import { useViewMode } from '@/lib/store/viewMode'
 import { SearchResult } from '@/types/search'
 import { Ticket, TicketStatus, TicketPriority } from '@/types/ticket'
 import { useAuth } from '@/lib/hooks/useAuth'
+import { cn } from '@/lib/utils'
+import { useTheme } from '@/lib/hooks/useTheme'
 
 export function Header() {
   const { getUnreadCount } = useNotificationStore()
@@ -32,6 +34,7 @@ export function Header() {
   const router = useRouter()
   const isTicketRoute = pathname.startsWith('/tickets')
   const { user, signOut } = useAuth()
+  const { theme } = useTheme()
 
   useEffect(() => {
     setMounted(true)
@@ -78,6 +81,8 @@ export function Header() {
     try {
       // First clear any UI state
       setShowProfileMenu(false)
+      setSearchQuery('')
+      setIsSearching(false)
       
       // Sign out using the auth hook
       const success = await signOut()
@@ -85,12 +90,6 @@ export function Header() {
         console.error('Failed to sign out')
         return
       }
-
-      // Clear any local state/caches
-      setSearchQuery('')
-      setSearchResults([])
-      setIsSearching(false)
-      setShowProfileMenu(false)
       
       // The auth hook will handle the redirect
     } catch (error) {
@@ -99,43 +98,53 @@ export function Header() {
   }
 
   return (
-    <header className="h-16 border-b border-gray-200 bg-white px-6 flex items-center justify-between">
+    <header className={cn(
+      "h-16 border-b flex items-center justify-between px-6",
+      "bg-background",
+      "border-border"
+    )}>
       <div className="flex-1 max-w-lg" ref={searchRef}>
         <div className="relative">
-          <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 ${isSearching ? 'text-primary' : 'text-gray-400'}`} />
+          <Search className={cn(
+            "absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4",
+            isSearching ? "text-primary" : "text-muted-foreground"
+          )} />
           {mounted ? (
             <input
               type="search"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={isTicketRoute ? "Search tickets..." : "Search..."}
-              className="w-full pl-10 pr-4 py-2 text-sm border border-gray-200 rounded-lg \
-                focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+              className={cn(
+                "w-full pl-10 pr-4 py-2 text-sm rounded-lg",
+                "bg-background border-border",
+                "focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+              )}
             />
           ) : (
-            <div className="w-full pl-10 pr-4 py-2 text-sm border border-gray-200 rounded-lg bg-gray-50" />
+            <div className="w-full pl-10 pr-4 py-2 text-sm border rounded-lg bg-muted" />
           )}
           {isSearching && searchQuery && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 max-h-96 overflow-y-auto">
+            <div className="absolute top-full left-0 right-0 mt-1 bg-popover rounded-lg shadow-lg border border-border max-h-96 overflow-y-auto">
               {results.length > 0 ? (
                 <div className="py-2">
                   {results.map((result) => (
                     <Link
                       key={result.items[0].id}
                       href={`/tickets/${result.items[0].id}`}
-                      className="flex items-start gap-3 px-4 py-2 hover:bg-gray-50"
+                      className="flex items-start gap-3 px-4 py-2 hover:bg-muted"
                       onClick={() => setIsSearching(false)}
                     >
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 truncate">
+                        <p className="text-sm font-medium text-foreground truncate">
                           {result.items[0].title}
                         </p>
-                        <p className="text-sm text-gray-500 truncate">
+                        <p className="text-sm text-muted-foreground truncate">
                           {result.items[0].status} • {result.items[0].priority}
                         </p>
                       </div>
                       {result.metadata.executionTimeMs < 100 && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-100">
                           Fast match
                         </span>
                       )}
@@ -143,11 +152,11 @@ export function Header() {
                   ))}
                 </div>
               ) : isSearching ? (
-                <div className="p-4 text-sm text-gray-500 text-center">
+                <div className="p-4 text-sm text-muted-foreground text-center">
                   Searching...
                 </div>
               ) : (
-                <div className="p-4 text-sm text-gray-500 text-center">
+                <div className="p-4 text-sm text-muted-foreground text-center">
                   No results found
                 </div>
               )}
@@ -158,22 +167,24 @@ export function Header() {
       
       <div className="flex items-center gap-6">
         {isTicketRoute && (
-          <div className="flex items-center gap-2 border border-gray-200 rounded-lg p-1">
+          <div className="flex items-center gap-2 border rounded-lg p-1 border-border">
             <button
               onClick={() => setViewMode('list')}
-              className={`p-1.5 rounded ${
-                viewMode === 'list' ? 'bg-gray-100' : 'hover:bg-gray-50'
-              }`}
+              className={cn(
+                "p-1.5 rounded",
+                viewMode === 'list' ? "bg-muted" : "hover:bg-muted/50"
+              )}
             >
-              <LayoutList className="w-4 h-4 text-gray-600" />
+              <LayoutList className="w-4 h-4 text-muted-foreground" />
             </button>
             <button
               onClick={() => setViewMode('grid')}
-              className={`p-1.5 rounded ${
-                viewMode === 'grid' ? 'bg-gray-100' : 'hover:bg-gray-50'
-              }`}
+              className={cn(
+                "p-1.5 rounded",
+                viewMode === 'grid' ? "bg-muted" : "hover:bg-muted/50"
+              )}
             >
-              <LayoutGrid className="w-4 h-4 text-gray-600" />
+              <LayoutGrid className="w-4 h-4 text-muted-foreground" />
             </button>
           </div>
         )}
@@ -181,9 +192,11 @@ export function Header() {
         {!isTicketRoute && !user?.isAgent && (
           <Link
             href="/settings/subscription"
-            className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-lg \
-              hover:bg-primary/90 transition-colors"
-            style={{ backgroundColor: COLORS.primary }}
+            className={cn(
+              "px-4 py-2 text-sm font-medium rounded-lg",
+              "bg-primary text-primary-foreground",
+              "hover:bg-primary/90 transition-colors"
+            )}
           >
             Upgrade Now
           </Link>
@@ -192,12 +205,10 @@ export function Header() {
         <Link 
           href="/notifications"
           className="relative hover:text-primary transition-colors"
-          style={{ '--hover-color': COLORS.primary } as React.CSSProperties}
         >
-          <Bell className="w-5 h-5 text-gray-600" />
+          <Bell className="w-5 h-5 text-muted-foreground" />
           {mounted && unreadCount > 0 && (
-            <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full \
-              text-[10px] font-medium text-white flex items-center justify-center">
+            <span className="absolute -top-1 -right-1 w-4 h-4 bg-destructive rounded-full text-[10px] font-medium text-destructive-foreground flex items-center justify-center">
               {unreadCount}
             </span>
           )}
@@ -208,7 +219,7 @@ export function Header() {
             onClick={() => setShowProfileMenu(!showProfileMenu)}
             className="flex items-center gap-2"
           >
-            <div className="relative w-8 h-8 rounded-full overflow-hidden bg-gray-100">
+            <div className="relative w-8 h-8 rounded-full overflow-hidden bg-muted">
               <Image
                 className="h-8 w-8 rounded-full"
                 width={32}
@@ -217,23 +228,26 @@ export function Header() {
                 alt={`${user?.name}'s profile picture`}
               />
             </div>
-            <ChevronDown className={`w-4 h-4 text-gray-600 transition-transform ${showProfileMenu ? 'rotate-180' : ''}`} />
+            <ChevronDown className={cn(
+              "w-4 h-4 text-muted-foreground transition-transform",
+              showProfileMenu && "rotate-180"
+            )} />
           </button>
 
           {showProfileMenu && (
-            <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+            <div className="absolute right-0 mt-2 w-48 bg-popover rounded-lg shadow-lg border border-border py-1 z-50">
               <Link
                 href="/settings/profile"
-                className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                className="flex items-center gap-2 px-4 py-2 text-sm text-foreground hover:bg-muted"
                 onClick={() => setShowProfileMenu(false)}
               >
                 <SettingsIcon className="w-4 h-4" />
                 Settings
               </Link>
-              <div className="h-px bg-gray-200 my-1" />
+              <div className="h-px bg-border my-1" />
               <button
                 onClick={handleSignOut}
-                className="flex items-center gap-2 w-full px-4 py-2 text-sm text-red-600 hover:bg-gray-50"
+                className="flex items-center gap-2 w-full px-4 py-2 text-sm text-destructive hover:bg-muted"
               >
                 <LogOut className="w-4 h-4" />
                 Sign Out

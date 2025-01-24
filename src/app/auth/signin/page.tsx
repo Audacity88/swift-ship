@@ -1,6 +1,8 @@
+'use client'
+
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/router'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { COLORS } from '@/lib/constants'
 import { authService } from '@/lib/services'
 
@@ -14,10 +16,11 @@ export default function SignIn() {
     password?: string;
   }>({})
   const router = useRouter()
-  const { message, next } = router.query
+  const searchParams = useSearchParams()
+  const message = searchParams.get('message')
+  const next = searchParams.get('next')
 
   useEffect(() => {
-    // Check if we have a success message from password reset
     if (message) {
       setError(null)
     }
@@ -67,7 +70,7 @@ export default function SignIn() {
         return
       }
 
-      const nextUrl = next as string || '/'
+      const nextUrl = next || '/'
       console.log('[SignIn] Redirecting to:', nextUrl)
       router.push(nextUrl)
     } catch (err) {
@@ -98,7 +101,7 @@ export default function SignIn() {
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
-          <form className="space-y-6" onSubmit={handleSignIn}>
+          <form onSubmit={handleSignIn} className="space-y-6">
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-600 rounded-lg p-4 text-sm">
                 {error}
@@ -114,13 +117,11 @@ export default function SignIn() {
                   id="email"
                   name="email"
                   type="email"
-                  autoComplete="email"
-                  required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="block w-full appearance-none rounded-lg border border-gray-200 \
-                    px-3 py-2 placeholder-gray-400 focus:border-primary focus:outline-none \
-                    focus:ring-primary sm:text-sm"
+                  className="block w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  required
+                  suppressHydrationWarning
                 />
               </div>
               {validationErrors.email && (
@@ -137,13 +138,11 @@ export default function SignIn() {
                   id="password"
                   name="password"
                   type="password"
-                  autoComplete="current-password"
-                  required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="block w-full appearance-none rounded-lg border border-gray-200 \
-                    px-3 py-2 placeholder-gray-400 focus:border-primary focus:outline-none \
-                    focus:ring-primary sm:text-sm"
+                  className="block w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  required
+                  suppressHydrationWarning
                 />
               </div>
               {validationErrors.password && (
@@ -167,12 +166,8 @@ export default function SignIn() {
               <button
                 type="submit"
                 disabled={loading}
-                className="flex w-full justify-center rounded-lg px-3 py-2 text-sm \
-                  font-semibold text-white shadow-sm hover:bg-primary/90 \
-                  focus-visible:outline focus-visible:outline-2 \
-                  focus-visible:outline-offset-2 focus-visible:outline-primary \
-                  disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                style={{ backgroundColor: COLORS.primary }}
+                className="w-full rounded-lg px-3 py-2 text-sm font-semibold text-white shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ backgroundColor: loading ? `${COLORS.primary}80` : COLORS.primary }}
               >
                 {loading ? 'Signing in...' : 'Sign in'}
               </button>

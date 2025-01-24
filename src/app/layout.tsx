@@ -5,6 +5,8 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { Header } from "@/components/layout/Header";
 import Providers from "./providers";
 import { Toaster } from 'sonner';
+import ClientLayout from "@/components/layout/ClientLayout";
+import { cn } from "@/lib/utils";
 
 const inter = Inter({
   subsets: ['latin'],
@@ -24,17 +26,15 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.className} antialiased`} suppressHydrationWarning>
+      <body className={cn(
+        inter.className,
+        "antialiased",
+        "bg-background text-foreground"
+      )} suppressHydrationWarning>
         <Providers>
-          <div className="flex h-screen bg-white">
-            <Sidebar />
-            <div className="flex-1 flex flex-col">
-              <Header />
-              <main className="flex-1 overflow-auto p-6 bg-neutral-50">
-                {children}
-              </main>
-            </div>
-          </div>
+          <ClientLayout>
+            {children}
+          </ClientLayout>
           <Toaster />
         </Providers>
       </body>

@@ -56,6 +56,10 @@ export default {
   			lg: 'var(--radius)',
   			md: 'calc(var(--radius) - 2px)',
   			sm: 'calc(var(--radius) - 4px)'
+  		},
+  		backgroundImage: {
+  			'grid-pattern': 'radial-gradient(circle at 1px 1px, rgb(0 0 0 / 0.1) 1px, transparent 0)',
+  			'grid-pattern-light': 'radial-gradient(circle at 1px 1px, rgb(0 0 0 / 0.05) 1px, transparent 0)'
   		}
   	}
   },
