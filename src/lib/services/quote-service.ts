@@ -119,6 +119,18 @@ export const quoteService = {
       if (ticketError) throw ticketError
       if (!ticket) throw new Error('Failed to create ticket')
 
+      // Create initial message for the quote
+      const { error: messageError } = await supabase
+        .from('messages')
+        .insert({
+          ticket_id: ticket.id,
+          content: `New quote request received for ${data.metadata.packageDetails.type} shipment from ${data.metadata.destination.from.address} to ${data.metadata.destination.to.address}.`,
+          author_type: 'customer',
+          author_id: data.customerId
+        })
+
+      if (messageError) throw messageError
+
       // Return the created quote request
       return {
         id: ticket.id,

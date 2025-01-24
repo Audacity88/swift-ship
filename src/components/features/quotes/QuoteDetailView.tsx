@@ -152,6 +152,12 @@ export function QuoteDetailView({
               <Calendar className="w-4 h-4" />
               <span>Pickup: {formatDate(quote.metadata.destination.pickupDate)}</span>
             </div>
+            {quote.metadata.estimatedDelivery && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Calendar className="w-4 h-4" />
+                <span>Estimated Delivery: {formatDate(quote.metadata.estimatedDelivery)}</span>
+              </div>
+            )}
             {mode === 'quoted' && quote.metadata.quotedPrice && (
               <div className="flex items-center gap-2 text-sm font-medium">
                 <DollarSign className="w-4 h-4" />

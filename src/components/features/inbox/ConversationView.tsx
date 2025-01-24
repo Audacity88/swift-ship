@@ -131,7 +131,7 @@ export function ConversationView({
       // Use the isAgent prop to determine author_type
       const authorType = isAgent ? 'agent' : 'customer'
 
-      await conversationService.addMessage({}, ticketId, newMessage.trim(), authorType, attachments)
+      await conversationService.addMessage({}, ticketId, newMessage.trim(), authorType)
 
       setNewMessage('')
       setAttachments([])

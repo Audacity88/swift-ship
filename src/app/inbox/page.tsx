@@ -188,14 +188,6 @@ export default function InboxPage() {
           status={tickets.find(t => t.id === selectedTicketId)?.status || 'open'}
         />
       </div>
-
-      {/* Floating Action Button */}
-      <button
-        className="fixed bottom-6 right-6 p-4 bg-primary text-white rounded-full shadow-lg hover:bg-primary/90 transition-colors"
-        style={{ backgroundColor: COLORS.primary }}
-      >
-        <Plus className="w-6 h-6" />
-      </button>
     </div>
   )
 } 
