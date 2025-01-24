@@ -21,13 +21,6 @@ const quickLinks = [
     color: 'bg-green-50'
   },
   {
-    label: 'Schedule Pickup',
-    description: 'Request a pickup for your packages',
-    icon: Truck,
-    href: ROUTES.pickup,
-    color: 'bg-purple-50'
-  },
-  {
     label: 'Support',
     description: 'Get help from our support team',
     icon: MessageSquare,

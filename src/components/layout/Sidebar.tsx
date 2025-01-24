@@ -35,12 +35,6 @@ const navItems: NavItem[] = [
     roles: [RoleType.ADMIN, RoleType.AGENT, RoleType.SUPERVISOR]
   },
   { 
-    icon: Package, 
-    label: 'Pickup', 
-    href: ROUTES.pickup,
-    roles: [RoleType.CUSTOMER, RoleType.AGENT, RoleType.SUPERVISOR]
-  },
-  { 
     icon: Truck, 
     label: 'Shipments', 
     href: ROUTES.shipments,

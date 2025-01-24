@@ -102,7 +102,7 @@ export function QuoteDetailView({
             </div>
             <div className="flex items-center gap-2 text-sm text-gray-600">
               <MapPin className="w-4 h-4" />
-              <span>{quote.metadata.destination.from} → {quote.metadata.destination.to}</span>
+              <span>{quote.metadata.destination.from.address} → {quote.metadata.destination.to.address}</span>
             </div>
             <div className="flex items-center gap-2 text-sm text-gray-600">
               <Calendar className="w-4 h-4" />

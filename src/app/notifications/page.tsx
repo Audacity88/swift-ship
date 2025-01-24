@@ -21,7 +21,6 @@ const filterOptions = [
   { value: 'all', label: 'All Notifications', icon: Bell },
   { value: 'shipment', label: 'Shipments', icon: Package },
   { value: 'payment', label: 'Payments', icon: CreditCard },
-  { value: 'pickup', label: 'Pickups', icon: Calendar },
   { value: 'system', label: 'System', icon: AlertCircle }
 ]
 
