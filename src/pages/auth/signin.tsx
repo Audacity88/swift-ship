@@ -1,8 +1,8 @@
-import { useState } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/router'
 import { COLORS } from '@/lib/constants'
+import { authService } from '@/lib/services'
 
 export default function SignIn() {
   const [email, setEmail] = useState('')
@@ -14,19 +14,14 @@ export default function SignIn() {
     password?: string;
   }>({})
   const router = useRouter()
-  const { next } = router.query
+  const { message, next } = router.query
 
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: false
-      }
+  useEffect(() => {
+    // Check if we have a success message from password reset
+    if (message) {
+      setError(null)
     }
-  )
+  }, [message])
 
   const validateForm = () => {
     const errors: { email?: string; password?: string } = {}
@@ -52,32 +47,32 @@ export default function SignIn() {
     setLoading(true)
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const result = await authService.signIn({}, {
         email,
         password
       })
 
-      if (error) {
-        setError(error.message)
+      if (!result.success) {
+        setError(result.error)
         return
       }
 
-      if (!data.session) {
-        setError('No session returned from sign in')
+      // Wait a moment for the session to be fully established
+      await new Promise(resolve => setTimeout(resolve, 100))
+
+      // Verify session before redirect
+      const { user } = await authService.getUser({})
+      if (!user) {
+        setError('Failed to verify authentication')
         return
       }
 
-      // Verify user immediately after sign in
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      if (userError || !user) {
-        setError('Failed to verify user authentication')
-        return
-      }
-
-      router.push(next as string || '/home')
+      const nextUrl = next as string || '/'
+      console.log('[SignIn] Redirecting to:', nextUrl)
+      router.push(nextUrl)
     } catch (err) {
+      console.error('[SignIn] Error:', err)
       setError('An unexpected error occurred')
-      console.error('Sign in error:', err)
     } finally {
       setLoading(false)
     }
