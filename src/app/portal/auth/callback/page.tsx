@@ -1,68 +1,33 @@
 'use client';
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { db } from '@/lib/db';
-import { RoleType } from '@/types/role';
-import { Icons } from '@/components/ui/icons';
+import { redirect } from 'next/navigation'
+import { authService, userService } from '@/lib/services'
 
-export default function AuthCallbackPage() {
-  const router = useRouter();
+export default async function AuthCallback() {
+  try {
+    const { data: { user }, error: userError } = await authService.getUser({})
+    if (userError || !user) {
+      return redirect('/auth/sign-in')
+    }
 
-  useEffect(() => {
-    const handleCallback = async () => {
-      try {
-        const { data: { user }, error } = await db.auth.getUser();
-        
-        if (error || !user) {
-          throw error || new Error('No user found');
-        }
+    // Check if user exists and get their type
+    const userDetails = await userService.getCurrentUser({})
+    if (!userDetails) {
+      // New user - redirect to welcome page
+      return redirect('/welcome')
+    }
 
-        // Check if customer profile exists
-        const { data: profile } = await db
-          .from('customer_profiles')
-          .select('*')
-          .eq('user_id', user.id)
-          .single();
+    // Redirect based on user type
+    if (userDetails.type === 'customer') {
+      return redirect('/portal')
+    } else if (userDetails.type === 'agent') {
+      return redirect('/tickets/overview')
+    }
 
-        if (!profile) {
-          // Create customer profile
-          const { error: profileError } = await db.from('customer_profiles').insert({
-            user_id: user.id,
-            name: user.user_metadata.name || user.email?.split('@')[0],
-            created_at: new Date().toISOString(),
-          });
-
-          if (profileError) throw profileError;
-
-          // Set default role and permissions
-          const { error: roleError } = await db.from('user_roles').insert({
-            user_id: user.id,
-            role: RoleType.CUSTOMER,
-            assigned_by: 'SYSTEM',
-            assigned_at: new Date().toISOString(),
-          });
-
-          if (roleError) throw roleError;
-        }
-
-        // Redirect to welcome page for new users, or portal home for existing users
-        router.push(profile ? '/portal' : '/portal/welcome');
-      } catch (err) {
-        console.error('Auth callback error:', err);
-        router.push('/portal/auth/login?error=callback_failed');
-      }
-    };
-
-    handleCallback();
-  }, [router]);
-
-  return (
-    <div className="flex h-screen w-screen items-center justify-center">
-      <div className="flex flex-col items-center space-y-4">
-        <Icons.spinner className="h-8 w-8 animate-spin" />
-        <p className="text-lg text-gray-500">Setting up your account...</p>
-      </div>
-    </div>
-  );
+    // Fallback redirect if something unexpected happens
+    return redirect('/welcome')
+  } catch (error) {
+    console.error('Auth callback error:', error)
+    return redirect('/auth/sign-in')
+  }
 } 

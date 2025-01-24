@@ -1,16 +1,12 @@
 import { roleService } from '@/lib/services'
-import { createClient } from '@supabase/supabase-js';
-import { RoleType, Permission } from '@/types/role'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import { getServerSupabase } from '@/lib/supabase-client'
+import type { ServerContext } from '@/lib/supabase-client'
+import type { Permission } from '@/types/role'
 
 // Cache interface
 interface PermissionCache {
   permissions: Permission[];
-  role: RoleType;
+  role: string;
   timestamp: number;
 }
 
@@ -33,7 +29,7 @@ function getCachedPermissions(userId: string): Permission[] | null {
   return cached.permissions;
 }
 
-function cachePermissions(userId: string, permissions: Permission[], role: RoleType) {
+function cachePermissions(userId: string, permissions: Permission[], role: string) {
   permissionCache.set(userId, {
     permissions,
     role,
@@ -46,131 +42,107 @@ interface AuthUser {
   type: 'agent' | 'customer';
 }
 
-export async function getUserPermissions(): Promise<Permission[]> {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.user) {
-    return [];
-  }
+export async function getUserPermissions(userId: string): Promise<string[]> {
+  try {
+    const supabase = getServerSupabase()
+    const { data: agent, error: agentError } = await supabase
+      .from('agents')
+      .select(`
+        role,
+        role_id(
+          permissions:role_permissions(
+            permission_id(*)
+          )
+        )
+      `)
+      .eq('id', userId)
+      .single()
 
-  // Check cache first
-  const cachedPermissions = getCachedPermissions(session.user.id);
-  if (cachedPermissions) {
-    return cachedPermissions;
-  }
-
-  // Check if user is an agent
-  const { data: agent } = await supabase
-    .from('agents')
-    .select('id, role')
-    .eq('id', session.user.id)
-    .single();
-
-  if (agent) {
-    const permissions = await roleService.getPermissionsForRole(agent.role as RoleType);
-    if (permissions) {
-      cachePermissions(session.user.id, permissions, agent.role as RoleType);
-      return permissions;
+    if (agentError) {
+      console.error('Error fetching agent permissions:', agentError)
+      return []
     }
-    return [];
-  }
 
-  // If not an agent, check if user is a customer
-  const { data: customer } = await supabase
-    .from('customers')
-    .select('id')
-    .eq('id', session.user.id)
-    .single();
-
-  if (customer) {
-    const permissions = await roleService.getPermissionsForRole(RoleType.CUSTOMER);
-    if (permissions) {
-      cachePermissions(session.user.id, permissions, RoleType.CUSTOMER);
-      return permissions;
+    if (!agent) {
+      return []
     }
-  }
 
-  return [];
+    // Extract permissions from role
+    const permissions = agent.role_id?.permissions?.map(p => p.permission_id.name) || []
+
+    // Add admin permissions if user is admin
+    if (agent.role === 'admin') {
+      permissions.push(...Object.values(Permission))
+    }
+
+    return permissions
+  } catch (error) {
+    console.error('Error in getUserPermissions:', error)
+    return []
+  }
 }
 
-export async function hasPermission(requiredPermission: Permission): Promise<boolean> {
-  const permissions = await getUserPermissions();
-  return permissions.includes(requiredPermission);
-}
-
-export async function hasAnyPermission(requiredPermissions: Permission[]): Promise<boolean> {
-  const permissions = await getUserPermissions();
-  return requiredPermissions.some(permission => permissions.includes(permission));
-}
-
-export async function hasAllPermissions(requiredPermissions: Permission[]): Promise<boolean> {
-  const permissions = await getUserPermissions();
-  return requiredPermissions.every(permission => permissions.includes(permission));
-}
-
-export async function getUserRole(): Promise<AuthUser | null> {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.user) {
-    return null;
+export async function hasPermission(userId: string, permission: Permission): Promise<boolean> {
+  try {
+    const permissions = await getUserPermissions(userId)
+    return permissions.includes(permission)
+  } catch (error) {
+    console.error('Error in hasPermission:', error)
+    return false
   }
+}
 
-  // Check cache first
-  const cached = permissionCache.get(session.user.id);
-  if (cached) {
-    return {
-      role: cached.role,
-      type: cached.role === 'customer' ? 'customer' : 'agent'
-    };
+export async function hasAnyPermission(userId: string, permissions: Permission[]): Promise<boolean> {
+  try {
+    const userPermissions = await getUserPermissions(userId)
+    return permissions.some(p => userPermissions.includes(p))
+  } catch (error) {
+    console.error('Error in hasAnyPermission:', error)
+    return false
   }
+}
 
-  // Check if user is an agent
-  const { data: agent } = await supabase
-    .from('agents')
-    .select('id, role')
-    .eq('id', session.user.id)
-    .single();
+export async function hasAllPermissions(userId: string, permissions: Permission[]): Promise<boolean> {
+  try {
+    const userPermissions = await getUserPermissions(userId)
+    return permissions.every(p => userPermissions.includes(p))
+  } catch (error) {
+    console.error('Error in hasAllPermissions:', error)
+    return false
+  }
+}
 
-  if (agent) {
-    const permissions = await roleService.getPermissionsForRole(agent.role as RoleType);
-    if (permissions) {
-      cachePermissions(session.user.id, permissions, agent.role as RoleType);
-      return {
-        role: agent.role,
-        type: 'agent'
-      };
+export async function getUserRole(userId: string): Promise<string | null> {
+  try {
+    const supabase = getServerSupabase()
+    const { data: agent, error } = await supabase
+      .from('agents')
+      .select('role')
+      .eq('id', userId)
+      .single()
+
+    if (error) {
+      console.error('Error fetching user role:', error)
+      return null
     }
+
+    return agent?.role || null
+  } catch (error) {
+    console.error('Error in getUserRole:', error)
+    return null
   }
-
-  // If not an agent, check if user is a customer
-  const { data: customer } = await supabase
-    .from('customers')
-    .select('id')
-    .eq('id', session.user.id)
-    .single();
-
-  if (customer) {
-    const permissions = await roleService.getPermissionsForRole(RoleType.CUSTOMER);
-    if (permissions) {
-      cachePermissions(session.user.id, permissions, RoleType.CUSTOMER);
-      return {
-        role: 'customer',
-        type: 'customer'
-      };
-    }
-  }
-
-  return null;
 }
 
 // Role hierarchy definition
-const ROLE_HIERARCHY: Record<RoleType, RoleType[]> = {
-  [RoleType.ADMIN]: [RoleType.SUPERVISOR, RoleType.AGENT],
-  [RoleType.SUPERVISOR]: [RoleType.AGENT],
-  [RoleType.AGENT]: [],
-  [RoleType.CUSTOMER]: [],
+const ROLE_HIERARCHY: Record<string, string[]> = {
+  'admin': ['supervisor', 'agent'],
+  'supervisor': ['agent'],
+  'agent': [],
+  'customer': [],
 };
 
 // Get all permissions for a role including inherited ones
-export async function getAllPermissionsForRole(role: RoleType): Promise<Permission[]> {
+export async function getAllPermissionsForRole(role: string): Promise<Permission[]> {
   const basePermissions = await roleService.getPermissionsForRole(role);
   const inheritedRoles = ROLE_HIERARCHY[role] || [];
   
@@ -255,7 +227,7 @@ export async function isAuthorizedForRoute(pathname: string): Promise<boolean> {
   }
 
   // Admin has access to everything
-  if (user.role === RoleType.ADMIN) {
+  if (user === 'admin') {
     return true;
   }
 
@@ -266,7 +238,7 @@ export async function isAuthorizedForRoute(pathname: string): Promise<boolean> {
     return true;
   }
 
-  return hasAnyPermission(requiredPermissions);
+  return hasAnyPermission(user, requiredPermissions);
 }
 
 // Clear cache for a user (useful for testing and role updates)

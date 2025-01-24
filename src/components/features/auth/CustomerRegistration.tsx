@@ -7,8 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Icons } from '@/components/ui/icons';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { db } from '@/lib/db';
-import { RoleType } from '@/types/role';
+import { authService } from '@/lib/services';
 import type { AuthError } from '@supabase/supabase-js';
 
 interface RegistrationData {
@@ -33,70 +32,34 @@ interface UserRoleData {
 }
 
 export function CustomerRegistration() {
-  const router = useRouter();
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState<RegistrationData>({
     email: '',
     password: '',
     name: '',
     company: '',
   });
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError(null);
+    setLoading(true);
 
     try {
-      // Create auth user
-      const { data: authData, error: authError } = await db.auth.signUp({
+      await authService.registerCustomer({}, {
         email: formData.email,
         password: formData.password,
-        options: {
-          data: {
-            name: formData.name,
-            role: RoleType.CUSTOMER,
-          },
-        },
+        name: formData.name,
+        company: formData.company,
       });
 
-      if (authError) throw authError;
-
-      if (authData.user) {
-        // Create customer profile
-        const customerProfile: CustomerProfile = {
-          user_id: authData.user.id,
-          name: formData.name,
-          company: formData.company || null,
-          created_at: new Date().toISOString(),
-        };
-
-        const { error: profileError } = await db
-          .from('customer_profiles')
-          .insert(customerProfile);
-
-        if (profileError) throw profileError;
-
-        // Set default role and permissions
-        const userRole: UserRoleData = {
-          user_id: authData.user.id,
-          role: RoleType.CUSTOMER,
-          assigned_by: 'SYSTEM',
-          assigned_at: new Date().toISOString(),
-        };
-
-        const { error: roleError } = await db
-          .from('user_roles')
-          .insert(userRole);
-
-        if (roleError) throw roleError;
-
-        router.push('/portal/welcome');
-      }
+      // Redirect to confirmation page
+      router.push('/auth/confirm-email');
     } catch (err) {
-      const error = err as AuthError;
-      setError(error.message || 'Failed to create account');
+      console.error('Registration error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to register');
     } finally {
       setLoading(false);
     }
@@ -104,13 +67,9 @@ export function CustomerRegistration() {
 
   const handleSocialLogin = async (provider: 'google' | 'github') => {
     try {
-      const { error } = await db.auth.signInWithOAuth({
-        provider,
-        options: {
-          redirectTo: `${window.location.origin}/portal/auth/callback`,
-        },
+      await authService.signInWithProvider({}, provider, {
+        redirectTo: `${window.location.origin}/portal/auth/callback`,
       });
-      if (error) throw error;
     } catch (err) {
       const error = err as AuthError;
       setError(error.message || `Failed to sign in with ${provider}`);
@@ -157,10 +116,10 @@ export function CustomerRegistration() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="name">Full Name</Label>
+            <Label htmlFor="name">Name</Label>
             <Input
               id="name"
-              placeholder="John Doe"
+              type="text"
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               required
@@ -172,7 +131,6 @@ export function CustomerRegistration() {
             <Input
               id="email"
               type="email"
-              placeholder="john@company.com"
               value={formData.email}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
               required
@@ -194,7 +152,7 @@ export function CustomerRegistration() {
             <Label htmlFor="company">Company (Optional)</Label>
             <Input
               id="company"
-              placeholder="Company Name"
+              type="text"
               value={formData.company}
               onChange={(e) => setFormData({ ...formData, company: e.target.value })}
             />
@@ -206,14 +164,14 @@ export function CustomerRegistration() {
             </Alert>
           )}
 
-          <Button type="submit" className="w-full" disabled={loading}>
+          <Button type="submit" disabled={loading} className="w-full">
             {loading ? (
               <>
                 <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />
-                Creating account...
+                Registering...
               </>
             ) : (
-              'Create Account'
+              'Register'
             )}
           </Button>
         </form>

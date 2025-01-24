@@ -1,17 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { getServerSupabase } from '@/lib/supabase-client';
 import { Permission } from '@/types/role';
 import { checkUserPermissions } from '@/lib/auth/check-permissions';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 // GET /api/knowledge/categories/[id] - Get category details
 export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
+    const supabase = getServerSupabase();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
     // Check permissions
     const permissionCheck = await checkUserPermissions(Permission.VIEW_KNOWLEDGE_BASE);
     if ('error' in permissionCheck) {
@@ -21,18 +26,12 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
       );
     }
 
-    // Get category
+    // Get category with articles
     const { data: category, error } = await supabase
-      .from('categories')
+      .from('knowledge_categories')
       .select(`
         *,
-        articles (
-          id,
-          title,
-          status,
-          created_at,
-          updated_at
-        )
+        articles:knowledge_articles(*)
       `)
       .eq('id', params.id)
       .single();
@@ -40,8 +39,8 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
     if (error) {
       console.error('Error fetching category:', error);
       return NextResponse.json(
-        { error: 'Category not found' },
-        { status: 404 }
+        { error: 'Failed to fetch category' },
+        { status: 500 }
       );
     }
 
@@ -59,6 +58,16 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
 export async function PUT(request: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
+    const supabase = getServerSupabase();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
     // Check permissions
     const permissionCheck = await checkUserPermissions(Permission.MANAGE_KNOWLEDGE_BASE);
     if ('error' in permissionCheck) {
@@ -90,7 +99,7 @@ export async function PUT(request: NextRequest, props: { params: Promise<{ id: s
     if (parentId) {
       // Check if parent exists
       const { data: parent, error: parentError } = await supabase
-        .from('categories')
+        .from('knowledge_categories')
         .select('id')
         .eq('id', parentId)
         .single();
@@ -112,22 +121,23 @@ export async function PUT(request: NextRequest, props: { params: Promise<{ id: s
     }
 
     // Update category
-    const { data: category, error: updateError } = await supabase
-      .from('categories')
+    const { data: updatedCategory, error } = await supabase
+      .from('knowledge_categories')
       .update({
         name,
         slug,
         description,
         parentId,
         order,
-        updatedAt: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        updated_by: user.id
       })
       .eq('id', params.id)
       .select()
       .single();
 
-    if (updateError) {
-      console.error('Error updating category:', updateError);
+    if (error) {
+      console.error('Error updating category:', error);
       return NextResponse.json(
         { error: 'Failed to update category' },
         { status: 500 }
@@ -136,7 +146,7 @@ export async function PUT(request: NextRequest, props: { params: Promise<{ id: s
 
     return NextResponse.json({
       message: 'Category updated successfully',
-      category
+      category: updatedCategory
     });
   } catch (error) {
     console.error('Error in PUT /api/knowledge/categories/[id]:', error);
@@ -151,6 +161,16 @@ export async function PUT(request: NextRequest, props: { params: Promise<{ id: s
 export async function DELETE(request: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
+    const supabase = getServerSupabase();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
     // Check permissions
     const permissionCheck = await checkUserPermissions(Permission.MANAGE_KNOWLEDGE_BASE);
     if ('error' in permissionCheck) {
@@ -160,14 +180,31 @@ export async function DELETE(request: NextRequest, props: { params: Promise<{ id
       );
     }
 
-    // Check if category has articles
-    const { data: articles, error: articlesError } = await supabase
-      .from('articles')
-      .select('id')
-      .eq('category_id', params.id);
+    // Get user role
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('role')
+      .eq('id', user.id)
+      .single();
 
-    if (articlesError) {
-      console.error('Error checking category articles:', articlesError);
+    const isAdmin = agent?.role === 'admin';
+
+    if (!isAdmin) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Admin access required' },
+        { status: 403 }
+      );
+    }
+
+    // Check if category has articles
+    const { data: articles, error: checkError } = await supabase
+      .from('knowledge_articles')
+      .select('id')
+      .eq('category_id', params.id)
+      .limit(1);
+
+    if (checkError) {
+      console.error('Error checking category articles:', checkError);
       return NextResponse.json(
         { error: 'Failed to check category articles' },
         { status: 500 }
@@ -176,14 +213,14 @@ export async function DELETE(request: NextRequest, props: { params: Promise<{ id
 
     if (articles && articles.length > 0) {
       return NextResponse.json(
-        { error: 'Cannot delete category with articles' },
+        { error: 'Cannot delete category that contains articles' },
         { status: 400 }
       );
     }
 
     // Delete category
     const { error } = await supabase
-      .from('categories')
+      .from('knowledge_categories')
       .delete()
       .eq('id', params.id);
 
@@ -195,7 +232,7 @@ export async function DELETE(request: NextRequest, props: { params: Promise<{ id
       );
     }
 
-    return new NextResponse(null, { status: 204 });
+    return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Error in DELETE /api/knowledge/categories/[id]:', error);
     return NextResponse.json(

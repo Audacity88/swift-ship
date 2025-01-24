@@ -1,13 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Loader2, ArrowLeft } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { db } from '@/lib/db';
+import { authService } from '@/lib/services';
 
 interface ResetFormData {
   email: string;
@@ -16,165 +16,125 @@ interface ResetFormData {
 }
 
 export function PasswordReset() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState<ResetFormData>({ email: '' });
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [formData, setFormData] = useState<ResetFormData>({ email: '' });
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
-  // Check if we're in reset mode (have token) or request mode
-  const token = searchParams?.get('token');
+  // Check if we're in reset mode (have a token)
+  const token = searchParams.get('token');
   const isResetMode = !!token;
 
-  const handleRequestReset = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError(null);
     setSuccess(null);
-
-    try {
-      const { error } = await db.auth.resetPasswordForEmail(formData.email, {
-        redirectTo: `${window.location.origin}/portal/auth/reset-password`,
-      });
-
-      if (error) throw error;
-
-      setSuccess('Password reset instructions have been sent to your email');
-    } catch (err: any) {
-      setError(err.message || 'Failed to send reset instructions');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleResetPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.password || !formData.confirmPassword) {
-      setError('Please fill in all fields');
-      return;
-    }
-
-    if (formData.password !== formData.confirmPassword) {
-      setError('Passwords do not match');
-      return;
-    }
-
     setLoading(true);
-    setError(null);
 
     try {
-      const { error } = await db.auth.updateUser({
-        password: formData.password,
-      });
+      if (isResetMode) {
+        // Validate passwords match
+        if (formData.password !== formData.confirmPassword) {
+          throw new Error('Passwords do not match');
+        }
 
-      if (error) throw error;
+        if (!formData.password) {
+          throw new Error('Password is required');
+        }
 
-      setSuccess('Password has been reset successfully');
-      setTimeout(() => {
-        router.push('/portal/auth/login');
-      }, 2000);
-    } catch (err: any) {
-      setError(err.message || 'Failed to reset password');
+        // Update password
+        await authService.resetPassword({}, formData.password);
+        setSuccess('Password has been reset successfully');
+        setTimeout(() => {
+          router.push('/auth/signin');
+        }, 2000);
+      } else {
+        // Send reset email
+        await authService.resetPassword({}, formData.email);
+        setSuccess('Password reset instructions have been sent to your email');
+      }
+    } catch (err) {
+      console.error('Password reset error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to process request');
     } finally {
       setLoading(false);
     }
   };
 
-  return (
-    <div className="w-full max-w-md space-y-6 p-6 bg-white rounded-lg shadow-lg">
-      <div className="space-y-2 text-center">
-        <h1 className="text-2xl font-bold">
-          {isResetMode ? 'Reset Your Password' : 'Forgot Password'}
-        </h1>
-        <p className="text-gray-500">
-          {isResetMode
+  return React.createElement(React.Fragment, null,
+    React.createElement('div', { className: 'space-y-6' },
+      React.createElement('div', { className: 'space-y-2' },
+        React.createElement(Button, {
+          variant: 'ghost',
+          className: 'mb-4',
+          onClick: () => router.push('/auth/signin')
+        },
+          React.createElement(ArrowLeft, { className: 'mr-2 h-4 w-4' }),
+          'Back to Sign In'
+        ),
+        React.createElement('h1', { className: 'text-2xl font-semibold tracking-tight' },
+          isResetMode ? 'Reset Your Password' : 'Forgot Password'
+        ),
+        React.createElement('p', { className: 'text-sm text-muted-foreground' },
+          isResetMode
             ? 'Enter your new password below'
-            : 'Enter your email to receive reset instructions'}
-        </p>
-      </div>
-
-      <form
-        onSubmit={isResetMode ? handleResetPassword : handleRequestReset}
-        className="space-y-4"
-      >
-        {!isResetMode && (
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              type="email"
-              placeholder="john@company.com"
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              required
-            />
-          </div>
-        )}
-
-        {isResetMode && (
-          <>
-            <div className="space-y-2">
-              <Label htmlFor="password">New Password</Label>
-              <Input
-                id="password"
-                type="password"
-                value={formData.password || ''}
-                onChange={(e) =>
-                  setFormData({ ...formData, password: e.target.value })
-                }
-                required
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="confirmPassword">Confirm Password</Label>
-              <Input
-                id="confirmPassword"
-                type="password"
-                value={formData.confirmPassword || ''}
-                onChange={(e) =>
-                  setFormData({ ...formData, confirmPassword: e.target.value })
-                }
-                required
-              />
-            </div>
-          </>
-        )}
-
-        {error && (
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-
-        {success && (
-          <Alert>
-            <AlertDescription>{success}</AlertDescription>
-          </Alert>
-        )}
-
-        <Button type="submit" className="w-full" disabled={loading}>
-          {loading ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              {isResetMode ? 'Resetting password...' : 'Sending instructions...'}
-            </>
+            : 'Enter your email and we will send you reset instructions'
+        )
+      ),
+      React.createElement('form', { onSubmit: handleSubmit, className: 'space-y-4' },
+        !isResetMode && React.createElement('div', { className: 'space-y-2' },
+          React.createElement(Label, { htmlFor: 'email' }, 'Email'),
+          React.createElement(Input, {
+            id: 'email',
+            type: 'email',
+            value: formData.email,
+            onChange: (e) => setFormData({ ...formData, email: e.target.value }),
+            required: true
+          })
+        ),
+        isResetMode && React.createElement(React.Fragment, null,
+          React.createElement('div', { className: 'space-y-2' },
+            React.createElement(Label, { htmlFor: 'password' }, 'New Password'),
+            React.createElement(Input, {
+              id: 'password',
+              type: 'password',
+              value: formData.password,
+              onChange: (e) => setFormData({ ...formData, password: e.target.value }),
+              required: true
+            })
+          ),
+          React.createElement('div', { className: 'space-y-2' },
+            React.createElement(Label, { htmlFor: 'confirmPassword' }, 'Confirm Password'),
+            React.createElement(Input, {
+              id: 'confirmPassword',
+              type: 'password',
+              value: formData.confirmPassword,
+              onChange: (e) => setFormData({ ...formData, confirmPassword: e.target.value }),
+              required: true
+            })
+          )
+        ),
+        error && React.createElement(Alert, { variant: 'destructive' },
+          React.createElement(AlertDescription, null, error)
+        ),
+        success && React.createElement(Alert, null,
+          React.createElement(AlertDescription, null, success)
+        ),
+        React.createElement(Button, {
+          type: 'submit',
+          className: 'w-full',
+          disabled: loading
+        },
+          loading ? React.createElement(React.Fragment, null,
+            React.createElement(Loader2, { className: 'mr-2 h-4 w-4 animate-spin' }),
+            isResetMode ? 'Resetting Password...' : 'Sending Instructions...'
           ) : (
-            isResetMode ? 'Reset Password' : 'Send Reset Instructions'
-          )}
-        </Button>
-
-        <Button
-          type="button"
-          variant="ghost"
-          className="w-full"
-          onClick={() => router.push('/portal/auth/login')}
-        >
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to Login
-        </Button>
-      </form>
-    </div>
+            isResetMode ? 'Reset Password' : 'Send Instructions'
+          )
+        )
+      )
+    )
   );
 } 

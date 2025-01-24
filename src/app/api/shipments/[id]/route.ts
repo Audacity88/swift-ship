@@ -1,89 +1,61 @@
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
+import { getServerSupabase } from '@/lib/supabase-client'
 
-const createClient = async () => {
-  const cookieStore = await cookies()
-  
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        async get(name: string) {
-          const cookie = await cookieStore.get(name)
-          return cookie?.value
-        },
-        async set(name: string, value: string, options: any) {
-          try {
-            await cookieStore.set({ name, value, ...options })
-          } catch (error) {
-            console.error('Error setting cookie:', error)
-          }
-        },
-        async remove(name: string, options: any) {
-          try {
-            await cookieStore.delete({ name, ...options })
-          } catch (error) {
-            console.error('Error removing cookie:', error)
-          }
-        },
-      },
-    }
-  )
-}
-
-export async function GET(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function GET(request: Request, context: { params: { id: string } }) {
   try {
-    const supabase = await createClient()
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
 
-    const { data: shipment, error } = await supabase
+    const { id } = context.params
+
+    // Get shipment with all related data
+    const { data: shipment, error: shipmentError } = await supabase
       .from('shipments')
       .select(`
         *,
-        customer:customer_id (
-          id,
-          email,
-          raw_user_meta_data->name
-        ),
-        quote:quote_id (
-          id,
-          title,
-          metadata
-        ),
-        events:shipment_events (
-          id,
-          status,
-          location,
-          notes,
-          created_at,
-          created_by
-        )
+        customer:customer_id(*),
+        quote:quote_id(*),
+        tracking:tracking_info(*),
+        documents:shipping_documents(*)
       `)
-      .eq('id', params.id)
+      .eq('id', id)
       .single()
 
-    if (error) {
-      console.error('Error fetching shipment:', error)
+    if (shipmentError) {
+      console.error('Error fetching shipment:', shipmentError)
       return NextResponse.json(
         { error: 'Failed to fetch shipment' },
         { status: 500 }
       )
     }
 
-    if (!shipment) {
+    // Check if user has access to this shipment
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+
+    const isAdmin = agent?.role === 'admin'
+    const isCustomer = shipment.customer_id === user.id
+
+    if (!isAdmin && !isCustomer) {
       return NextResponse.json(
-        { error: 'Shipment not found' },
-        { status: 404 }
+        { error: 'Unauthorized' },
+        { status: 403 }
       )
     }
 
     return NextResponse.json(shipment)
   } catch (error) {
-    console.error('Error in shipment GET route:', error)
+    console.error('Error in GET /api/shipments/[id]:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
@@ -91,33 +63,46 @@ export async function GET(
   }
 }
 
-export async function PATCH(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function PATCH(request: Request, context: { params: { id: string } }) {
   try {
-    const supabase = await createClient()
-    const json = await request.json()
-    const { status, location, notes } = json
-
-    // Get the current user for the event creation
-    const {
-      data: { user },
-      error: userError
-    } = await supabase.auth.getUser()
-
-    if (userError) {
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
       )
     }
 
-    // Update shipment status
-    const { data: shipment, error: updateError } = await supabase
+    const { id } = context.params
+    const updates = await request.json()
+
+    // Check if user has permission to update this shipment
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+
+    const isAdmin = agent?.role === 'admin'
+
+    if (!isAdmin) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Admin access required' },
+        { status: 403 }
+      )
+    }
+
+    // Update shipment
+    const { data: updatedShipment, error: updateError } = await supabase
       .from('shipments')
-      .update({ status })
-      .eq('id', params.id)
+      .update({
+        ...updates,
+        updated_at: new Date().toISOString(),
+        updated_by: user.id
+      })
+      .eq('id', id)
       .select()
       .single()
 
@@ -129,25 +114,9 @@ export async function PATCH(
       )
     }
 
-    // Create shipment event
-    const { error: eventError } = await supabase
-      .from('shipment_events')
-      .insert({
-        shipment_id: params.id,
-        status,
-        location,
-        notes,
-        created_by: user.id
-      })
-
-    if (eventError) {
-      console.error('Error creating shipment event:', eventError)
-      // Don't fail the request, but log the error
-    }
-
-    return NextResponse.json(shipment)
+    return NextResponse.json(updatedShipment)
   } catch (error) {
-    console.error('Error in shipment PATCH route:', error)
+    console.error('Error in PATCH /api/shipments/[id]:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
@@ -160,7 +129,7 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const supabase = await createClient()
+    const supabase = getServerSupabase()
 
     // First delete related events
     const { error: eventsError } = await supabase

@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/popover'
 import { useQuery } from '@tanstack/react-query'
 import type { Customer } from '@/types/ticket'
+import { getServerSupabase } from '@/lib/supabase-client'
 
 interface CustomerSearchProps {
   value: string
@@ -34,7 +35,13 @@ export const CustomerSearch = ({
   const { data: customers, isLoading, error } = useQuery<Customer[]>({
     queryKey: ['customers'],
     queryFn: async () => {
-      const response = await fetch('/api/customers')
+      const supabase = getServerSupabase()
+      const response = await fetch('/api/customers', {
+        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+        }
+      })
       if (!response.ok) {
         throw new Error('Failed to fetch customers')
       }

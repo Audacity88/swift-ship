@@ -1,54 +1,50 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { getServerSupabase } from '@/lib/supabase-client';
 import { Permission } from '@/types/role';
 import { TeamMetrics } from '@/types/team';
 import { checkUserPermissions } from '@/lib/auth/check-permissions';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 // Get team metrics
 export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
-    // Check permissions
-    const permissionCheck = await checkUserPermissions(Permission.VIEW_TEAMS);
-    if ('error' in permissionCheck) {
+    const supabase = getServerSupabase();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
       return NextResponse.json(
-        { error: permissionCheck.error },
-        { status: permissionCheck.status }
+        { error: 'Unauthorized' },
+        { status: 401 }
       );
     }
 
-    // Get query parameters
-    const searchParams = request.nextUrl.searchParams;
-    const dateFrom = searchParams.get('from');
-    const dateTo = searchParams.get('to');
+    // Get user role
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('role, team_id')
+      .eq('id', user.id)
+      .single();
 
-    // Build base query
-    let query = supabase
+    const isAdmin = agent?.role === 'admin';
+    const isTeamMember = agent?.team_id === params.id;
+
+    if (!isAdmin && !isTeamMember) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Admin or team member access required' },
+        { status: 403 }
+      );
+    }
+
+    // Get team metrics
+    const { data: metrics, error } = await supabase
       .from('team_metrics')
       .select(`
         *,
-        team:teams(
-          id,
-          name
-        )
+        team:team_id(name)
       `)
-      .eq('team_id', params.id);
-
-    // Apply date filters if provided
-    if (dateFrom) {
-      query = query.gte('date', dateFrom);
-    }
-    if (dateTo) {
-      query = query.lte('date', dateTo);
-    }
-
-    // Execute query
-    const { data: metrics, error } = await query;
+      .eq('team_id', params.id)
+      .order('period', { ascending: false })
+      .limit(12);
 
     if (error) {
       console.error('Error fetching team metrics:', error);
@@ -58,35 +54,7 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
       );
     }
 
-    // Calculate aggregated metrics
-    const aggregatedMetrics = {
-      totalTickets: 0,
-      resolvedTickets: 0,
-      averageResponseTime: 0,
-      averageResolutionTime: 0,
-      customerSatisfactionScore: 0,
-      metrics: metrics || []
-    };
-
-    if (metrics && metrics.length > 0) {
-      let totalResponseTime = 0;
-      let totalResolutionTime = 0;
-      let totalSatisfactionScore = 0;
-
-      metrics.forEach(metric => {
-        aggregatedMetrics.totalTickets += metric.total_tickets || 0;
-        aggregatedMetrics.resolvedTickets += metric.resolved_tickets || 0;
-        totalResponseTime += metric.average_response_time || 0;
-        totalResolutionTime += metric.average_resolution_time || 0;
-        totalSatisfactionScore += metric.customer_satisfaction_score || 0;
-      });
-
-      aggregatedMetrics.averageResponseTime = totalResponseTime / metrics.length;
-      aggregatedMetrics.averageResolutionTime = totalResolutionTime / metrics.length;
-      aggregatedMetrics.customerSatisfactionScore = totalSatisfactionScore / metrics.length;
-    }
-
-    return NextResponse.json(aggregatedMetrics);
+    return NextResponse.json(metrics);
   } catch (error) {
     console.error('Error in GET /api/teams/metrics/[id]:', error);
     return NextResponse.json(
@@ -120,7 +88,7 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
     }
 
     // Check if team exists
-    const { data: team, error: teamError } = await supabase
+    const { data: team, error: teamError } = await getServerSupabase()
       .from('teams')
       .select('id')
       .eq('id', params.id)
@@ -134,14 +102,14 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
     }
 
     // Store current metrics in history
-    const { data: currentMetrics } = await supabase
+    const { data: currentMetrics } = await getServerSupabase()
       .from('team_metrics')
       .select('*')
       .eq('team_id', params.id)
       .single();
 
     if (currentMetrics) {
-      await supabase
+      await getServerSupabase()
         .from('team_metrics_history')
         .insert({
           team_id: params.id,
@@ -151,7 +119,7 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
     }
 
     // Update team metrics
-    const { data: updatedMetrics, error: updateError } = await supabase
+    const { data: updatedMetrics, error: updateError } = await getServerSupabase()
       .from('team_metrics')
       .upsert({
         team_id: params.id,

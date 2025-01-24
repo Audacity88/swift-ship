@@ -1,228 +1,281 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import Image from 'next/image'
 import { useRouter } from 'next/navigation'
-import { useSupabase } from '@/app/providers'
-import { Search, Filter, Download, MoreVertical, Package, Truck, MapPin, Calendar, ArrowUpDown, Plus } from 'lucide-react'
+import { format } from 'date-fns'
+import {
+  Package,
+  Truck,
+  MapPin,
+  Calendar,
+  Clock,
+  AlertCircle,
+  CheckCircle2,
+  CircleDot,
+  ArrowRight,
+  Loader2
+} from 'lucide-react'
 import { COLORS } from '@/lib/constants'
+import { shipmentService } from '@/lib/services'
+import { useAuth } from '@/lib/hooks/useAuth'
+import type { ShipmentWithEvents } from '@/types/shipment'
 
-interface ShipmentTicket {
-  id: string
-  title: string
-  description: string
-  status: string
-  createdAt: string
-  metadata: any
+const statusColors = {
+  quote_requested: { bg: 'bg-blue-50', text: 'text-blue-700', icon: CircleDot },
+  quote_provided: { bg: 'bg-blue-50', text: 'text-blue-700', icon: CircleDot },
+  quote_accepted: { bg: 'bg-blue-50', text: 'text-blue-700', icon: CircleDot },
+  pickup_scheduled: { bg: 'bg-yellow-50', text: 'text-yellow-700', icon: Clock },
+  pickup_completed: { bg: 'bg-purple-50', text: 'text-purple-700', icon: Package },
+  in_transit: { bg: 'bg-indigo-50', text: 'text-indigo-700', icon: Truck },
+  out_for_delivery: { bg: 'bg-orange-50', text: 'text-orange-700', icon: MapPin },
+  delivered: { bg: 'bg-green-50', text: 'text-green-700', icon: CheckCircle2 },
+  cancelled: { bg: 'bg-red-50', text: 'text-red-700', icon: AlertCircle }
+}
+
+const shipmentTypeLabels = {
+  full_truckload: 'Full Truckload (FTL)',
+  less_than_truckload: 'Less Than Truckload (LTL)',
+  sea_container: 'Sea Container',
+  bulk_freight: 'Bulk Freight'
 }
 
 export default function ShipmentsPage() {
-  const supabase = useSupabase()
+  const router = useRouter()
+  const { user } = useAuth()
+  const [shipments, setShipments] = useState<ShipmentWithEvents[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [tickets, setTickets] = useState<ShipmentTicket[]>([])
-  const [showNew, setShowNew] = useState(false)
-  const [origin, setOrigin] = useState('')
-  const [destination, setDestination] = useState('')
   const [error, setError] = useState<string | null>(null)
 
-  const loadShipments = async () => {
-    setIsLoading(true)
-    setError(null)
-    try {
-      const { data, error } = await supabase
-        .from('tickets')
-        .select(`
-          *,
-          ticket_tags!inner(
-            tags!inner(name)
-          )
-        `)
-        .eq('ticket_tags.tags.name', 'shipment')
-        .order('created_at', { ascending: false })
-
-      if (error) {
-        throw error
-      }
-      if (!data) {
-        setTickets([])
-      } else {
-        setTickets(data)
-      }
-    } catch (err: any) {
-      setError(err.message)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const createShipment = async () => {
-    setError(null)
-    setIsLoading(true)
-    try {
-      // create a new ticket with tag=shipment
-      const sessionRes = await supabase.auth.getSession()
-      const session = sessionRes.data.session
-      if (!session?.user?.id) {
-        throw new Error('Must be logged in')
-      }
-      const { data, error } = await supabase
-        .from('tickets')
-        .insert({
-          title: 'Shipment Request',
-          description: `Shipment from ${origin} to ${destination}`,
-          status: 'open',
-          priority: 'medium',
-          type: 'task',
-          customer_id: session.user.id,
-          source: 'web',
-          metadata: { origin, destination }
-        })
-        .select()
-        .single()
-      if (error) throw error
-
-      const ticketId = data.id
-
-      // Insert tag
-      await supabase
-        .from('ticket_tags')
-        .insert({
-          ticket_id: ticketId,
-          tag_id: (await ensureTag('shipment')).id
-        })
-
-      // Insert system message or user message
-      await supabase
-        .from('messages')
-        .insert({
-          ticket_id: ticketId,
-          content: 'Your shipment request has been received!',
-          author_type: 'agent',
-          author_id: '00000000-0000-0000-0000-000000000000'
-        })
-
-      setShowNew(false)
-      setOrigin('')
-      setDestination('')
-      // reload
-      await loadShipments()
-    } catch (err: any) {
-      setError(err.message)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const ensureTag = async (tagName: string) => {
-    const { data, error } = await supabase
-      .from('tags')
-      .select('*')
-      .eq('name', tagName)
-      .single()
-
-    if (data) return data
-
-    const { data: newTag, error: createError } = await supabase
-      .from('tags')
-      .insert({ name: tagName, color: '#0EAD69' })
-      .select()
-      .single()
-
-    if (createError || !newTag) {
-      throw new Error('Failed to ensure tag: ' + tagName)
-    }
-    return newTag
-  }
-
   useEffect(() => {
-    void loadShipments()
-  }, [])
+    const fetchShipments = async () => {
+      if (!user) return
+      
+      try {
+        setIsLoading(true)
+        let fetchedShipments
+        
+        if (user.role === 'agent') {
+          // Agents can see all shipments
+          const result = await shipmentService.listShipments(undefined, {
+            limit: 100 // Adjust this number based on your needs
+          })
+          fetchedShipments = result.data
+        } else {
+          // Customers only see their own shipments
+          fetchedShipments = await shipmentService.getCustomerShipments(undefined, user.id)
+        }
+        
+        // Get events for each shipment
+        const shipmentsWithEvents = await Promise.all(
+          fetchedShipments.map(async (shipment) => {
+            const shipmentWithEvents = await shipmentService.getShipmentWithEvents(undefined, shipment.id)
+            return shipmentWithEvents
+          })
+        )
+        
+        setShipments(shipmentsWithEvents)
+      } catch (error) {
+        console.error('Error fetching shipments:', error)
+        setError('Failed to load shipments. Please try again later.')
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    void fetchShipments()
+  }, [user])
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-[calc(100vh-5rem)] -mt-6">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900" />
+      <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
+        <Loader2 className="w-8 h-8 animate-spin text-gray-500" />
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="text-red-500 p-6">
-        {error}
+      <div className="max-w-4xl mx-auto p-6">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="flex items-center gap-2 text-red-700">
+            <AlertCircle className="w-5 h-5" />
+            <p>{error}</p>
+          </div>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="flex h-[calc(100vh-5rem)] -mt-6 -mx-6">
-      {/* Shipments List */}
-      <div className="flex-1 flex flex-col border-r border-gray-200 bg-white overflow-hidden">
-        <div className="p-6 border-b border-gray-200 flex justify-between items-center">
-          <h1 className="text-2xl font-semibold text-gray-900">Shipments</h1>
-          <button
-            className="px-4 py-2 text-sm font-medium text-white rounded-lg"
-            style={{ backgroundColor: COLORS.primary }}
-            onClick={() => setShowNew(!showNew)}
-          >
-            {showNew ? 'Cancel' : 'New Shipment'}
-          </button>
-        </div>
-
-        {showNew && (
-          <div className="p-6 border-b border-gray-200 space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Origin</label>
-              <input
-                type="text"
-                value={origin}
-                onChange={(e) => setOrigin(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
-                placeholder="Enter origin city"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Destination</label>
-              <input
-                type="text"
-                value={destination}
-                onChange={(e) => setDestination(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
-                placeholder="Enter destination city"
-              />
-            </div>
-            <button
-              onClick={createShipment}
-              className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium"
-              style={{ backgroundColor: COLORS.primary }}
-            >
-              Submit Shipment
-            </button>
-          </div>
-        )}
-
-        <div className="flex-1 overflow-auto">
-          {tickets.map(shipment => (
-            <div
-              key={shipment.id}
-              className="w-full p-4 text-left border-b border-gray-100 hover:bg-gray-50"
-            >
-              <h2 className="font-medium text-gray-900">{shipment.title}</h2>
-              <p className="text-sm text-gray-600">
-                {shipment.description}
-              </p>
-              <p className="text-xs text-gray-400 mt-1">
-                {new Date(shipment.createdAt).toLocaleString()}
-              </p>
-            </div>
-          ))}
-        </div>
+    <div className="max-w-4xl mx-auto p-6">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-semibold text-gray-900">
+          {user?.role === 'agent' ? 'All Shipments' : 'My Shipments'}
+        </h1>
       </div>
 
-      {/* Shipment Details */}
-      <div className="w-[400px] bg-white flex flex-col items-center justify-center text-gray-500">
-        Select a shipment for details (not implemented)
+      <div className="space-y-6">
+        {shipments.length === 0 ? (
+          <div className="text-center py-12 bg-gray-50 rounded-lg">
+            <Package className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900">No shipments yet</h3>
+            <p className="text-gray-500 mt-2">Your shipments will appear here once you have any in progress</p>
+          </div>
+        ) : (
+          shipments.map((shipment) => {
+            const StatusIcon = statusColors[shipment.status].icon
+
+            return (
+              <div
+                key={shipment.id}
+                className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:border-gray-300 transition-colors"
+              >
+                {/* Header */}
+                <div className="p-6 border-b border-gray-100">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium ${statusColors[shipment.status].bg} ${statusColors[shipment.status].text}`}>
+                          <StatusIcon className="w-4 h-4" />
+                          {shipment.status.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
+                        </span>
+                        {shipment.tracking_number && (
+                          <span className="text-sm text-gray-500">
+                            Tracking: {shipment.tracking_number}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-6 text-sm text-gray-500">
+                        <div className="flex items-center gap-1.5">
+                          <Package className="w-4 h-4" />
+                          {shipmentTypeLabels[shipment.type]}
+                        </div>
+                        {shipment.scheduled_pickup && (
+                          <div className="flex items-center gap-1.5">
+                            <Calendar className="w-4 h-4" />
+                            Pickup: {format(new Date(shipment.scheduled_pickup), 'MMM d, yyyy')}
+                          </div>
+                        )}
+                        {shipment.estimated_delivery && (
+                          <div className="flex items-center gap-1.5">
+                            <Clock className="w-4 h-4" />
+                            Delivery: {format(new Date(shipment.estimated_delivery), 'MMM d, yyyy')}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Content */}
+                <div className="p-6">
+                  <div className="grid grid-cols-2 gap-6">
+                    {/* Package Details */}
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-900 mb-3">Package Details</h3>
+                      <div className="space-y-2 text-sm">
+                        {shipment.metadata.quote_metadata?.packageDetails?.weight && (
+                          <p className="text-gray-500">Weight: {shipment.metadata.quote_metadata.packageDetails.weight} metric tons</p>
+                        )}
+                        {shipment.metadata.quote_metadata?.packageDetails?.volume && (
+                          <p className="text-gray-500">Volume: {shipment.metadata.quote_metadata.packageDetails.volume} m³</p>
+                        )}
+                        {shipment.metadata.quote_metadata?.packageDetails?.containerSize && (
+                          <p className="text-gray-500">Container Size: {shipment.metadata.quote_metadata.packageDetails.containerSize}</p>
+                        )}
+                        {shipment.metadata.quote_metadata?.packageDetails?.palletCount && (
+                          <p className="text-gray-500">Pallets: {shipment.metadata.quote_metadata.packageDetails.palletCount}</p>
+                        )}
+                        {shipment.metadata.quote_metadata?.packageDetails?.hazardous && (
+                          <p className="text-yellow-600">⚠️ Contains hazardous materials</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Route Details */}
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-900 mb-3">Route</h3>
+                      <div className="flex items-start gap-3">
+                        <div className="relative flex flex-col items-center">
+                          <div className="w-2 h-2 rounded-full bg-gray-300" />
+                          <div className="w-0.5 h-full bg-gray-200 absolute top-2" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{shipment.origin}</p>
+                          <p className="text-sm text-gray-500">Origin</p>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-3 mt-4">
+                        <div className="w-2 h-2 rounded-full bg-gray-300" />
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{shipment.destination}</p>
+                          <p className="text-sm text-gray-500">Destination</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Last Event */}
+                  {shipment.events && shipment.events.length > 0 && (
+                    <div className="mt-6 pt-6 border-t border-gray-100">
+                      <h3 className="text-sm font-medium text-gray-900 mb-4">Last Event</h3>
+                      <div>
+                        {(() => {
+                          const lastEvent = shipment.events[0]
+                          const EventIcon = statusColors[lastEvent.status].icon
+
+                          return (
+                            <div className="flex items-start gap-3">
+                              <div className="relative flex flex-col items-center">
+                                <div className={`w-8 h-8 rounded-full ${statusColors[lastEvent.status].bg} flex items-center justify-center`}>
+                                  <EventIcon className={`w-4 h-4 ${statusColors[lastEvent.status].text}`} />
+                                </div>
+                              </div>
+                              <div>
+                                <p className="text-sm font-medium text-gray-900">
+                                  {lastEvent.status === 'quote_requested' 
+                                    ? 'Shipment Created'
+                                    : lastEvent.status.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
+                                </p>
+                                {lastEvent.status === 'quote_requested' ? (
+                                  <p className="text-sm text-gray-500">Quote accepted and preparing for shipment</p>
+                                ) : (
+                                  <>
+                                    {lastEvent.location && (
+                                      <p className="text-sm text-gray-500">{lastEvent.location}</p>
+                                    )}
+                                    {lastEvent.notes && (
+                                      <p className="text-sm text-gray-500">{lastEvent.notes}</p>
+                                    )}
+                                  </>
+                                )}
+                                <p className="text-xs text-gray-400 mt-1">
+                                  {format(new Date(lastEvent.created_at), 'MMM d, yyyy h:mm a')}
+                                </p>
+                              </div>
+                            </div>
+                          )
+                        })()}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div className="mt-6 pt-6 border-t border-gray-100">
+                    <button
+                      onClick={() => router.push(`/shipments/${shipment.id}`)}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                    >
+                      View Details
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )
+          })
+        )}
       </div>
     </div>
   )
-} 
+}

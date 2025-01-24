@@ -1,38 +1,14 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { auth } from '@/lib/auth'
 import { TicketStatus } from '@/types/ticket'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+import { getServerSupabase } from '@/lib/supabase-client'
+import type { User } from '@supabase/supabase-js'
 
-const createClient = async () => {
-  const cookieStore = await cookies()
-  
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value
-        },
-        set(name: string, value: string, options: Record<string, unknown>) {
-          try {
-            cookieStore.set({ name, value, ...options })
-          } catch {
-            // Handle cookie setting error silently
-          }
-        },
-        remove(name: string, options: Record<string, unknown>) {
-          try {
-            cookieStore.set({ name, value: '', ...options })
-          } catch {
-            // Handle cookie removal error silently
-          }
-        },
-      },
-    }
-  )
+interface CustomSession {
+  user: User
+  role: 'agent' | 'admin'
+  type: 'agent' | 'customer'
+  id: string
 }
 
 // Types
@@ -183,15 +159,17 @@ export async function GET(
   const { id } = await Promise.resolve((await context.params))
   
   try {
-    const session = await auth()
-    if (!session) {
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
       )
     }
 
-    const supabase = await createClient()
+    const customSession = user as unknown as CustomSession
 
     // Get current ticket status
     const { data: ticket, error: ticketError } = await supabase
@@ -224,7 +202,7 @@ export async function GET(
     const availableTransitions = statusTransitions[ticket.status as TicketStatus]
       .filter((transition: StatusTransition) => {
         // Filter by role if required
-        if (transition.requiredRole && transition.requiredRole !== session.role) {
+        if (transition.requiredRole && transition.requiredRole !== customSession.role) {
           return false
         }
         return true
@@ -238,7 +216,7 @@ export async function GET(
                 const hoursElapsed = (Date.now() - new Date(ticket.resolved_at).getTime()) / (1000 * 60 * 60)
                 return {
                   ...condition,
-                  isSatisfied: hoursElapsed >= condition.data.hours
+                  isSatisfied: hoursElapsed >= (condition.data.hours as number)
                 }
               }
               return { ...condition, isSatisfied: false }
@@ -255,7 +233,7 @@ export async function GET(
             case 'permission':
               return {
                 ...condition,
-                isSatisfied: session.role === 'admin'
+                isSatisfied: customSession.role === 'admin'
               }
             
             default:
@@ -282,15 +260,18 @@ export async function POST(
   const { id } = await Promise.resolve((await context.params))
   
   try {
-    const session = await auth()
-    if (!session) {
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
       )
     }
 
-    const supabase = await createClient()
+    const customSession = user as unknown as CustomSession
+
     const json = await request.json()
     const body = updateStatusSchema.parse(json)
 
@@ -315,7 +296,8 @@ export async function POST(
     // Update ticket status
     const updates: any = {
       status: body.status,
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
+      updated_by: user.id
     }
 
     // Set resolved_at if status is being changed to resolved
@@ -341,8 +323,8 @@ export async function POST(
         entity_type: 'ticket',
         entity_id: id,
         action: 'status_update',
-        actor_id: session.id,
-        actor_type: session.type,
+        actor_id: customSession.id,
+        actor_type: customSession.type,
         changes: {
           status: body.status,
           reason: body.reason

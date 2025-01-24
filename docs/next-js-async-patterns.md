@@ -4,6 +4,8 @@
 
 Next.js 15 introduces significant changes to how dynamic APIs and route parameters are handled, making previously synchronous operations asynchronous. This guide outlines the patterns and best practices for handling these changes in our application.
 
+***NOTE: The cookies() function itself needs to be awaited before we use it.***
+
 ## Key Changes
 
 ### 1. Dynamic APIs

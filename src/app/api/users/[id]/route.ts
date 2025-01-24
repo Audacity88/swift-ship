@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+import { authService, userService } from '@/lib/services'
+import { getServerSupabase } from '@/lib/supabase-client'
 
 export async function GET(
   request: NextRequest,
@@ -9,118 +9,96 @@ export async function GET(
   try {
     // Await the params
     const { id } = await Promise.resolve((await context.params))
-    const cookieStore = await cookies()
 
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get(name: string) {
-            return cookieStore.get(name)?.value
-          },
-        },
-      }
-    )
-
-    // First check if user exists in auth
-    const { data: { user: authUser }, error: authError } = await supabase.auth.getUser()
-
-    if (authError || !authUser || authUser.id !== id) {
+    // Check authentication
+    const supabase = getServerSupabase(undefined)
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
       return NextResponse.json(
-        { error: 'User not found or unauthorized' },
-        { status: 404 }
+        { error: 'Unauthorized' },
+        { status: 401 }
       )
     }
 
-    // Get user's role and permissions from agents table
-    const { data: agentData, error: agentError } = await supabase
-      .from('agents')
-      .select('id, name, email, role, avatar')
-      .eq('id', id)
-      .single()
-
-    // If no agent found (PGRST116) or other non-critical error, try customers table
-    if (agentError?.code === 'PGRST116' || !agentData) {
-      // Try customers table
-      const { data: customerData, error: customerError } = await supabase
-        .from('customers')
-        .select('id, name, email, avatar, company')
-        .eq('id', id)
-        .single()
-
-      // If no customer found, create a new customer record
-      if (customerError?.code === 'PGRST116' || !customerData) {
-        // Create new customer record
-        const { data: newCustomer, error: createError } = await supabase
-          .from('customers')
-          .insert({
-            id: authUser.id,
-            name: authUser.user_metadata?.name || authUser.email?.split('@')[0] || 'Unknown',
-            email: authUser.email,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          })
-          .select()
-          .single()
-
-        if (createError) {
-          console.error('Error creating customer:', createError)
-          return NextResponse.json(
-            { error: 'Failed to create customer record' },
-            { status: 500 }
-          )
-        }
-
-        return NextResponse.json({
-          ...newCustomer,
-          role: 'customer'
-        })
-      }
-
-      // If customer found, return with role
-      if (customerData) {
-        return NextResponse.json({
-          ...customerData,
-          role: 'customer'
-        })
-      }
-
-      // If customer error (not PGRST116), return 500
-      if (customerError) {
-        console.error('Error fetching customer:', customerError)
-        return NextResponse.json(
-          { error: 'Failed to fetch customer' },
-          { status: 500 }
-        )
-      }
-    }
-
-    // If agent error (not PGRST116), return 500
-    if (agentError && agentError.code !== 'PGRST116') {
-      console.error('Error fetching agent:', agentError)
+    // Only allow users to access their own data
+    if (user.id !== id) {
       return NextResponse.json(
-        { error: 'Failed to fetch agent' },
-        { status: 500 }
+        { error: 'Unauthorized' },
+        { status: 403 }
       )
     }
 
-    // If agent found, return agent data
-    if (agentData) {
-      return NextResponse.json(agentData)
+    // Get user data
+    const userData = await userService.getUserById(undefined, id)
+
+    // If user not found in either agents or customers table, create a new customer
+    if (!userData) {
+      const newUser = await userService.createCustomer(undefined, {
+        id: user.id,
+        name: user.user_metadata?.name || user.email?.split('@')[0] || 'Unknown',
+        email: user.email!,
+        avatar: user.user_metadata?.avatar_url
+      })
+
+      return NextResponse.json(newUser)
     }
 
-    // Fallback 404 if somehow nothing was returned
+    return NextResponse.json(userData)
+  } catch (error: any) {
+    console.error('Error in users GET route:', error)
     return NextResponse.json(
-      { error: 'User not found' },
-      { status: 404 }
+      { error: error.message || 'Internal server error' },
+      { status: error.status || 500 }
     )
+  }
+}
 
-  } catch (error) {
-    console.error('Error in GET /api/users/[id]:', error)
+export async function PUT(
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
+  try {
+    // Await the params
+    const { id } = await Promise.resolve((await context.params))
+
+    // Check authentication
+    const supabase = getServerSupabase(undefined)
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
+    // Only allow users to update their own data
+    if (user.id !== id) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 403 }
+      )
+    }
+
+    const updates = await request.json()
+
+    // Validate required fields
+    if (!updates.name) {
+      return NextResponse.json(
+        { error: 'Name is required' },
+        { status: 400 }
+      )
+    }
+
+    // Update user data
+    const updatedUser = await userService.updateUser(undefined, id, updates)
+    return NextResponse.json(updatedUser)
+  } catch (error: any) {
+    console.error('Error in users PUT route:', error)
     return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
+      { error: error.message || 'Internal server error' },
+      { status: error.status || 500 }
     )
   }
 } 

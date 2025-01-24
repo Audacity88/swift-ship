@@ -6,11 +6,10 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { MetricsPeriod, TeamMetrics as TeamMetricsType, AgentMetrics } from '@/types/metrics';
-import { metricsService } from '@/lib/services';
+import { metricsService, teamService } from '@/lib/services';
 import { PerformanceCharts } from '@/components/features/analytics/PerformanceCharts';
 import { WorkloadDistribution } from '@/components/features/analytics/WorkloadDistribution';
 import { CoverageAnalysis } from '@/components/features/analytics/CoverageAnalysis';
-import { supabase } from '@/lib/supabase';
 import type { WeeklySchedule } from '@/types/team';
 
 interface TeamMetricsProps {
@@ -44,12 +43,12 @@ export function TeamMetrics({ teamId }: TeamMetricsProps) {
         // Load team metrics and schedule data in parallel
         const [
           teamMetrics,
-          { data: teamMembers },
-          { data: teamData }
+          teamMembers,
+          teamData
         ] = await Promise.all([
           metricsService.getTeamMetrics(teamId, period),
-          supabase.from('team_members').select('user_id').eq('team_id', teamId),
-          supabase.from('teams').select('schedule, timezone').eq('id', teamId).single()
+          teamService.getTeamMembers(teamId),
+          teamService.getTeamById(teamId)
         ]);
 
         setMetrics(teamMetrics);
@@ -66,9 +65,8 @@ export function TeamMetrics({ teamId }: TeamMetricsProps) {
 
         // Set schedule data
         if (teamData) {
-          const data = teamData as TeamData;
-          setSchedule(data.schedule);
-          setTimezone(data.timezone || 'UTC');
+          setSchedule(teamData.schedule);
+          setTimezone(teamData.timezone || 'UTC');
         }
 
       } catch (err) {

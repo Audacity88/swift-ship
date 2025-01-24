@@ -1,10 +1,6 @@
-import { createClient } from '@supabase/supabase-js';
+import { getServerSupabase } from '@/lib/supabase-client'
+import type { ServerContext } from '@/lib/supabase-client'
 import { Permission } from '@/types/role';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 interface PermissionCheckResult {
   error?: string;
@@ -17,65 +13,91 @@ interface PermissionCheckResult {
 
 export async function checkUserPermissions(requiredPermission: Permission): Promise<PermissionCheckResult> {
   try {
-    // Get session
-    const { data: { session }, error: authError } = await supabase.auth.getSession();
-    if (authError || !session) {
+    const supabase = getServerSupabase(context)
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
+      console.error('Auth error:', userError)
       return { error: 'Unauthorized', status: 401 };
     }
 
-    // Check if user is an agent
-    const { data: agent, error: agentError } = await supabase
-      .from('agents')
-      .select('id, role_id, custom_permissions')
-      .eq('id', session.user.id)
-      .single();
+    // Get user's role and permissions
+    const { data: roleData, error: roleError } = await supabase
+      .from('user_roles')
+      .select('role_id')
+      .eq('user_id', user.id)
+      .single()
 
-    if (!agentError && agent) {
-      // Get agent's role permissions
-      const { data: rolePermissions } = await supabase
-        .from('role_permissions')
-        .select('permission')
-        .eq('role_id', agent.role_id);
-
-      const permissions = rolePermissions?.map(rp => rp.permission) || [];
-      const hasPermission = permissions.includes(requiredPermission) ||
-                          agent.custom_permissions?.includes(requiredPermission);
-
-      if (!hasPermission) {
-        return { error: 'Insufficient permissions', status: 403 };
-      }
-
-      return { user: { id: agent.id, type: 'agent' } };
+    if (roleError || !roleData) {
+      console.error('Error getting user role:', roleError)
+      return { error: 'Internal server error', status: 500 };
     }
 
-    // If not an agent, check if user is a customer
-    const { data: customer, error: customerError } = await supabase
-      .from('customers')
-      .select('id')
-      .eq('id', session.user.id)
-      .single();
+    // Get role permissions
+    const { data: permissions, error: permError } = await supabase
+      .from('role_permissions')
+      .select('permission')
+      .eq('role_id', roleData.role_id)
 
-    if (customerError || !customer) {
-      return { error: 'User not found', status: 404 };
+    if (permError) {
+      console.error('Error getting role permissions:', permError)
+      return { error: 'Internal server error', status: 500 };
     }
 
-    // Customers have limited permissions
-    const customerPermissions = [
-      Permission.VIEW_PROFILE,
-      Permission.UPDATE_PROFILE,
-      Permission.VIEW_TICKETS,
-      Permission.CREATE_TICKETS,
-      Permission.CREATE_COMMENTS,
-      Permission.VIEW_KNOWLEDGE_BASE
-    ];
+    const userPermissions = permissions.map(p => p.permission)
+    const hasPermission = userPermissions.includes(requiredPermission)
 
-    if (!customerPermissions.includes(requiredPermission)) {
+    if (!hasPermission) {
       return { error: 'Insufficient permissions', status: 403 };
     }
 
-    return { user: { id: customer.id, type: 'customer' } };
+    return { user: { id: user.id, type: 'agent' } };
   } catch (error) {
-    console.error('Error checking permissions:', error);
+    console.error('Error checking permissions:', error)
     return { error: 'Internal server error', status: 500 };
+  }
+}
+
+export async function checkPermissions(
+  context: ServerContext,
+  requiredPermissions: string[]
+): Promise<boolean> {
+  try {
+    const supabase = getServerSupabase(context)
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
+      console.error('Auth error:', userError)
+      return false
+    }
+
+    // Get user's role and permissions
+    const { data: roleData, error: roleError } = await supabase
+      .from('user_roles')
+      .select('role_id')
+      .eq('user_id', user.id)
+      .single()
+
+    if (roleError || !roleData) {
+      console.error('Error getting user role:', roleError)
+      return false
+    }
+
+    // Get role permissions
+    const { data: permissions, error: permError } = await supabase
+      .from('role_permissions')
+      .select('permission')
+      .eq('role_id', roleData.role_id)
+
+    if (permError) {
+      console.error('Error getting role permissions:', permError)
+      return false
+    }
+
+    const userPermissions = permissions.map(p => p.permission)
+    return requiredPermissions.every(p => userPermissions.includes(p))
+  } catch (error) {
+    console.error('Error checking permissions:', error)
+    return false
   }
 } 

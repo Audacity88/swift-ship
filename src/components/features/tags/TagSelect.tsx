@@ -18,6 +18,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import type { Tag } from '@/types/ticket'
+import { getServerSupabase } from '@/lib/supabase-client'
 
 interface TagSelectProps {
   value: string[]
@@ -34,7 +35,13 @@ export const TagSelect = ({
   const { data: tags, isLoading } = useQuery<Tag[]>({
     queryKey: ['tags'],
     queryFn: async () => {
-      const response = await fetch('/api/tags')
+      const supabase = getServerSupabase()
+      const response = await fetch('/api/tags', {
+        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+        }
+      })
       if (!response.ok) {
         throw new Error('Failed to fetch tags')
       }
@@ -59,11 +66,14 @@ export const TagSelect = ({
 
   const createTag = async (name: string) => {
     try {
+      const supabase = getServerSupabase()
       const response = await fetch('/api/tags', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
         },
+        credentials: 'include',
         body: JSON.stringify({ name }),
       })
       

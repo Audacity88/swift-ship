@@ -1,132 +1,99 @@
-import { TicketStatus } from './ticket'
+import type { TicketStatus } from './ticket'
 import type { Agent } from './ticket'
-
-export interface StatusTransition {
-  from: TicketStatus
-  to: TicketStatus
-  requiredRole?: 'agent' | 'admin'
-  conditions?: TransitionCondition[]
-  automationHooks?: TransitionHook[]
-}
 
 export interface TransitionCondition {
   type: 'required_fields' | 'time_elapsed' | 'priority_check' | 'custom'
-  params: {
-    fieldIds?: string[]
-    minTimeInStatus?: number // in minutes
-    minPriority?: 'low' | 'medium' | 'high' | 'urgent'
-    customCheck?: (ticket: any) => boolean
-  }
+  params: Record<string, any>
+  message?: string
+}
+
+export interface StatusTransition {
+  fromStatus: TicketStatus
+  toStatus: TicketStatus
+  conditions?: TransitionCondition[]
+  hooks?: TransitionHook[]
 }
 
 export interface TransitionHook {
-  type: 'notification' | 'field_update' | 'sla_update' | 'custom'
+  type: 'notify_assigned_agent' | 'update_custom_field' | 'create_audit_log'
   params: {
+    // Notification params
     notifyRoles?: ('customer' | 'assignee' | 'followers')[]
-    fieldUpdates?: { fieldId: string; value: any }[]
-    slaAction?: 'start' | 'pause' | 'resume' | 'stop'
-    customAction?: (ticket: any) => Promise<void>
+    
+    // Field update params
+    fieldId?: string
+    value?: any
+    
+    // Audit log params
+    action?: string
+    details?: Record<string, any>
   }
 }
 
 export interface StatusHistory {
   id: string
-  ticketId: string
-  fromStatus: TicketStatus
-  toStatus: TicketStatus
-  changedBy: Agent
-  changedAt: string
-  reason?: string
-  automationTriggered?: boolean
+  ticket_id: string
+  from_status: TicketStatus
+  to_status: TicketStatus
+  changed_by: string
+  reason: string | null
+  automation_triggered: boolean
+  created_at: string
 }
 
-// Default status workflow configuration
+// Default workflow configuration
 export const DEFAULT_STATUS_WORKFLOW: StatusTransition[] = [
   {
-    from: TicketStatus.OPEN,
-    to: TicketStatus.IN_PROGRESS,
+    fromStatus: 'open',
+    toStatus: 'in_progress',
+    conditions: []
+  },
+  {
+    fromStatus: 'in_progress',
+    toStatus: 'awaiting_response',
+    conditions: []
+  },
+  {
+    fromStatus: 'awaiting_response',
+    toStatus: 'in_progress',
+    conditions: []
+  },
+  {
+    fromStatus: 'in_progress',
+    toStatus: 'resolved',
     conditions: [
       {
         type: 'required_fields',
         params: {
-          fieldIds: ['assignee']
-        }
-      }
-    ],
-    automationHooks: [
-      {
-        type: 'notification',
-        params: {
-          notifyRoles: ['assignee', 'followers']
-        }
+          fields: ['resolution_notes']
+        },
+        message: 'Resolution notes are required'
       }
     ]
   },
   {
-    from: TicketStatus.IN_PROGRESS,
-    to: TicketStatus.OPEN,
-    automationHooks: [
-      {
-        type: 'notification',
-        params: {
-          notifyRoles: ['customer']
-        }
-      },
-      {
-        type: 'sla_update',
-        params: {
-          slaAction: 'pause'
-        }
-      }
-    ]
-  },
-  {
-    from: TicketStatus.OPEN,
-    to: TicketStatus.IN_PROGRESS,
-    automationHooks: [
-      {
-        type: 'sla_update',
-        params: {
-          slaAction: 'resume'
-        }
-      }
-    ]
-  },
-  {
-    from: TicketStatus.IN_PROGRESS,
-    to: TicketStatus.RESOLVED,
-    conditions: [
-      {
-        type: 'required_fields',
-        params: {
-          fieldIds: ['resolution']
-        }
-      }
-    ],
-    automationHooks: [
-      {
-        type: 'notification',
-        params: {
-          notifyRoles: ['customer', 'followers']
-        }
-      },
-      {
-        type: 'sla_update',
-        params: {
-          slaAction: 'stop'
-        }
-      }
-    ]
-  },
-  {
-    from: TicketStatus.RESOLVED,
-    to: TicketStatus.CLOSED,
+    fromStatus: 'resolved',
+    toStatus: 'closed',
     conditions: [
       {
         type: 'time_elapsed',
         params: {
-          minTimeInStatus: 10080 // 7 days in minutes
-        }
+          hours: 24
+        },
+        message: 'Ticket must be resolved for 24 hours before closing'
+      }
+    ]
+  },
+  {
+    fromStatus: 'closed',
+    toStatus: 'open',
+    conditions: [
+      {
+        type: 'priority_check',
+        params: {
+          minPriority: 'high'
+        },
+        message: 'Only high priority tickets can be reopened'
       }
     ]
   }

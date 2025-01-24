@@ -14,7 +14,6 @@ export const ROUTES = {
   quote: '/quote',
   analytics: '/analytics',
   shipments: '/shipments',
-  pickup: '/pickup',
   search: '/search',
   notifications: '/notifications',
   upgrade: '/upgrade',

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SearchAnalytics as SearchAnalyticsType, FailedSearch } from '@/types/search';
-import { supabase } from '@/lib/supabase';
+import { searchService } from '@/lib/services';
 import {
   LineChart,
   Line,
@@ -33,41 +33,21 @@ export const SearchAnalytics = () => {
     const fetchMetrics = async () => {
       setIsLoading(true);
       try {
-        // Get total searches and average response time
-        const { data: analyticsData, error: analyticsError } = await supabase
-          .rpc('get_search_analytics', { time_range: timeRange });
-        
-        if (analyticsError) throw analyticsError;
-
-        // Get top search terms
-        const { data: topTermsData, error: topTermsError } = await supabase
-          .rpc('get_top_search_terms', { time_range: timeRange, limit: 10 });
-
-        if (topTermsError) throw topTermsError;
-
-        // Get searches by day
-        const { data: searchesByDayData, error: searchesByDayError } = await supabase
-          .rpc('get_searches_by_day', { time_range: timeRange });
-
-        if (searchesByDayError) throw searchesByDayError;
-
-        // Get recent failed searches
-        const { data: failedSearchesData, error: failedSearchesError } = await supabase
-          .from('failed_searches')
-          .select('*')
-          .gte('created_at', new Date(Date.now() - getTimeRangeInMs(timeRange)).toISOString())
-          .order('created_at', { ascending: false })
-          .limit(10);
-
-        if (failedSearchesError) throw failedSearchesError;
+        // Get analytics data using the search service
+        const [analytics, topTerms, searchesByDay, failedSearches] = await Promise.all([
+          searchService.getSearchAnalytics(timeRange),
+          searchService.getTopSearchTerms(timeRange),
+          searchService.getSearchesByDay(timeRange),
+          searchService.getFailedSearches(timeRange)
+        ]);
 
         setMetrics({
-          totalSearches: analyticsData.total_searches,
-          averageResponseTime: Math.round(analyticsData.avg_response_time),
-          failureRate: analyticsData.failure_rate,
-          topSearchTerms: topTermsData,
-          searchesByDay: searchesByDayData,
-          failedSearches: failedSearchesData
+          totalSearches: analytics.total_searches,
+          averageResponseTime: Math.round(analytics.avg_response_time),
+          failureRate: analytics.failure_rate,
+          topSearchTerms: topTerms,
+          searchesByDay: searchesByDay,
+          failedSearches: failedSearches
         });
       } catch (error) {
         console.error('Failed to fetch search metrics:', error);

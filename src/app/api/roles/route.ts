@@ -1,13 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { getServerSupabase } from '@/lib/supabase-client';
 import { Permission } from '@/types/role';
 import { checkUserPermissions } from '@/lib/auth/check-permissions';
 import { z } from 'zod';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 const createRoleSchema = z.object({
   name: z.string().min(1),
@@ -15,27 +10,43 @@ const createRoleSchema = z.object({
   permissions: z.array(z.nativeEnum(Permission))
 });
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    // Check permissions
-    const permissionCheck = await checkUserPermissions(Permission.VIEW_ROLES);
-    if ('error' in permissionCheck) {
+    const supabase = getServerSupabase();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
       return NextResponse.json(
-        { error: permissionCheck.error },
-        { status: permissionCheck.status }
+        { error: 'Unauthorized' },
+        { status: 401 }
       );
     }
 
-    // Get roles with permissions
+    // Get user role
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+
+    const isAdmin = agent?.role === 'admin';
+
+    if (!isAdmin) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Admin access required' },
+        { status: 403 }
+      );
+    }
+
     const { data: roles, error } = await supabase
       .from('roles')
       .select(`
         *,
-        permissions:role_permissions (
-          permission
+        permissions:role_permissions(
+          permission:permission_id(*)
         )
       `)
-      .order('name', { ascending: true });
+      .order('name');
 
     if (error) {
       console.error('Error fetching roles:', error);
@@ -45,13 +56,7 @@ export async function GET() {
       );
     }
 
-    // Format roles
-    const formattedRoles = roles.map(role => ({
-      ...role,
-      permissions: role.permissions.map(p => p.permission)
-    }));
-
-    return NextResponse.json(formattedRoles);
+    return NextResponse.json(roles);
   } catch (error) {
     console.error('Error in GET /api/roles:', error);
     return NextResponse.json(
@@ -61,68 +66,215 @@ export async function GET() {
   }
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
   try {
-    // Check permissions
-    const permissionCheck = await checkUserPermissions(Permission.MANAGE_ROLES);
-    if ('error' in permissionCheck) {
+    const supabase = getServerSupabase();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
       return NextResponse.json(
-        { error: permissionCheck.error },
-        { status: permissionCheck.status }
+        { error: 'Unauthorized' },
+        { status: 401 }
       );
     }
 
-    // Parse and validate request body
-    const body = await request.json();
-    const validatedData = createRoleSchema.parse(body);
+    // Get user role
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('role')
+      .eq('id', user.id)
+      .single();
 
-    // Start transaction
-    const { data: role, error: roleError } = await supabase
+    const isAdmin = agent?.role === 'admin';
+
+    if (!isAdmin) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Admin access required' },
+        { status: 403 }
+      );
+    }
+
+    const { name, description } = await request.json();
+
+    if (!name) {
+      return NextResponse.json(
+        { error: 'Role name is required' },
+        { status: 400 }
+      );
+    }
+
+    const { data, error } = await supabase
       .from('roles')
       .insert({
-        name: validatedData.name,
-        description: validatedData.description,
-        created_by: permissionCheck.user.id
+        name,
+        description,
+        created_by: user.id,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       })
       .select()
       .single();
 
-    if (roleError) {
-      console.error('Error creating role:', roleError);
+    if (error) {
+      console.error('Error creating role:', error);
       return NextResponse.json(
         { error: 'Failed to create role' },
         { status: 500 }
       );
     }
 
-    // Add permissions
-    const { error: permissionsError } = await supabase
-      .from('role_permissions')
-      .insert(
-        validatedData.permissions.map(permission => ({
-          role_id: role.id,
-          permission
-        }))
-      );
+    return NextResponse.json(data);
+  } catch (error) {
+    console.error('Error in POST /api/roles:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
 
-    if (permissionsError) {
-      console.error('Error adding role permissions:', permissionsError);
+export async function PUT(request: Request) {
+  try {
+    const supabase = getServerSupabase();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
       return NextResponse.json(
-        { error: 'Failed to add role permissions' },
-        { status: 500 }
+        { error: 'Unauthorized' },
+        { status: 401 }
       );
     }
 
-    return NextResponse.json(role);
-  } catch (error) {
-    if (error instanceof z.ZodError) {
+    // Get user role
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+
+    const isAdmin = agent?.role === 'admin';
+
+    if (!isAdmin) {
       return NextResponse.json(
-        { error: 'Invalid request data', details: error.errors },
+        { error: 'Unauthorized - Admin access required' },
+        { status: 403 }
+      );
+    }
+
+    const { id, name, description } = await request.json();
+
+    if (!id || !name) {
+      return NextResponse.json(
+        { error: 'Role ID and name are required' },
         { status: 400 }
       );
     }
 
-    console.error('Error in POST /api/roles:', error);
+    const { data, error } = await supabase
+      .from('roles')
+      .update({
+        name,
+        description,
+        updated_by: user.id,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error updating role:', error);
+      return NextResponse.json(
+        { error: 'Failed to update role' },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json(data);
+  } catch (error) {
+    console.error('Error in PUT /api/roles:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const supabase = getServerSupabase();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    // Get user role
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+
+    const isAdmin = agent?.role === 'admin';
+
+    if (!isAdmin) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Admin access required' },
+        { status: 403 }
+      );
+    }
+
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Role ID is required' },
+        { status: 400 }
+      );
+    }
+
+    // Check if role is in use
+    const { data: usersWithRole, error: checkError } = await supabase
+      .from('user_roles')
+      .select('user_id')
+      .eq('role_id', id);
+
+    if (checkError) {
+      console.error('Error checking role usage:', checkError);
+      return NextResponse.json(
+        { error: 'Failed to check role usage' },
+        { status: 500 }
+      );
+    }
+
+    if (usersWithRole && usersWithRole.length > 0) {
+      return NextResponse.json(
+        { error: 'Cannot delete role that is assigned to users' },
+        { status: 400 }
+      );
+    }
+
+    const { error } = await supabase
+      .from('roles')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Error deleting role:', error);
+      return NextResponse.json(
+        { error: 'Failed to delete role' },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Error in DELETE /api/roles:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

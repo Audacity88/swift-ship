@@ -1,29 +1,57 @@
-import { supabase } from '@/lib/supabase'
+import { getServerSupabase, type ServerContext } from '@/lib/supabase-client'
 import type { AuditLog } from '@/types/audit'
 
 export const auditService = {
-  async getAuditLogs(): Promise<AuditLog[]> {
-    const { data, error } = await supabase
-      .from('audit_logs')
-      .select('*')
-      .order('created_at', { ascending: false })
+  async getAuditLogs(context: ServerContext): Promise<AuditLog[]> {
+    try {
+      const supabase = getServerSupabase(context)
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      
+      if (userError || !user) {
+        throw new Error('Unauthorized')
+      }
 
-    if (error) {
-      console.error('Failed to fetch audit logs:', error)
-      return []
+      const { data, error } = await supabase
+        .from('audit_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.error('Failed to fetch audit logs:', error)
+        throw error
+      }
+
+      return data as AuditLog[]
+    } catch (error) {
+      console.error('Error in getAuditLogs:', error)
+      throw error
     }
-    return data as AuditLog[]
   },
 
-  async createAuditLog(log: Partial<AuditLog>): Promise<boolean> {
-    const { error } = await supabase
-      .from('audit_logs')
-      .insert(log)
+  async createAuditLog(context: ServerContext, log: Partial<AuditLog>): Promise<void> {
+    try {
+      const supabase = getServerSupabase(context)
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      
+      if (userError || !user) {
+        throw new Error('Unauthorized')
+      }
 
-    if (error) {
-      console.error('Failed to create audit log:', error)
-      return false
+      const { error } = await supabase
+        .from('audit_logs')
+        .insert({
+          ...log,
+          created_by: user.id,
+          created_at: new Date().toISOString()
+        })
+
+      if (error) {
+        console.error('Failed to create audit log:', error)
+        throw error
+      }
+    } catch (error) {
+      console.error('Error in createAuditLog:', error)
+      throw error
     }
-    return true
   },
 }

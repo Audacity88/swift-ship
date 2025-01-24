@@ -8,9 +8,10 @@ import {
   Tag, Link as LinkIcon, Users, ChevronDown, MessageSquare
 } from 'lucide-react'
 import { COLORS } from '@/lib/constants'
-import { TicketStatus, TicketPriority } from '@/types/ticket'
+import { TicketStatus, TicketPriority } from '@/types/enums'
 import type { Ticket, TicketComment, TicketType } from '@/types/ticket'
 import type { User } from '@/types/user'
+import type { QuoteRequest } from '@/types/quote'
 import { 
   TypeDropdown, 
   PriorityDropdown, 
@@ -18,15 +19,21 @@ import {
   FollowersDropdown 
 } from '@/components/features/tickets/PropertyDropdowns'
 import { StatusTransition } from '@/components/features/tickets/StatusTransition'
-import { useSupabase } from '@/app/providers'
 import { 
   getTicket, 
   updateTicket, 
   updateTicketStatus, 
   slaService,
+  authService,
+  ticketService,
+  quoteService,
   type Ticket as TicketData 
 } from '@/lib/services'
 import { TicketConversation } from '@/components/features/tickets/TicketConversation'
+import { QuoteDetailView } from '@/components/features/quotes/QuoteDetailView'
+import type { ServerContext } from '@/lib/supabase-client'
+import { getServerSupabase } from '@/lib/supabase-client'
+import { statusWorkflow } from '@/lib/services'
 
 interface Tag {
   id: string
@@ -36,7 +43,6 @@ interface Tag {
 
 export default function TicketPage() {
   const params = useParams()
-  const supabase = useSupabase()
   const ticketId = params?.id as string
   const [ticket, setTicket] = useState<TicketData | null>(null)
   const [selectedType, setSelectedType] = useState<TicketType>('problem')
@@ -50,6 +56,8 @@ export default function TicketPage() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [slaStatus, setSlaStatus] = useState<any>(null)
+  const [isQuoteTicket, setIsQuoteTicket] = useState(false)
+  const [quoteData, setQuoteData] = useState<QuoteRequest | null>(null)
 
   // Dropdown visibility states
   const [showTypeDropdown, setShowTypeDropdown] = useState(false)
@@ -61,11 +69,18 @@ export default function TicketPage() {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession()
-        console.log('Auth status:', { session: session?.user?.id, error })
-        if (error) throw error
-        setIsAuthenticated(!!session?.user)
-        setCurrentUserId(session?.user?.id || null)
+        const supabase = getServerSupabase()
+        const { data: { user }, error: userError } = await supabase.auth.getUser()
+        
+        if (userError || !user) {
+          console.error('User verification failed:', userError)
+          setIsAuthenticated(false)
+          setCurrentUserId(null)
+          return
+        }
+
+        setIsAuthenticated(true)
+        setCurrentUserId(user.id)
       } catch (error) {
         console.error('Auth error:', error)
         setError('Authentication failed')
@@ -73,23 +88,68 @@ export default function TicketPage() {
       }
     }
     void checkAuth()
-  }, [supabase])
+  }, [])
 
   // Only fetch ticket data after authentication is confirmed
   useEffect(() => {
     const fetchTicket = async () => {
-      if (!isAuthenticated || !ticketId) return
+      if (!isAuthenticated) {
+        setError('Not authenticated')
+        setIsLoading(false)
+        return
+      }
+
+      if (!ticketId || ticketId === 'undefined') {
+        setError('Invalid ticket ID')
+        setIsLoading(false)
+        return
+      }
+
+      // Validate UUID format using regex
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      if (!uuidRegex.test(ticketId)) {
+        setError('Invalid ticket ID format')
+        setIsLoading(false)
+        return
+      }
       
       try {
-        const ticketData = await getTicket(ticketId)
+        const ticketData = await ticketService.getTicket(undefined, ticketId)
         if (!ticketData) {
-          throw new Error('Ticket not found')
+          setError('Ticket not found')
+          setIsLoading(false)
+          return
         }
+
         setTicket(ticketData)
-        setSelectedType((ticketData.metadata?.type as TicketType) || 'problem')
+        setSelectedType((ticketData.metadata as any)?.type || 'problem')
         setSelectedPriority(ticketData.priority)
         setSelectedAssignee(ticketData.assignee?.id || null)
-        setTags((ticketData.metadata?.tags as Tag[]) || [])
+        setTags((ticketData.metadata as any)?.tags || [])
+
+        // Check if this is a quote ticket
+        const metadata = ticketData.metadata as any
+        const isQuote = ticketData.type === 'task' && 
+          metadata?.destination && 
+          metadata?.packageDetails &&
+          !metadata?.quotedPrice // Only show quotes without a price
+
+        setIsQuoteTicket(isQuote)
+        if (isQuote) {
+          const quoteMetadata = metadata as unknown as QuoteRequest['metadata']
+          setQuoteData({
+            id: ticketData.id,
+            title: ticketData.title,
+            status: ticketData.status,
+            customer: {
+              id: ticketData.customerId,
+              name: ticketData.customer.name,
+              email: ticketData.customer.email
+            },
+            metadata: quoteMetadata,
+            created_at: ticketData.createdAt
+          })
+        }
       } catch (error) {
         console.error('Error fetching ticket:', error)
         setError(error instanceof Error ? error.message : 'Failed to fetch ticket')
@@ -101,14 +161,14 @@ export default function TicketPage() {
     if (isAuthenticated === true) {
       void fetchTicket()
     }
-  }, [ticketId, isAuthenticated])
+  }, [ticketId, isAuthenticated, tags])
 
   // Add SLA status fetch
   useEffect(() => {
     const fetchSlaStatus = async () => {
       if (!ticket) return
       try {
-        const status = await slaService.getTicketSLA(ticket.id)
+        const status = await slaService.getTicketSLA(undefined, ticket.id)
         setSlaStatus(status)
       } catch (error) {
         console.error('Error fetching SLA status:', error)
@@ -162,7 +222,7 @@ export default function TicketPage() {
         color: '#' + Math.floor(Math.random()*16777215).toString(16)
       }
 
-      const updatedTicket = await updateTicket(ticketId, {
+      await ticketService.updateTicket(undefined, ticketId, {
         metadata: {
           ...ticket.metadata,
           tags: [...tags, newTag]
@@ -179,7 +239,7 @@ export default function TicketPage() {
     if (!ticket) return
     
     try {
-      const updatedTicket = await updateTicket(ticketId, {
+      await ticketService.updateTicket(undefined, ticketId, {
         metadata: {
           ...ticket.metadata,
           tags: tags.filter(t => t.name !== tagName)
@@ -234,15 +294,40 @@ export default function TicketPage() {
     if (!ticket) return
     
     try {
-      const updatedTicket = await updateTicketStatus(ticketId, newStatus, reason)
+      // Get the user's role first
+      const supabase = getServerSupabase()
+      const { data: agent } = await supabase
+        .from('agents')
+        .select('role')
+        .eq('id', currentUserId)
+        .single()
 
-      setTicket(prev => prev ? {
-        ...prev,
-        status: newStatus,
-        updatedAt: new Date().toISOString()
-      } : null)
+      if (!agent) {
+        throw new Error('Could not find agent details')
+      }
+
+      await statusWorkflow.executeTransition(
+        undefined,
+        ticketId,
+        ticket.status as TicketStatus,  // Cast to ensure type compatibility
+        newStatus,
+        {
+          id: currentUserId!,
+          role: agent.role,
+          name: '',
+          email: ''
+        },
+        reason
+      )
+
+      // Refresh ticket data after status change
+      const updatedTicket = await ticketService.getTicket(undefined, ticketId)
+      if (!updatedTicket) return
+      
+      setTicket(updatedTicket)
     } catch (error) {
       console.error('Failed to update status:', error)
+      throw error
     }
   }
 
@@ -250,8 +335,8 @@ export default function TicketPage() {
   const handlePauseSla = async (reason: string) => {
     if (!ticket) return
     try {
-      await slaService.pauseSLA(ticket.id, reason)
-      const status = await slaService.getTicketSLA(ticket.id)
+      await slaService.pauseSLA(undefined, ticket.id, reason)
+      const status = await slaService.getTicketSLA(undefined, ticket.id)
       setSlaStatus(status)
     } catch (error) {
       console.error('Error pausing SLA:', error)
@@ -261,46 +346,125 @@ export default function TicketPage() {
   const handleResumeSla = async () => {
     if (!ticket) return
     try {
-      await slaService.resumeSLA(ticket.id)
-      const status = await slaService.getTicketSLA(ticket.id)
+      await slaService.resumeSLA(undefined, ticket.id)
+      const status = await slaService.getTicketSLA(undefined, ticket.id)
       setSlaStatus(status)
     } catch (error) {
       console.error('Error resuming SLA:', error)
     }
   }
 
+  // Add quote-specific handlers
+  const handleSubmitQuote = async (quoteId: string, price: number) => {
+    try {
+      await quoteService.submitQuote(undefined, quoteId, price)
+      // Refresh ticket data
+      const updatedTicket = await ticketService.getTicket(undefined, ticketId)
+      if (!updatedTicket) return
+      
+      setTicket(updatedTicket)
+      const updatedMetadata = updatedTicket.metadata as unknown as QuoteRequest['metadata']
+      setQuoteData({
+        id: updatedTicket.id,
+        title: updatedTicket.title,
+        status: updatedTicket.status,
+        customer: {
+          id: updatedTicket.customerId,
+          name: updatedTicket.customer.name,
+          email: updatedTicket.customer.email
+        },
+        metadata: updatedMetadata,
+        created_at: updatedTicket.createdAt
+      })
+    } catch (error) {
+      console.error('Error submitting quote:', error)
+    }
+  }
+
+  const handleCreateShipment = async (quoteId: string) => {
+    if (!quoteData) return
+
+    try {
+      const shipmentData = {
+        quote_id: quoteId,
+        type: 'standard',
+        origin: quoteData.metadata.destination.from,
+        destination: quoteData.metadata.destination.to,
+        scheduled_pickup: quoteData.metadata.destination.pickupDate,
+        estimated_delivery: quoteData.metadata.destination.pickupDate
+      }
+      
+      const response = await fetch('/api/shipments', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(shipmentData)
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to create shipment')
+      }
+
+      // Refresh ticket data after shipment creation
+      const updatedTicket = await ticketService.getTicket(undefined, ticketId)
+      if (!updatedTicket) return
+      
+      setTicket(updatedTicket)
+      const updatedMetadata = updatedTicket.metadata as unknown as QuoteRequest['metadata']
+      setQuoteData({
+        id: updatedTicket.id,
+        title: updatedTicket.title,
+        status: updatedTicket.status,
+        customer: {
+          id: updatedTicket.customerId,
+          name: updatedTicket.customer.name,
+          email: updatedTicket.customer.email
+        },
+        metadata: updatedMetadata,
+        created_at: updatedTicket.createdAt
+      })
+    } catch (error) {
+      console.error('Error creating shipment:', error)
+    }
+  }
+
   return (
-    <div className="flex h-[calc(100vh-4rem)]">
+    <div className="h-full bg-white dark:bg-gray-900">
       {/* Main Ticket Content */}
-      <div className="flex-1 overflow-auto border-r border-gray-200">
+      <div className="max-w-4xl mx-auto">
         <div className="p-6">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h1 className="text-2xl font-semibold text-gray-900">
+              <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">
                 {ticket.title}
               </h1>
-              <div className="mt-1 text-sm text-gray-500">
+              <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                 Created {new Date(ticket.createdAt).toLocaleString()}
               </div>
               {/* Add SLA Status Display */}
               {slaStatus && (
                 <div className="mt-2 flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-gray-500" />
+                  <Clock className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                   <div className="text-sm">
-                    <span className={`font-medium ${slaStatus.isBreached ? 'text-red-600' : 'text-green-600'}`}>
+                    <span className={`font-medium ${
+                      slaStatus.isBreached 
+                        ? 'text-red-600 dark:text-red-400' 
+                        : 'text-green-600 dark:text-green-400'
+                    }`}>
                       {slaStatus.name}
                     </span>
                     {slaStatus.isPaused ? (
                       <button
                         onClick={handleResumeSla}
-                        className="ml-2 text-blue-600 hover:text-blue-800"
+                        className="ml-2 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
                       >
                         Resume
                       </button>
                     ) : (
                       <button
                         onClick={() => handlePauseSla('Manual pause')}
-                        className="ml-2 text-blue-600 hover:text-blue-800"
+                        className="ml-2 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
                       >
                         Pause
                       </button>
@@ -318,158 +482,17 @@ export default function TicketPage() {
             </div>
           </div>
 
-          {/* Replace old comments section with TicketConversation */}
-          <TicketConversation
-            ticketId={ticket.id}
-            currentUserId={currentUserId || ''}
-            isAgent={true}
-          />
-        </div>
-      </div>
-
-      {/* Ticket Properties Sidebar */}
-      <div className="w-80 overflow-auto bg-gray-50 p-6 space-y-6">
-        {/* Requester */}
-        <div>
-          <h3 className="text-sm font-medium text-gray-700 mb-2">Requester</h3>
-          <div className="flex items-center gap-3 p-2 bg-white rounded-lg border border-gray-200">
-            <div className="relative w-8 h-8 rounded-full overflow-hidden">
-              <Image
-                src="/images/default-avatar.png"
-                alt="Profile"
-                width={32}
-                height={32}
-                className="object-cover"
+          {/* Quote Detail View */}
+          {isQuoteTicket && quoteData && (
+            <div className="mb-6">
+              <QuoteDetailView
+                quote={quoteData}
+                onSubmitQuote={handleSubmitQuote}
+                onCreateShipment={handleCreateShipment}
+                mode={quoteData.status === 'open' ? 'pending' : 'quoted'}
               />
             </div>
-            <div className="flex-1">
-              <p className="text-sm font-medium">{ticket.customer.name}</p>
-              <p className="text-xs text-gray-500">{ticket.customer.email}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Assignee */}
-        <div>
-          <h3 className="text-sm font-medium text-gray-700 mb-2">Assignee</h3>
-          <button className="flex items-center gap-3 w-full p-2 bg-white rounded-lg border border-gray-200 hover:bg-gray-50">
-            <div className="relative w-8 h-8 rounded-full overflow-hidden">
-              <Image
-                src="/images/default-avatar.png"
-                alt="Profile"
-                width={32}
-                height={32}
-                className="object-cover"
-              />
-            </div>
-            <span className="flex-1 text-left text-sm">
-              {ticket.assignee?.name || 'Unassigned'}
-            </span>
-            <ChevronDown className="w-4 h-4 text-gray-400" />
-          </button>
-        </div>
-
-        {/* Type */}
-        <div className="relative">
-          <h3 className="text-sm font-medium text-gray-700 mb-2">Type</h3>
-          <button
-            onClick={() => setShowTypeDropdown(true)}
-            className="flex items-center gap-3 w-full p-2 bg-white rounded-lg border border-gray-200 hover:bg-gray-50"
-          >
-            <AlertCircle className="w-5 h-5 text-[#DE350B]" />
-            <span className="flex-1 text-left text-sm">{selectedType}</span>
-            <ChevronDown className="w-4 h-4 text-gray-400" />
-          </button>
-          <TypeDropdown
-            show={showTypeDropdown}
-            onClose={() => setShowTypeDropdown(false)}
-            selectedType={selectedType}
-            onSelect={setSelectedType}
-          />
-        </div>
-
-        {/* Priority */}
-        <div className="relative">
-          <h3 className="text-sm font-medium text-gray-700 mb-2">Priority</h3>
-          <button
-            onClick={() => setShowPriorityDropdown(true)}
-            className="flex items-center gap-3 w-full p-2 bg-white rounded-lg border border-gray-200 hover:bg-gray-50"
-          >
-            <div className="w-2 h-2 rounded-full bg-yellow-500" />
-            <span className="flex-1 text-left text-sm">{selectedPriority}</span>
-            <ChevronDown className="w-4 h-4 text-gray-400" />
-          </button>
-          <PriorityDropdown
-            show={showPriorityDropdown}
-            onClose={() => setShowPriorityDropdown(false)}
-            selectedPriority={selectedPriority}
-            onSelect={(priority) => setSelectedPriority(priority as TicketPriority)}
-          />
-        </div>
-
-        {/* Tags */}
-        <div className="relative">
-          <h3 className="text-sm font-medium text-gray-700 mb-2">Tags</h3>
-          <button
-            onClick={() => setShowTagsDropdown(true)}
-            className="flex items-center gap-2 w-full p-2 bg-white rounded-lg border border-gray-200 hover:bg-gray-50"
-          >
-            <Tag className="w-4 h-4 text-gray-400" />
-            <div className="flex-1 flex items-center gap-2">
-              {tags.map(tag => (
-                <span 
-                  key={tag.id} 
-                  className="px-2 py-1 text-xs rounded"
-                  style={{ 
-                    backgroundColor: `${tag.color}20`,
-                    color: tag.color
-                  }}
-                >
-                  {tag.name}
-                </span>
-              ))}
-            </div>
-            <ChevronDown className="w-4 h-4 text-gray-400" />
-          </button>
-          <TagsDropdown
-            show={showTagsDropdown}
-            onClose={() => setShowTagsDropdown(false)}
-            selectedTags={tags.map(t => t.name)}
-            onAdd={handleAddTag}
-            onRemove={handleRemoveTag}
-          />
-        </div>
-
-        {/* Linked Problem */}
-        <div>
-          <h3 className="text-sm font-medium text-gray-700 mb-2">Linked Problem</h3>
-          <button className="flex items-center gap-2 w-full p-2 bg-white rounded-lg border border-gray-200 hover:bg-gray-50">
-            <LinkIcon className="w-4 h-4 text-gray-400" />
-            <span className="flex-1 text-left text-sm text-gray-500">None</span>
-            <ChevronDown className="w-4 h-4 text-gray-400" />
-          </button>
-        </div>
-
-        {/* Followers */}
-        <div className="relative">
-          <h3 className="text-sm font-medium text-gray-700 mb-2">Followers</h3>
-          <button
-            onClick={() => setShowFollowersDropdown(true)}
-            className="flex items-center gap-2 w-full p-2 bg-white rounded-lg border border-gray-200 hover:bg-gray-50"
-          >
-            <Users className="w-4 h-4 text-gray-400" />
-            <span className="flex-1 text-left text-sm">
-              {followers.length} {followers.length === 1 ? 'follower' : 'followers'}
-            </span>
-            <ChevronDown className="w-4 h-4 text-gray-400" />
-          </button>
-          <FollowersDropdown
-            show={showFollowersDropdown}
-            onClose={() => setShowFollowersDropdown(false)}
-            followers={followers}
-            onAdd={handleAddFollower}
-            onRemove={handleRemoveFollower}
-          />
+          )}
         </div>
       </div>
     </div>

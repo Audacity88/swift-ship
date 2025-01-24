@@ -8,7 +8,7 @@ import {
   type LucideIcon, Loader2
 } from 'lucide-react'
 import type { TicketType } from '@/types/ticket'
-import { supabase } from '@/lib/supabase'
+import { tagService, userService } from '@/lib/services'
 
 interface DropdownProps {
   show: boolean
@@ -216,15 +216,31 @@ interface TagsDropdownProps {
 
 export function TagsDropdown({ show, onClose, selectedTags, onAdd, onRemove }: TagsDropdownProps) {
   const [searchQuery, setSearchQuery] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+  const [suggestedTags, setSuggestedTags] = useState<string[]>([])
 
-  const suggestedTags = [
-    'bug', 'feature', 'documentation', 'support',
-    'enhancement', 'question', 'help wanted', 'wontfix',
-  ].filter(tag => !selectedTags.includes(tag))
+  useEffect(() => {
+    const fetchTags = async () => {
+      if (!searchQuery.trim()) {
+        setSuggestedTags([])
+        return
+      }
 
-  const filteredTags = suggestedTags.filter(tag => 
-    tag.toLowerCase().includes(searchQuery.toLowerCase())
-  )
+      setIsLoading(true)
+      try {
+        const tags = await tagService.searchTags(searchQuery)
+        setSuggestedTags(tags.filter(tag => !selectedTags.includes(tag)))
+      } catch (error) {
+        console.error('Failed to fetch tags:', error)
+        setSuggestedTags([])
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    const timeoutId = setTimeout(fetchTags, 300)
+    return () => clearTimeout(timeoutId)
+  }, [searchQuery, selectedTags])
 
   return (
     <Dropdown show={show} onClose={onClose} className="w-80">
@@ -250,34 +266,43 @@ export function TagsDropdown({ show, onClose, selectedTags, onAdd, onRemove }: T
           ))}
         </div>
 
-        {/* Search */}
+        {/* Search Input */}
         <div className="relative mb-4">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
-            type="search"
-            placeholder="Search tags..."
+            type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg \
-              focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+            placeholder="Search tags..."
+            className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
 
-        {/* Suggested Tags */}
+        {/* Tag Suggestions */}
         <div className="space-y-2">
-          <h4 className="text-xs font-medium text-gray-500 uppercase">Suggested Tags</h4>
-          <div className="flex flex-wrap gap-2">
-            {filteredTags.map(tag => (
+          {isLoading ? (
+            <div className="flex justify-center py-4">
+              <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+            </div>
+          ) : suggestedTags.length > 0 ? (
+            suggestedTags.map(tag => (
               <button
                 key={tag}
-                onClick={() => onAdd(tag)}
-                className="px-2 py-1 text-sm text-gray-700 bg-gray-100 \
-                  rounded hover:bg-gray-200 transition-colors"
+                onClick={() => {
+                  onAdd(tag)
+                  setSearchQuery('')
+                }}
+                className="flex items-center gap-2 w-full p-2 hover:bg-gray-50 rounded text-left"
               >
-                {tag}
+                <TagIcon className="w-4 h-4 text-gray-400" />
+                <span>{tag}</span>
               </button>
-            ))}
-          </div>
+            ))
+          ) : searchQuery ? (
+            <div className="text-center py-4 text-gray-500">
+              No matching tags found
+            </div>
+          ) : null}
         </div>
       </div>
     </Dropdown>
@@ -294,21 +319,16 @@ interface FollowersDropdownProps {
 }
 
 export function FollowersDropdown({ show, onClose, followers, onAdd, onRemove }: FollowersDropdownProps) {
-  const [searchQuery, setSearchQuery] = useState('')
-  const [suggestedFollowers, setSuggestedFollowers] = useState<{ id: string; name: string; email: string }[]>([])
-  const [loading, setLoading] = useState(true)
+  const [agents, setAgents] = useState<Array<{ id: string, name: string }>>([])
+  const [loading, setLoading] = useState(false)
+  const [searchTerm, setSearchTerm] = useState('')
 
   useEffect(() => {
     const fetchAgents = async () => {
       try {
-        const { data: agents, error } = await supabase
-          .from('agents')
-          .select('id, name, email')
-          .not('name', 'in', `(${followers.map(f => `'${f}'`).join(',')})`)
-
-        if (error) throw error
-
-        setSuggestedFollowers(agents || [])
+        setLoading(true)
+        const users = await userService.searchUsers({}, searchTerm, 'agent', followers)
+        setAgents(users.map(user => ({ id: user.id, name: user.name })))
       } catch (error) {
         console.error('Error fetching agents:', error)
       } finally {
@@ -319,11 +339,10 @@ export function FollowersDropdown({ show, onClose, followers, onAdd, onRemove }:
     if (show) {
       fetchAgents()
     }
-  }, [show, followers])
+  }, [show, followers, searchTerm])
 
-  const filteredFollowers = suggestedFollowers.filter(user => 
-    user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    user.email.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredFollowers = agents.filter(user => 
+    user.name.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
   return (
@@ -356,10 +375,9 @@ export function FollowersDropdown({ show, onClose, followers, onAdd, onRemove }:
           <input
             type="search"
             placeholder="Search agents..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg \
-              focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
           />
         </div>
 
@@ -391,7 +409,6 @@ export function FollowersDropdown({ show, onClose, followers, onAdd, onRemove }:
                 </div>
                 <div className="flex-1 text-left">
                   <p className="text-sm font-medium text-gray-900">{user.name}</p>
-                  <p className="text-xs text-gray-500">{user.email}</p>
                 </div>
               </button>
             ))

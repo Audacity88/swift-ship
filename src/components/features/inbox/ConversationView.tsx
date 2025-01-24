@@ -1,35 +1,14 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
-import { useSupabase } from '@/app/providers'
-import { format } from 'date-fns'
+import { format, isValid, parseISO } from 'date-fns'
 import { Loader2, Send, Paperclip } from 'lucide-react'
 import Image from 'next/image'
 import { COLORS } from '@/lib/constants'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-
-interface DatabaseMessage {
-  id: string
-  content: string
-  author_id: string
-  author_type: string
-  created_at: string
-  ticket_id: string
-}
-
-interface Message {
-  id: string
-  content: string
-  authorId: string
-  authorType: 'agent' | 'customer' | 'system'
-  createdAt: string
-  author?: {
-    name: string
-    email: string
-    avatar?: string | null
-  }
-}
+import { conversationService, type Message } from '@/lib/services'
+import { cn } from '@/lib/utils'
 
 interface ConversationViewProps {
   ticketId: string | null
@@ -37,18 +16,36 @@ interface ConversationViewProps {
   isInternalNote?: boolean
   isAgent?: boolean
   onInternalNoteChange?: (value: boolean) => void
+  title?: string
+  status?: string
 }
 
 const SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000000'
+
+const formatMessageDate = (dateString: string | undefined): string => {
+  if (!dateString) return 'Invalid date'
+  
+  try {
+    const date = parseISO(dateString)
+    if (!isValid(date)) {
+      return 'Invalid date'
+    }
+    return format(date, 'MMM d, h:mm a')
+  } catch (error) {
+    console.error('Error formatting date:', error)
+    return 'Invalid date'
+  }
+}
 
 export function ConversationView({ 
   ticketId, 
   currentUserId, 
   isInternalNote = false,
   isAgent = false,
-  onInternalNoteChange
+  onInternalNoteChange,
+  title = 'Untitled Conversation',
+  status = 'open'
 }: ConversationViewProps) {
-  const supabase = useSupabase()
   const [messages, setMessages] = useState<Message[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -75,45 +72,8 @@ export function ConversationView({
       setIsLoading(true)
       setError(null)
       try {
-        const { data, error } = await supabase
-          .from('messages')
-          .select(`
-            id,
-            content,
-            author_id,
-            author_type,
-            created_at
-          `)
-          .eq('ticket_id', ticketId)
-          .order('created_at', { ascending: true })
-
-        if (error) throw error
-
-        // Fetch author details separately
-        const authorPromises = data.map(async (msg: DatabaseMessage) => {
-          const { data: authorData } = await supabase
-            .from('message_authors')
-            .select('name, email')
-            .eq('author_id', msg.author_id)
-            .eq('author_type', msg.author_type)
-            .single()
-          
-          return {
-            id: msg.id,
-            content: msg.content,
-            authorId: msg.author_id,
-            authorType: msg.author_type as Message['authorType'],
-            createdAt: msg.created_at,
-            author: authorData ? {
-              name: authorData.name,
-              email: authorData.email,
-              avatar: null
-            } : undefined
-          }
-        })
-
-        const mappedMessages = await Promise.all(authorPromises)
-        setMessages(mappedMessages)
+        const messages = await conversationService.getMessages({}, ticketId)
+        setMessages(messages)
       } catch (err: any) {
         console.error('Error loading conversation:', err)
         setError(err.message)
@@ -125,50 +85,29 @@ export function ConversationView({
     void loadConversation()
 
     // Set up real-time subscription
-    const subscription = supabase
-      .channel('messages')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `ticket_id=eq.${ticketId}`
-        },
-        async (payload: { new: DatabaseMessage }) => {
-          const newMessage = payload.new
-          
-          // Fetch author details separately for the new message
-          const { data: authorData } = await supabase
-            .from('message_authors')
-            .select('name, email')
-            .eq('author_id', newMessage.author_id)
-            .eq('author_type', newMessage.author_type)
-            .single()
+    let unsubscribe: (() => void) | undefined
 
-          setMessages(prev => [...prev, {
-            id: newMessage.id,
-            content: newMessage.content,
-            authorId: newMessage.author_id,
-            authorType: newMessage.author_type as Message['authorType'],
-            createdAt: newMessage.created_at,
-            author: authorData ? {
-              name: authorData.name,
-              email: authorData.email,
-              avatar: null
-            } : undefined
-          }])
-
+    const setupSubscription = async () => {
+      try {
+        unsubscribe = await conversationService.subscribeToMessages({}, ticketId, (newMessage) => {
+          setMessages(prev => [...prev, newMessage])
           // Scroll to bottom after adding new message
           setTimeout(scrollToBottom, 100)
-        }
-      )
-      .subscribe()
+        })
+      } catch (err: any) {
+        console.error('Error setting up subscription:', err)
+        setError(err.message)
+      }
+    }
+
+    void setupSubscription()
 
     return () => {
-      subscription.unsubscribe()
+      if (unsubscribe) {
+        unsubscribe()
+      }
     }
-  }, [ticketId, supabase])
+  }, [ticketId])
 
   const handleSendMessage = async () => {
     if (!ticketId || !newMessage.trim() || isSending) return
@@ -189,21 +128,10 @@ export function ConversationView({
     setIsSending(true)
     setError(null)
     try {
-      // Use the isAgent prop to determine author_type instead of querying the database
+      // Use the isAgent prop to determine author_type
       const authorType = isAgent ? 'agent' : 'customer'
 
-      const { error: insertError } = await supabase
-        .from('messages')
-        .insert({
-          ticket_id: ticketId,
-          content: newMessage.trim(),
-          author_id: currentUserId,
-          author_type: authorType,
-          created_at: new Date().toISOString(),
-          is_internal: isInternalNote
-        })
-
-      if (insertError) throw insertError
+      await conversationService.addMessage({}, ticketId, newMessage.trim(), authorType)
 
       setNewMessage('')
       setAttachments([])
@@ -246,7 +174,7 @@ export function ConversationView({
 
   if (!ticketId) {
     return (
-      <div className="flex items-center justify-center h-full text-gray-500">
+      <div className="flex items-center justify-center h-full text-muted-foreground">
         Select a message to view the conversation
       </div>
     )
@@ -255,14 +183,14 @@ export function ConversationView({
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <Loader2 className="w-6 h-6 animate-spin text-gray-500" />
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-full text-red-500">
+      <div className="flex items-center justify-center h-full text-destructive">
         {error}
       </div>
     )
@@ -270,51 +198,66 @@ export function ConversationView({
 
   return (
     <div className="flex flex-col h-full">
+      {/* Conversation Header */}
+      <div className={cn(
+        "px-6 py-4",
+        "border-b border-border",
+        "bg-card"
+      )}>
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold">{title}</h2>
+            <p className="text-sm text-muted-foreground">
+              #{ticketId?.slice(0, 8)} • {status}
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Messages Thread */}
       <div className="flex-1 p-6 overflow-auto space-y-4">
         {messages.map((message) => {
-          // For agents, show system messages as their own
-          const isOwnMessage = message.authorId === currentUserId || 
-            (isAgent && message.authorId === SYSTEM_USER_ID)
+          const isOwnMessage = message.author_id === currentUserId || 
+            (isAgent && message.author_id === SYSTEM_USER_ID)
           
           return (
             <div
               key={message.id}
-              className={`flex gap-3 ${isOwnMessage ? 'flex-row-reverse' : ''}`}
+              className={cn(
+                "flex gap-3",
+                isOwnMessage && "flex-row-reverse"
+              )}
             >
               <div className="relative w-8 h-8 flex-shrink-0">
                 <Image
-                  src={message.author?.avatar || '/images/default-avatar.png'}
-                  alt={message.author?.name || 'User'}
+                  src="/images/default-avatar.png"
+                  alt="User"
                   fill
                   className="rounded-full object-cover"
                 />
               </div>
-              <div
-                className={`flex flex-col max-w-[70%] ${
-                  isOwnMessage ? 'items-end' : ''
-                }`}
-              >
+              <div className={cn(
+                "flex flex-col max-w-[70%]",
+                isOwnMessage && "items-end"
+              )}>
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-sm font-medium">
-                    {message.authorId === SYSTEM_USER_ID
+                    {message.author_id === SYSTEM_USER_ID
                       ? 'System'
                       : isOwnMessage
                       ? 'You'
-                      : message.author?.name || 'Unknown User'}
+                      : 'User'}
                   </span>
-                  <span className="text-xs text-gray-500">
-                    {format(new Date(message.createdAt), 'MMM d, h:mm a')}
+                  <span className="text-xs text-muted-foreground">
+                    {formatMessageDate(message.created_at)}
                   </span>
                 </div>
-                <div
-                  className={`p-3 rounded-lg ${
-                    isOwnMessage
-                      ? 'bg-primary text-white'
-                      : 'bg-gray-100'
-                  }`}
-                  style={isOwnMessage ? { backgroundColor: COLORS.primary } : undefined}
-                >
+                <div className={cn(
+                  "p-3 rounded-lg",
+                  isOwnMessage 
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground"
+                )}>
                   <p className="text-sm whitespace-pre-wrap">{message.content}</p>
                 </div>
               </div>
@@ -325,9 +268,12 @@ export function ConversationView({
       </div>
 
       {/* Message Input */}
-      <div className="p-4 border-t border-gray-200">
+      <div className={cn(
+        "p-4",
+        "border-t border-border"
+      )}>
         {error && (
-          <div className="mb-2 text-sm text-red-500 text-center">
+          <div className="mb-2 text-sm text-destructive text-center">
             {error}
           </div>
         )}
@@ -336,9 +282,18 @@ export function ConversationView({
             <Switch
               id="internal-note"
               checked={isInternalNote}
-              onCheckedChange={onInternalNoteChange}
+              onCheckedChange={(checked) => {
+                if (onInternalNoteChange) {
+                  onInternalNoteChange(checked)
+                }
+              }}
             />
-            <Label htmlFor="internal-note" className="text-sm">Internal Note</Label>
+            <Label 
+              htmlFor="internal-note" 
+              className="text-sm cursor-pointer select-none"
+            >
+              Internal Note
+            </Label>
           </div>
         )}
         {attachments.length > 0 && (
@@ -346,12 +301,15 @@ export function ConversationView({
             {attachments.map((file, index) => (
               <div
                 key={index}
-                className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1"
+                className={cn(
+                  "flex items-center gap-2 px-3 py-1 rounded-lg",
+                  "bg-muted text-muted-foreground"
+                )}
               >
-                <span className="text-sm text-gray-700">{file.name}</span>
+                <span className="text-sm">{file.name}</span>
                 <button
                   onClick={() => removeAttachment(index)}
-                  className="text-gray-500 hover:text-gray-700"
+                  className="text-muted-foreground hover:text-foreground transition-colors"
                 >
                   <span className="sr-only">Remove</span>
                   ×
@@ -366,7 +324,12 @@ export function ConversationView({
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
             onKeyDown={handleKeyDown}
-            className="w-full p-3 pr-24 border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-gray-50 disabled:cursor-not-allowed"
+            className={cn(
+              "w-full p-3 pr-24 rounded-lg resize-none",
+              "bg-background border border-input",
+              "focus:outline-none focus:ring-2 focus:ring-ring",
+              "disabled:bg-muted disabled:cursor-not-allowed"
+            )}
             rows={3}
             disabled={isSending}
           />
@@ -381,21 +344,28 @@ export function ConversationView({
             <button
               onClick={handleFileSelect}
               disabled={isSending}
-              className="p-2 text-primary hover:bg-gray-100 rounded-full transition-colors"
+              className={cn(
+                "p-2 rounded-full transition-colors",
+                "text-primary hover:bg-muted"
+              )}
               aria-label="Attach files"
             >
-              <Paperclip className="w-5 h-5" style={{ color: COLORS.primary }} />
+              <Paperclip className="w-5 h-5" />
             </button>
             <button
               onClick={() => void handleSendMessage()}
               disabled={!newMessage.trim() || isSending}
-              className="p-2 text-primary hover:bg-gray-100 rounded-full transition-colors disabled:opacity-50 disabled:hover:bg-transparent"
+              className={cn(
+                "p-2 rounded-full transition-colors",
+                "text-primary hover:bg-muted",
+                "disabled:opacity-50 disabled:hover:bg-transparent"
+              )}
               aria-label="Send message"
             >
               {isSending ? (
-                <Loader2 className="w-5 h-5 animate-spin" style={{ color: COLORS.primary }} />
+                <Loader2 className="w-5 h-5 animate-spin" />
               ) : (
-                <Send className="w-5 h-5" style={{ color: COLORS.primary }} />
+                <Send className="w-5 h-5" />
               )}
             </button>
           </div>

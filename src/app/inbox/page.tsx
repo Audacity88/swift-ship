@@ -5,9 +5,11 @@ import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { Search, Filter, Star, MessageSquare, Phone, Mail, Plus } from 'lucide-react'
 import { COLORS } from '@/lib/constants'
-import { useSupabase } from '@/app/providers'
+import { conversationService } from '@/lib/services'
 import { ConversationView } from '@/components/features/inbox/ConversationView'
 import { format } from 'date-fns'
+import { useAuth } from '@/lib/hooks/useAuth'
+import { cn } from '@/lib/utils'
 
 // We assume: The "messages" table is joined to "tickets" for the conversation thread.
 // We'll fetch: all messages for the logged in user, either as the ticket's customer or as message author.
@@ -43,57 +45,34 @@ interface Ticket {
 }
 
 export default function InboxPage() {
-  const supabase = useSupabase()
+  const { user } = useAuth()
   const [searchQuery, setSearchQuery] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [messages, setMessages] = useState<InboxMessage[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [userId, setUserId] = useState<string | null>(null)
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null)
   const [tickets, setTickets] = useState<any[]>([])
 
   const loadMessages = async () => {
-    if (!userId) return // Don't load if we don't have a userId yet
+    if (!user) return // Don't load if we don't have a user yet
     
     setIsLoading(true)
     setError(null)
     try {
-      // First get all tickets for the current user
-      const { data: tickets, error: ticketsError } = await supabase
-        .from('tickets')
-        .select(`
-          id,
-          title,
-          status,
-          created_at,
-          customer:customer_id (
-            id,
-            name,
-            email
-          ),
-          messages!inner (
-            id,
-            content,
-            created_at,
-            author_id,
-            author_type
-          )
-        `)
-        .or(`customer_id.eq.${userId},assignee_id.eq.${userId}`)
-        .order('created_at', { foreignTable: 'messages', ascending: false })
-        .limit(1, { foreignTable: 'messages' })
+      // Get all tickets with their messages
+      const tickets = await conversationService.getTicketsWithMessages(undefined, user.id)
 
-      if (ticketsError) throw ticketsError
-
-      // Map the tickets to the format we need
-      const mappedTickets = tickets.map((ticket: Ticket) => ({
-        id: ticket.id,
-        subject: ticket.title,
-        status: ticket.status,
-        createdAt: ticket.created_at,
-        customer: ticket.customer,
-        latestMessage: ticket.messages[0]
-      }))
+      // Map the tickets to the format we need and sort by most recent
+      const mappedTickets = tickets
+        .map((ticket: Ticket) => ({
+          id: ticket.id,
+          subject: ticket.title,
+          status: ticket.status,
+          createdAt: ticket.created_at,
+          customer: ticket.customer,
+          latestMessage: ticket.messages[0]
+        }))
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
 
       setTickets(mappedTickets)
     } catch (err: any) {
@@ -104,32 +83,15 @@ export default function InboxPage() {
     }
   }
 
+  // Load messages when user changes
   useEffect(() => {
-    // On mount, get the logged in user, then fetch messages
-    const init = async () => {
-      try {
-        const sessionRes = await supabase.auth.getSession()
-        const session = sessionRes.data.session
-        if (!session?.user?.id) {
-          setError('Not authenticated')
-          setIsLoading(false)
-          return
-        }
-        setUserId(session.user.id)
-      } catch (err: any) {
-        setError(err.message)
-        setIsLoading(false)
-      }
-    }
-    void init()
-  }, [supabase])
-
-  // Add a new useEffect to trigger loadMessages when userId changes
-  useEffect(() => {
-    if (userId) {
+    if (user) {
       void loadMessages()
+    } else {
+      setError('Not authenticated')
+      setIsLoading(false)
     }
-  }, [userId])
+  }, [user])
 
   // Filter messages in memory
   const filteredMessages = messages.filter(msg => {
@@ -160,38 +122,55 @@ export default function InboxPage() {
   return (
     <div className="flex h-full">
       {/* Tickets List */}
-      <div className="w-1/3 border-r border-gray-200 overflow-auto">
-        <div className="p-4 border-b border-gray-200">
+      <div className={cn(
+        "w-1/3",
+        "border-r border-border",
+        "overflow-auto"
+      )}>
+        <div className={cn(
+          "p-4",
+          "border-b border-border"
+        )}>
           <input
             type="text"
             placeholder="Search messages..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full p-2 border border-gray-200 rounded-lg"
+            className={cn(
+              "w-full p-2",
+              "border border-input rounded-lg",
+              "bg-background",
+              "placeholder:text-muted-foreground"
+            )}
           />
         </div>
-        <div className="divide-y divide-gray-200">
+        <div className="divide-y divide-border">
           {tickets.map((ticket) => (
             <div
               key={ticket.id}
               onClick={() => setSelectedTicketId(ticket.id)}
-              className={`p-4 hover:bg-gray-50 cursor-pointer ${
-                selectedTicketId === ticket.id ? 'bg-gray-50' : ''
-              }`}
+              className={cn(
+                "p-4 cursor-pointer",
+                "hover:bg-muted/50 transition-colors",
+                selectedTicketId === ticket.id && "bg-muted"
+              )}
             >
               <div className="flex justify-between items-start mb-2">
                 <h3 className="font-medium text-sm">{ticket.subject || 'No Subject'}</h3>
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-muted-foreground">
                   {format(new Date(ticket.createdAt), 'MMM d, h:mm a')}
                 </span>
               </div>
               <div className="flex justify-between items-start">
-                <p className="text-sm text-gray-600 truncate">
+                <p className="text-sm text-muted-foreground truncate">
                   {ticket.latestMessage?.content || 'No messages yet'}
                 </p>
-                <span className={`text-xs px-2 py-1 rounded-full ${
-                  ticket.status === 'open' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                }`}>
+                <span className={cn(
+                  "text-xs px-2 py-1 rounded-full",
+                  ticket.status === 'open' 
+                    ? "bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-100"
+                    : "bg-muted text-muted-foreground"
+                )}>
                   {ticket.status}
                 </span>
               </div>
@@ -204,17 +183,11 @@ export default function InboxPage() {
       <div className="flex-1">
         <ConversationView
           ticketId={selectedTicketId}
-          currentUserId={userId || ''}
+          currentUserId={user?.id || ''}
+          title={tickets.find(t => t.id === selectedTicketId)?.subject || 'Untitled Conversation'}
+          status={tickets.find(t => t.id === selectedTicketId)?.status || 'open'}
         />
       </div>
-
-      {/* Floating Action Button */}
-      <button
-        className="fixed bottom-6 right-6 p-4 bg-primary text-white rounded-full shadow-lg hover:bg-primary/90 transition-colors"
-        style={{ backgroundColor: COLORS.primary }}
-      >
-        <Plus className="w-6 h-6" />
-      </button>
     </div>
   )
 } 

@@ -1,13 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { getServerSupabase } from '@/lib/supabase-client';
 import { Permission } from '@/types/role';
 import { checkUserPermissions } from '@/lib/auth/check-permissions';
 import { z } from 'zod';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 const scheduleSchema = z.object({
   shifts: z.array(z.object({
@@ -20,12 +15,30 @@ const scheduleSchema = z.object({
 export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
-    // Check permissions
-    const permissionCheck = await checkUserPermissions(Permission.VIEW_TEAMS);
-    if ('error' in permissionCheck) {
+    const supabase = getServerSupabase();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
       return NextResponse.json(
-        { error: permissionCheck.error },
-        { status: permissionCheck.status }
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    // Get user role
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('role, team_id')
+      .eq('id', user.id)
+      .single();
+
+    const isAdmin = agent?.role === 'admin';
+    const isTeamMember = agent?.team_id === params.id;
+
+    if (!isAdmin && !isTeamMember) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Admin or team member access required' },
+        { status: 403 }
       );
     }
 
@@ -80,12 +93,29 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
 export async function POST(request: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
-    // Check permissions
-    const permissionCheck = await checkUserPermissions(Permission.MANAGE_TEAMS);
-    if ('error' in permissionCheck) {
+    const supabase = getServerSupabase();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
       return NextResponse.json(
-        { error: permissionCheck.error },
-        { status: permissionCheck.status }
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    // Get user role
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+
+    const isAdmin = agent?.role === 'admin';
+
+    if (!isAdmin) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Admin access required' },
+        { status: 403 }
       );
     }
 
@@ -134,12 +164,29 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
 export async function DELETE(request: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
-    // Check permissions
-    const permissionCheck = await checkUserPermissions(Permission.MANAGE_TEAMS);
-    if ('error' in permissionCheck) {
+    const supabase = getServerSupabase();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
       return NextResponse.json(
-        { error: permissionCheck.error },
-        { status: permissionCheck.status }
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    // Get user role
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+
+    const isAdmin = agent?.role === 'admin';
+
+    if (!isAdmin) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Admin access required' },
+        { status: 403 }
       );
     }
 
@@ -172,6 +219,67 @@ export async function DELETE(request: NextRequest, props: { params: Promise<{ id
     return new NextResponse(null, { status: 204 });
   } catch (error) {
     console.error('Error in DELETE /api/teams/schedule/[id]:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
+  try {
+    const supabase = getServerSupabase();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    // Get user role
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+
+    const isAdmin = agent?.role === 'admin';
+
+    if (!isAdmin) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Admin access required' },
+        { status: 403 }
+      );
+    }
+
+    const updates = await request.json();
+
+    // Update schedule
+    const { data: updatedSchedule, error } = await supabase
+      .from('team_schedules')
+      .update({
+        ...updates,
+        updated_at: new Date().toISOString(),
+        updated_by: user.id
+      })
+      .eq('team_id', params.id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error updating team schedule:', error);
+      return NextResponse.json(
+        { error: 'Failed to update team schedule' },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json(updatedSchedule);
+  } catch (error) {
+    console.error('Error in PATCH /api/teams/schedule/[id]:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

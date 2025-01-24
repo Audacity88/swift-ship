@@ -1,57 +1,49 @@
-import { ComponentType, useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { createBrowserClient } from '@supabase/ssr'
+import { redirect } from 'next/navigation'
+import { getServerSupabase } from '@/lib/supabase-client'
+import type { ServerContext } from '@/lib/supabase-client'
 
-export const withRoleProtection = <P extends object>(
-  Component: ComponentType<P>,
-  allowedRoles: string[],
-  requiredPermissions?: string[]
-) => {
-  const WrappedComponent = (props: P) => {
-    const router = useRouter()
-    const [loading, setLoading] = useState(true)
-    const supabase = createBrowserClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
-
-    useEffect(() => {
-      const checkAuth = async () => {
-        try {
-          const { data: { session }, error } = await supabase.auth.getSession()
-
-          if (error) {
-            router.replace('/auth/signin')
-            return
-          }
-
-          if (!session) {
-            router.replace('/auth/signin')
-            return
-          }
-
-          const userRole = session.user.user_metadata.role
-
-          if (!userRole || !allowedRoles.includes(userRole)) {
-            router.replace('/unauthorized')
-            return
-          }
-
-          setLoading(false)
-        } catch (err) {
-          router.replace('/auth/signin')
-        }
+export function withRoleProtection(allowedRoles: string[]) {
+  return async function protectRoute(context: ServerContext) {
+    try {
+      const supabase = getServerSupabase(context)
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      
+      if (userError || !user) {
+        return redirect('/auth/signin')
       }
 
-      checkAuth()
-    }, [router])
+      // Get user's role
+      const { data: roleData, error: roleError } = await supabase
+        .from('user_roles')
+        .select('role_id')
+        .eq('user_id', user.id)
+        .single()
 
-    if (loading) {
-      return <div>Loading...</div>
+      if (roleError || !roleData) {
+        console.error('Error getting user role:', roleError)
+        return redirect('/auth/signin')
+      }
+
+      // Get role details
+      const { data: role, error: roleDetailsError } = await supabase
+        .from('roles')
+        .select('name')
+        .eq('id', roleData.role_id)
+        .single()
+
+      if (roleDetailsError || !role) {
+        console.error('Error getting role details:', roleDetailsError)
+        return redirect('/auth/signin')
+      }
+
+      if (!allowedRoles.includes(role.name)) {
+        return redirect('/')
+      }
+
+      return null
+    } catch (error) {
+      console.error('Error in role protection:', error)
+      return redirect('/auth/signin')
     }
-
-    return <Component {...props} />
   }
-
-  return WrappedComponent
 } 

@@ -1,138 +1,155 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-import { Category } from '@/types/knowledge';
-import { Permission } from '@/types/role';
-import { checkUserPermissions } from '@/lib/auth/check-permissions';
+import { getServerSupabase } from '@/lib/supabase-client';
 import { z } from 'zod';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-
-// Helper function to build category tree
-function buildCategoryTree(categories: Category[], parentId: string | null = null): Category[] {
-  return categories
-    .filter(category => category.parentId === parentId)
-    .map(category => ({
-      ...category,
-      children: buildCategoryTree(categories, category.id)
-    }))
-    .sort((a, b) => a.order - b.order);
-}
 
 const createCategorySchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
-  parentId: z.string().uuid().optional(),
-  order: z.number().int().min(0).optional()
+  parentId: z.string().uuid().optional()
 });
 
-// GET /api/knowledge/categories - Get category tree
-export async function GET(request: NextRequest) {
+export async function GET(request: Request) {
   try {
-    // Check permissions
-    const permissionCheck = await checkUserPermissions(Permission.VIEW_KNOWLEDGE_BASE);
-    if ('error' in permissionCheck) {
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
       return NextResponse.json(
-        { error: permissionCheck.error },
-        { status: permissionCheck.status }
-      );
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
     }
 
-    // Get query parameters
-    const searchParams = request.nextUrl.searchParams;
-    const flat = searchParams.get('flat') === 'true';
+    // Get user role
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('role')
+      .eq('id', user.id)
+      .single()
 
-    // Get categories
+    const isAdmin = agent?.role === 'admin'
+
+    if (!isAdmin) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Admin access required' },
+        { status: 403 }
+      )
+    }
+
     const { data: categories, error } = await supabase
-      .from('categories')
-      .select('*')
-      .order('order', { ascending: true });
+      .from('knowledge_categories')
+      .select(`
+        *,
+        articles:knowledge_articles(*)
+      `)
+      .order('name')
 
     if (error) {
-      console.error('Error fetching categories:', error);
+      console.error('Error fetching categories:', error)
       return NextResponse.json(
         { error: 'Failed to fetch categories' },
         { status: 500 }
-      );
+      )
     }
 
-    // Return flat list or tree structure
-    return NextResponse.json(
-      flat ? categories : buildCategoryTree(categories || [])
-    );
+    return NextResponse.json(categories)
   } catch (error) {
-    console.error('Error in GET /api/knowledge/categories:', error);
+    console.error('Error in GET /api/knowledge/categories:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
-    );
+    )
   }
 }
 
-// POST /api/knowledge/categories - Create new category
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
   try {
-    // Check permissions
-    const permissionCheck = await checkUserPermissions(Permission.MANAGE_KNOWLEDGE_BASE);
-    if ('error' in permissionCheck) {
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
       return NextResponse.json(
-        { error: permissionCheck.error },
-        { status: permissionCheck.status }
-      );
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
     }
 
-    // Parse and validate request body
-    const body = await request.json();
-    const validatedData = createCategorySchema.parse(body);
+    // Get user role
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('role')
+      .eq('id', user.id)
+      .single()
 
-    // Get max order if not provided
-    if (typeof validatedData.order !== 'number') {
-      const { data: maxOrder } = await supabase
-        .from('categories')
-        .select('order')
-        .order('order', { ascending: false })
-        .limit(1)
-        .single();
+    const isAdmin = agent?.role === 'admin'
 
-      validatedData.order = (maxOrder?.order || 0) + 1;
+    if (!isAdmin) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Admin access required' },
+        { status: 403 }
+      )
     }
 
-    // Create category
-    const { data: category, error } = await supabase
-      .from('categories')
+    const { name, description, parentId, order } = await request.json()
+
+    if (!name) {
+      return NextResponse.json(
+        { error: 'Category name is required' },
+        { status: 400 }
+      )
+    }
+
+    // Generate slug
+    const slug = name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '')
+
+    // If parentId is provided, verify it exists
+    if (parentId) {
+      const { data: parent, error: parentError } = await supabase
+        .from('knowledge_categories')
+        .select('id')
+        .eq('id', parentId)
+        .single()
+
+      if (parentError || !parent) {
+        return NextResponse.json(
+          { error: 'Parent category not found' },
+          { status: 404 }
+        )
+      }
+    }
+
+    const { data, error } = await supabase
+      .from('knowledge_categories')
       .insert({
-        name: validatedData.name,
-        description: validatedData.description,
-        parent_id: validatedData.parentId,
-        order: validatedData.order,
-        created_by: permissionCheck.user.id
+        name,
+        slug,
+        description,
+        parent_id: parentId,
+        order: order || 0,
+        created_by: user.id,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       })
       .select()
-      .single();
+      .single()
 
     if (error) {
-      console.error('Error creating category:', error);
+      console.error('Error creating category:', error)
       return NextResponse.json(
         { error: 'Failed to create category' },
         { status: 500 }
-      );
+      )
     }
 
-    return NextResponse.json(category);
+    return NextResponse.json(data)
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Invalid request data', details: error.errors },
-        { status: 400 }
-      );
-    }
-
-    console.error('Error in POST /api/knowledge/categories:', error);
+    console.error('Error in POST /api/knowledge/categories:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
-    );
+    )
   }
 } 

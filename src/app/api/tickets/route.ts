@@ -40,7 +40,9 @@ const ticketFiltersSchema = z.object({
   type: z.string().optional(),
   search: z.string().nullish(),
   dateFrom: z.string().nullish(),
-  dateTo: z.string().nullish()
+  dateTo: z.string().nullish(),
+  unassigned: z.boolean().optional(),
+  assignedToMe: z.boolean().optional()
 })
 
 const paginationSchema = z.object({
@@ -89,101 +91,94 @@ export async function GET(request: NextRequest) {
     const supabase = await initSupabase()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
 
-    if (userError || !user) {
+    if (userError) {
+      console.error('Auth error:', userError)
       return NextResponse.json(
-        { error: 'Unauthorized' },
+        { error: 'Authentication failed' },
+        { status: 401 }
+      )
+    }
+
+    if (!user) {
+      return NextResponse.json(
+        { error: 'User not found' },
         { status: 401 }
       )
     }
 
     const { searchParams } = new URL(request.url)
     
-    // Parse and validate filters
-    const filters = ticketFiltersSchema.parse({
-      status: searchParams.get('status')?.split(','),
-      priority: searchParams.get('priority')?.split(','),
-      type: searchParams.get('type'),
-      search: searchParams.get('search'),
-      dateFrom: searchParams.get('dateFrom'),
-      dateTo: searchParams.get('dateTo')
-    })
+    try {
+      // Parse and validate filters
+      const filters = ticketFiltersSchema.parse({
+        status: searchParams.getAll('status'),
+        priority: searchParams.getAll('priority'),
+        type: searchParams.get('type'),
+        search: searchParams.get('search'),
+        dateFrom: searchParams.get('dateFrom'),
+        dateTo: searchParams.get('dateTo'),
+        unassigned: searchParams.get('unassigned') === 'true',
+        assignedToMe: searchParams.get('assignedToMe') === 'true'
+      })
 
-    // Parse pagination with defaults
-    const { page, pageSize } = paginationSchema.parse({
-      page: searchParams.get('page') || '1',
-      pageSize: searchParams.get('pageSize') || '10'
-    })
+      // Start building the query
+      let query = supabase
+        .from('tickets')
+        .select(`
+          id,
+          title,
+          status,
+          priority,
+          created_at,
+          type,
+          customer:customers(*),
+          assignee:agents!tickets_assignee_id_fkey(*)
+        `, { count: 'exact' })
 
-    // Parse sorting with defaults
-    const { sortField, sortDirection } = sortingSchema.parse({
-      sortField: searchParams.get('sortField') || 'created_at',
-      sortDirection: searchParams.get('sortDirection') || 'desc'
-    })
+      // Apply filters
+      if (filters.status?.length) {
+        console.log('Applying status filter:', filters.status)
+        query = query.in('status', filters.status)
+      }
+      if (filters.priority?.length) {
+        console.log('Applying priority filter:', filters.priority)
+        query = query.in('priority', filters.priority)
+      }
+      if (filters.unassigned) {
+        console.log('Applying unassigned filter')
+        query = query.is('assignee_id', null)
+      }
+      if (filters.assignedToMe) {
+        console.log('Applying assigned to me filter')
+        query = query.eq('assignee_id', user.id)
+      }
 
-    // Convert camelCase to snake_case for sorting
-    const dbSortField = sortField.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`)
+      // Add sorting
+      const sortField = searchParams.get('sortField') || 'created_at'
 
-    // Start building the query
-    let query = supabase
-      .from('tickets')
-      .select(`
-        id,
-        title,
-        status,
-        priority,
-        created_at,
-        type,
-        customer:customers(*),
-        assignee:agents!tickets_assignee_id_fkey(*)
-      `, { count: 'exact' })
+      // Execute query
+      console.log('Executing query...')
+      const { data: tickets, count, error: ticketsError } = await query
+        .order(sortField, { ascending: false })
 
-    // Apply filters
-    if (filters.status?.length) {
-      query = query.in('status', filters.status)
+      if (ticketsError) {
+        console.error('Database error:', ticketsError)
+        throw ticketsError
+      }
+
+      console.log('Query results:', { count, ticketsCount: tickets?.length })
+
+      return NextResponse.json({
+        data: tickets,
+        total: count || 0
+      })
+
+    } catch (error) {
+      console.error('Query error:', error)
+      throw error
     }
-    if (filters.priority?.length) {
-      query = query.in('priority', filters.priority)
-    }
-    if (filters.type) {
-      query = query.eq('type', filters.type)
-    }
-    if (filters.search) {
-      query = query.ilike('title', `%${filters.search}%`)
-    }
-    if (filters.dateFrom) {
-      query = query.gte('created_at', filters.dateFrom)
-    }
-    if (filters.dateTo) {
-      query = query.lte('created_at', filters.dateTo)
-    }
-
-    // Apply pagination and sorting
-    const { data: tickets, count, error: ticketsError } = await query
-      .order(dbSortField, { ascending: sortDirection === 'asc' })
-      .range((page - 1) * pageSize, page * pageSize - 1)
-
-    if (ticketsError) {
-      console.error('Failed to fetch tickets:', ticketsError)
-      return NextResponse.json(
-        { error: 'Failed to fetch tickets' },
-        { status: 500 }
-      )
-    }
-
-    return NextResponse.json({
-      data: tickets,
-      total: count || 0,
-      page,
-      pageSize
-    })
   } catch (error) {
-    console.error('Error fetching tickets:', error)
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Invalid parameters', details: error.errors },
-        { status: 400 }
-      )
-    }
+    console.error('Error in GET /api/tickets:', error)
     return NextResponse.json(
       { error: 'Failed to fetch tickets' },
       { status: 500 }

@@ -18,13 +18,17 @@ export function TicketConversation({
 }: TicketConversationProps) {
   const [isInternalNote, setIsInternalNote] = useState(false)
 
+  const handleInternalNoteChange = (checked: boolean) => {
+    setIsInternalNote(checked)
+  }
+
   return (
     <div className={`space-y-2 ${className}`}>
       <ConversationView
         ticketId={ticketId}
         currentUserId={currentUserId}
         isInternalNote={isInternalNote}
-        onInternalNoteChange={setIsInternalNote}
+        onInternalNoteChange={handleInternalNoteChange}
         isAgent={isAgent}
       />
     </div>

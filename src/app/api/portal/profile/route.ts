@@ -1,13 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { getServerSupabase } from '@/lib/supabase-client';
 import { Permission } from '@/types/role';
 import { checkUserPermissions } from '@/lib/auth/check-permissions';
 import { z } from 'zod';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 const updateProfileSchema = z.object({
   name: z.string().min(1).optional(),
@@ -23,28 +18,32 @@ const updateProfileSchema = z.object({
 });
 
 // GET /api/portal/profile - Get customer profile
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    // Check permissions
-    const permissionCheck = await checkUserPermissions(Permission.VIEW_PROFILE);
-    if ('error' in permissionCheck) {
+    const supabase = getServerSupabase();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
       return NextResponse.json(
-        { error: permissionCheck.error },
-        { status: permissionCheck.status }
+        { error: 'Unauthorized' },
+        { status: 401 }
       );
     }
 
     // Get customer profile
-    const { data: customer, error } = await supabase
+    const { data: customer, error: customerError } = await supabase
       .from('customers')
-      .select('*')
-      .eq('id', permissionCheck.user.id)
+      .select(`
+        *,
+        organization:organization_id(*)
+      `)
+      .eq('id', user.id)
       .single();
 
-    if (error) {
-      console.error('Error fetching customer profile:', error);
+    if (customerError) {
+      console.error('Error fetching customer profile:', customerError);
       return NextResponse.json(
-        { error: 'Failed to fetch profile' },
+        { error: 'Failed to fetch customer profile' },
         { status: 500 }
       );
     }
@@ -60,53 +59,43 @@ export async function GET() {
 }
 
 // PUT /api/portal/profile - Update customer profile
-export async function PUT(request: NextRequest) {
+export async function PUT(request: Request) {
   try {
-    // Check permissions
-    const permissionCheck = await checkUserPermissions(Permission.UPDATE_PROFILE);
-    if ('error' in permissionCheck) {
+    const supabase = getServerSupabase();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
       return NextResponse.json(
-        { error: permissionCheck.error },
-        { status: permissionCheck.status }
+        { error: 'Unauthorized' },
+        { status: 401 }
       );
     }
 
-    // Parse and validate request body
-    const body = await request.json();
-    const validatedData = updateProfileSchema.parse(body);
+    const { name, phone, preferences } = await request.json();
 
     // Update customer profile
-    const { data: customer, error } = await supabase
+    const { data: customer, error: updateError } = await supabase
       .from('customers')
       .update({
-        name: validatedData.name,
-        email: validatedData.email,
-        phone: validatedData.phone,
-        company: validatedData.company,
-        preferences: validatedData.preferences,
+        name,
+        phone,
+        preferences,
         updated_at: new Date().toISOString()
       })
-      .eq('id', permissionCheck.user.id)
+      .eq('id', user.id)
       .select()
       .single();
 
-    if (error) {
-      console.error('Error updating customer profile:', error);
+    if (updateError) {
+      console.error('Error updating customer profile:', updateError);
       return NextResponse.json(
-        { error: 'Failed to update profile' },
+        { error: 'Failed to update customer profile' },
         { status: 500 }
       );
     }
 
     return NextResponse.json(customer);
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Invalid request data', details: error.errors },
-        { status: 400 }
-      );
-    }
-
     console.error('Error in PUT /api/portal/profile:', error);
     return NextResponse.json(
       { error: 'Internal server error' },

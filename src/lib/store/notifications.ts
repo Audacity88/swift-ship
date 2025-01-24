@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-export type NotificationType = 'all' | 'shipment' | 'payment' | 'pickup' | 'system'
+export type NotificationType = 'all' | 'shipment' | 'payment' | 'system'
 export type NotificationStatus = 'unread' | 'read'
 
 export interface Notification {
@@ -43,16 +43,6 @@ export const mockNotifications: Notification[] = [
     status: 'unread',
     actionLabel: 'View Invoice',
     actionUrl: '/billing'
-  },
-  {
-    id: '3',
-    type: 'pickup',
-    title: 'Pickup Scheduled',
-    message: 'Your pickup request #5678 has been confirmed for tomorrow',
-    timestamp: '3 hours ago',
-    status: 'read',
-    actionLabel: 'View Schedule',
-    actionUrl: '/pickup'
   },
   {
     id: '4',

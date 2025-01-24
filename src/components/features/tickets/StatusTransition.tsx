@@ -24,8 +24,9 @@ import {
 } from '@/components/ui/popover'
 import { Textarea } from '@/components/ui/textarea'
 import { TicketStatus } from '@/types/enums'
-import { statusWorkflow } from '@/lib/services'
-import type { StatusTransition as StatusTransitionType, TransitionCondition } from '@/lib/services/status-workflow'
+import { statusWorkflow } from '@/lib/services/status-workflow'
+import type { StatusTransition as StatusTransitionType, TransitionCondition } from '@/types/status-workflow'
+import { conversationService } from '@/lib/services'
 
 interface StatusTransitionProps {
   ticketId: string
@@ -105,6 +106,17 @@ export function StatusTransition({
       }
 
       await onStatusChange(selectedStatus, reason.trim() || undefined)
+
+      // If the status is changing to in_progress, send a message
+      if (selectedStatus === 'in_progress') {
+        try {
+          await conversationService.addMessage({}, ticketId, `🔄 Status Update: Ticket moved to In Progress\n${reason ? `\nReason: ${reason}` : ''}\n\nThis ticket is now being actively worked on. You'll be notified of any updates.`, 'agent')
+        } catch (error) {
+          console.error('Failed to send assignment message:', error)
+          // Don't block the status change if message fails
+        }
+      }
+
       setIsDialogOpen(false)
       setSelectedStatus(null)
       setReason('')
@@ -121,9 +133,8 @@ export function StatusTransition({
   }
 
   // Check if status has conditions
-  const getStatusConditions = (status: TicketStatus): TransitionCondition[] => {
-    const transition = availableTransitions.find(t => t.to === status)
-    return transition?.conditions || []
+  const getStatusConditions = (transition: StatusTransitionType): TransitionCondition[] => {
+    return transition.conditions || []
   }
 
   if (error) {
@@ -139,6 +150,14 @@ export function StatusTransition({
     )
   }
 
+  // Group transitions by toStatus to remove duplicates and filter out current status
+  const uniqueTransitions = Array.from(
+    new Map(availableTransitions
+      .filter(t => t.toStatus !== currentStatus)
+      .map(t => [t.toStatus, t])
+    ).values()
+  )
+
   return (
     <div className={className}>
       <Popover>
@@ -149,7 +168,7 @@ export function StatusTransition({
             disabled={isLoading}
           >
             <Badge className={getStatusColor(currentStatus)}>
-              {currentStatus.replace('_', ' ')}
+              {currentStatus}
             </Badge>
             {isLoading ? (
               <Loader2 className="w-4 h-4 ml-2 animate-spin" />
@@ -158,24 +177,24 @@ export function StatusTransition({
             )}
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-56 p-2">
+        <PopoverContent className="w-50 p-2" align="start">
           <div className="grid gap-1">
-            {availableTransitions.map(transition => {
-              const conditions = getStatusConditions(transition.to)
+            {uniqueTransitions.map(transition => {
+              const conditions = getStatusConditions(transition)
               const hasConditions = conditions.length > 0
 
               return (
                 <Button
-                  key={transition.to}
+                  key={`${transition.fromStatus}-${transition.toStatus}`}
                   variant="ghost"
                   className="justify-start font-normal"
                   onClick={() => {
-                    setSelectedStatus(transition.to)
+                    setSelectedStatus(transition.toStatus)
                     setIsDialogOpen(true)
                   }}
                 >
-                  <Badge className={getStatusColor(transition.to)}>
-                    {transition.to.replace('_', ' ')}
+                  <Badge className={getStatusColor(transition.toStatus)}>
+                    {transition.toStatus}
                   </Badge>
                   {hasConditions && (
                     <AlertTriangle className="w-4 h-4 ml-2 text-yellow-500" />
@@ -193,16 +212,16 @@ export function StatusTransition({
             <DialogTitle>Update Status</DialogTitle>
             <DialogDescription>
               Change the ticket status to{' '}
-              {selectedStatus?.replace('_', ' ')}
+              {selectedStatus}
             </DialogDescription>
           </DialogHeader>
 
           {/* Status Conditions */}
-          {selectedStatus && getStatusConditions(selectedStatus).length > 0 && (
+          {selectedStatus && getStatusConditions(availableTransitions.find(t => t.toStatus === selectedStatus) || {} as StatusTransitionType).length > 0 && (
             <div className="space-y-2">
               <h4 className="font-medium text-yellow-500">Requirements</h4>
               <ul className="space-y-1 text-sm">
-                {getStatusConditions(selectedStatus).map((condition, index) => (
+                {getStatusConditions(availableTransitions.find(t => t.toStatus === selectedStatus) || {} as StatusTransitionType).map((condition, index) => (
                   <li key={index} className="flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4 text-yellow-500" />
                     {condition.message}

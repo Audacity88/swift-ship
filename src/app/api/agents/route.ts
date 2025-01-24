@@ -1,5 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 import { createServerClient } from '@supabase/ssr'
+import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { cookies } from 'next/headers'
 
 // Define types for database responses
@@ -7,37 +9,81 @@ type AgentRole = {
   role: 'admin' | 'agent'
 }
 
+// Validation schema for creating/updating an agent
+const agentSchema = z.object({
+  name: z.string(),
+  email: z.string().email(),
+  role: z.enum(['agent', 'admin']),
+  team_id: z.string().optional(),
+  avatar: z.string().url().optional()
+})
+
 export async function POST(request: NextRequest) {
   try {
+    // Create Supabase client with proper cookie handling
     const cookieStore = await cookies()
+    
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         cookies: {
-          get(name: string) {
+          async get(name: string) {
+            const cookieStore = await cookies()
             return cookieStore.get(name)?.value
+          },
+          async set(name: string, value: string, options: Record<string, unknown>) {
+            try {
+              const cookieStore = await cookies()
+              cookieStore.set(name, value, { ...options })
+            } catch (error) {
+              console.error('Cookie set error:', error)
+            }
+          },
+          async remove(name: string, options: Record<string, unknown>) {
+            try {
+              const cookieStore = await cookies()
+              cookieStore.delete(name)
+            } catch (error) {
+              console.error('Cookie remove error:', error)
+            }
           },
         },
       }
     )
 
-    // Get current user to verify admin status
-    const { data: { user: authUser }, error: authError } = await supabase.auth.getUser()
+    // Get the current user using getUser() for security
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
 
-    if (authError || !authUser) {
+    if (userError) {
+      console.error('User error:', userError)
       return NextResponse.json(
-        { error: 'Unauthorized' },
+        { error: `Unauthorized - User error: ${userError.message}` },
         { status: 401 }
       )
     }
 
-    // Verify the current user is an admin
-    const { data: currentAgent } = await supabase
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Unauthorized - No user found' },
+        { status: 401 }
+      )
+    }
+
+    // Get user role
+    const { data: currentAgent, error: roleError } = await supabase
       .from('agents')
       .select('role')
-      .eq('id', authUser.id)
+      .eq('id', user.id)
       .single<AgentRole>()
+
+    if (roleError) {
+      console.error('Role check error:', roleError)
+      return NextResponse.json(
+        { error: `Failed to verify role: ${roleError.message}` },
+        { status: 500 }
+      )
+    }
 
     if (!currentAgent || currentAgent.role !== 'admin') {
       return NextResponse.json(
@@ -48,84 +94,108 @@ export async function POST(request: NextRequest) {
 
     // Get the new agent data from request body
     const body = await request.json()
-    const { name, email, role } = body
-
-    if (!name || !email || !role) {
-      return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
+    
+    try {
+      const validatedData = agentSchema.parse(body)
+      
+      // Create admin client for user management
+      const adminClient = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!
       )
-    }
 
-    // Create auth user with password reset required
-    const { data: newAuthUser, error: createAuthError } = await supabase.auth.admin.createUser({
-      email,
-      email_confirm: false,
-      password: Math.random().toString(36).slice(-12) + Math.random().toString(36).slice(-12),
-      user_metadata: {
-        name,
-        role: role.toUpperCase(),
-        isAgent: true
-      },
-      email_settings: {
-        template: 'invite',
-      }
-    })
-
-    if (createAuthError || !newAuthUser.user) {
-      return NextResponse.json(
-        { error: 'Failed to create user account' },
-        { status: 500 }
-      )
-    }
-
-    // Create agent record
-    const { data: agent, error: createAgentError } = await supabase
-      .from('agents')
-      .insert({
-        id: newAuthUser.user.id,
-        name,
-        email,
-        role,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+      console.log('[CreateAgent] Inviting user:', {
+        email: validatedData.email,
+        name: validatedData.name,
+        role: validatedData.role
       })
-      .select()
-      .single()
 
-    if (createAgentError) {
-      // Cleanup: Delete the auth user if agent creation fails
-      await supabase.auth.admin.deleteUser(newAuthUser.user.id)
-      return NextResponse.json(
-        { error: 'Failed to create agent record' },
-        { status: 500 }
-      )
+      // Send invite email which will create the user
+      const inviteUrl = `${process.env.NEXT_PUBLIC_APP_URL}/auth/update-password`
+      console.log('[CreateAgent] Sending invite email with redirect URL:', inviteUrl)
+
+      const { data: inviteData, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(validatedData.email, {
+        redirectTo: inviteUrl,
+        data: {
+          name: validatedData.name,
+          role: validatedData.role.toUpperCase(),
+          isAgent: true,
+          force_password_reset: true
+        }
+      })
+
+      if (inviteError) {
+        console.error('[CreateAgent] Error sending invite email:', inviteError)
+        return NextResponse.json(
+          { error: `Failed to invite user: ${inviteError.message}` },
+          { status: 500 }
+        )
+      }
+
+      if (!inviteData?.user) {
+        console.error('[CreateAgent] No user returned from invite')
+        return NextResponse.json(
+          { error: 'Failed to invite user: No user returned' },
+          { status: 500 }
+        )
+      }
+
+      console.log('[CreateAgent] User invited successfully:', {
+        userId: inviteData.user.id,
+        metadata: inviteData.user.user_metadata
+      })
+
+      // Create agent record
+      console.log('[CreateAgent] Creating agent record')
+      const { data: agent, error: createAgentError } = await adminClient
+        .from('agents')
+        .insert({
+          id: inviteData.user.id,
+          name: validatedData.name,
+          email: validatedData.email,
+          role: validatedData.role,
+          avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(validatedData.name.toLowerCase())}`,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single()
+
+      if (createAgentError) {
+        console.error('[CreateAgent] Create agent record error:', createAgentError)
+        // Cleanup: Delete the auth user if agent creation fails
+        await adminClient.auth.admin.deleteUser(inviteData.user.id)
+        return NextResponse.json(
+          { error: `Failed to create agent record: ${createAgentError.message}` },
+          { status: 500 }
+        )
+      }
+
+      console.log('[CreateAgent] Agent record created:', agent)
+      return NextResponse.json(agent)
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return NextResponse.json(
+          { error: 'Invalid request data', details: error.errors },
+          { status: 400 }
+        )
+      }
+      throw error // Re-throw for the outer catch block
     }
-
-    // Send password reset email
-    const { error: resetError } = await supabase.auth.admin.generateLink({
-      type: 'recovery',
-      email,
-    })
-
-    if (resetError) {
-      console.error('Failed to send password reset email:', resetError)
-      // Don't return error as the agent was created successfully
-    }
-
-    return NextResponse.json(agent)
   } catch (error) {
-    console.error('Error in POST /api/agents:', error)
+    console.error('Unexpected error in POST /api/agents:', error)
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: error instanceof Error ? error.message : 'Internal server error' },
       { status: 500 }
     )
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    // Create Supabase client with proper cookie handling
     const cookieStore = await cookies()
+    
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -134,41 +204,41 @@ export async function GET() {
           get(name: string) {
             return cookieStore.get(name)?.value
           },
+          set(name: string, value: string, options: Record<string, unknown>) {
+            try {
+              cookieStore.set(name, value, { ...options })
+            } catch (error) {
+              // Handle cookie setting error silently
+            }
+          },
+          remove(name: string, options: Record<string, unknown>) {
+            try {
+              cookieStore.delete(name)
+            } catch (error) {
+              // Handle cookie removal error silently
+            }
+          },
         },
       }
     )
 
-    // Get current user to verify admin status
-    const { data: { user: authUser }, error: authError } = await supabase.auth.getUser()
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
 
-    if (authError || !authUser) {
+    if (sessionError || !session) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
       )
     }
 
-    // Verify the current user is an admin
-    const { data: currentAgent } = await supabase
-      .from('agents')
-      .select('role')
-      .eq('id', authUser.id)
-      .single<AgentRole>()
-
-    if (!currentAgent || currentAgent.role !== 'admin') {
-      return NextResponse.json(
-        { error: 'Unauthorized - Admin access required' },
-        { status: 403 }
-      )
-    }
-
     // Get all agents
-    const { data: agents, error: getAgentsError } = await supabase
+    const { data: agents, error } = await supabase
       .from('agents')
       .select('*')
-      .order('created_at', { ascending: false })
+      .order('name')
 
-    if (getAgentsError) {
+    if (error) {
+      console.error('Error fetching agents:', error)
       return NextResponse.json(
         { error: 'Failed to fetch agents' },
         { status: 500 }
@@ -185,6 +255,99 @@ export async function GET() {
   }
 }
 
-export async function DELETE() {
-  // ... existing code ...
+export async function DELETE(request: NextRequest) {
+  try {
+    const cookieStore = await cookies()
+    
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          async get(name: string) {
+            const cookieStore = await cookies()
+            return cookieStore.get(name)?.value
+          },
+          async set(name: string, value: string, options: Record<string, unknown>) {
+            try {
+              const cookieStore = await cookies()
+              cookieStore.set(name, value, { ...options })
+            } catch (error) {
+              // Handle cookie setting error silently
+            }
+          },
+          async remove(name: string, options: Record<string, unknown>) {
+            try {
+              const cookieStore = await cookies()
+              cookieStore.delete(name)
+            } catch (error) {
+              // Handle cookie removal error silently
+            }
+          },
+        },
+      }
+    )
+
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+
+    if (userError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
+    // Verify the current user is an agent or admin
+    const { data: currentAgent } = await supabase
+      .from('agents')
+      .select('role')
+      .eq('id', user.id)
+      .single<AgentRole>()
+
+    if (!currentAgent || !['admin', 'agent'].includes(currentAgent.role)) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Agent or admin access required' },
+        { status: 403 }
+      )
+    }
+
+    const { searchParams } = new URL(request.url)
+    const id = searchParams.get('id')
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Agent ID is required' },
+        { status: 400 }
+      )
+    }
+
+    // Delete agent record first
+    const { error: deleteAgentError } = await supabase
+      .from('agents')
+      .delete()
+      .eq('id', id)
+
+    if (deleteAgentError) {
+      return NextResponse.json(
+        { error: 'Failed to delete agent record' },
+        { status: 500 }
+      )
+    }
+
+    // Then delete auth user
+    const { error: deleteAuthError } = await supabase.auth.admin.deleteUser(id)
+
+    if (deleteAuthError) {
+      console.error('Failed to delete auth user:', deleteAuthError)
+      // Don't return error as the agent record was deleted successfully
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('Error in DELETE /api/agents:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
 } 

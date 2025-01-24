@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { getServerSupabase } from '@/lib/supabase-client'
 import { type AuthOptions, type DefaultSession, type User as NextAuthUser } from 'next-auth';
 import { type JWT } from 'next-auth/jwt';
 import GithubProvider from 'next-auth/providers/github';
@@ -26,10 +26,7 @@ interface ExtendedSession extends DefaultSession {
   };
 }
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+const supabase = getServerSupabase();
 
 export const authOptions: AuthOptions = {
   providers: [
@@ -49,37 +46,50 @@ export const authOptions: AuthOptions = {
       }
       return token;
     },
-    async session({ session, token }: { session: DefaultSession; token: JWT }): Promise<ExtendedSession> {
-      const extendedSession = session as ExtendedSession;
-      
-      if (extendedSession.user) {
-        extendedSession.user.id = token.id as string;
-        
-        // Check if user is an agent
-        const { data: agentData } = await supabase
+    async signIn({ user, account, profile }) {
+      try {
+        const { data: agent, error } = await supabase
           .from('agents')
-          .select('role')
-          .eq('id', token.sub)
-          .single();
+          .select('*')
+          .eq('id', user.id)
+          .single()
 
-        if (agentData) {
-          extendedSession.user.role = agentData.role as UserRole;
-          extendedSession.user.type = 'agent';
-        } else {
-          // Check if user is a customer
-          const { data: customerData } = await supabase
-            .from('customers')
-            .select('id')
-            .eq('id', token.sub)
-            .single();
+        if (error) {
+          console.error('Error checking agent:', error)
+          return false
+        }
 
-          if (customerData) {
-            extendedSession.user.role = RoleType.CUSTOMER;
-            extendedSession.user.type = 'customer';
+        return !!agent
+      } catch (error) {
+        console.error('Error in signIn callback:', error)
+        return false
+      }
+    },
+    async session({ session, user }) {
+      try {
+        const { data: agent, error } = await supabase
+          .from('agents')
+          .select('*')
+          .eq('id', user.id)
+          .single()
+
+        if (error) {
+          console.error('Error fetching agent:', error)
+          return session
+        }
+
+        return {
+          ...session,
+          user: {
+            ...session.user,
+            role: agent?.role || 'user',
+            permissions: agent?.permissions || []
           }
         }
+      } catch (error) {
+        console.error('Error in session callback:', error)
+        return session
       }
-      return extendedSession;
     },
   },
   pages: {

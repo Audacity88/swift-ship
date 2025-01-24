@@ -1,85 +1,175 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-import { RoleType } from '@/types/role'
+import { getServerSupabase } from '@/lib/supabase-client'
 
-// Create admin client with service role key for admin operations
-const adminClient = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false
-    }
-  }
-)
-
-export async function POST() {
+export async function POST(request: Request) {
   try {
-    // Create public client for user verification
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
+    const supabase = getServerSupabase()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
     
-    // Get current user's session
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
+    if (userError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
       )
     }
 
-    // First check if user already exists in agents table
-    const { data: existingAgent } = await supabase
+    // Get user role
+    const { data: agent } = await supabase
       .from('agents')
-      .select('id, role')
+      .select('role')
       .eq('id', user.id)
       .single()
 
-    if (existingAgent) {
-      // Update role to admin if not already using admin client
-      if (existingAgent.role !== RoleType.ADMIN) {
-        const { error: updateError } = await adminClient
-          .from('agents')
-          .update({
-            role: RoleType.ADMIN,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', user.id)
+    const isAdmin = agent?.role === 'admin'
 
-        if (updateError) {
-          console.error('Error updating agent role:', updateError)
-          return NextResponse.json(
-            { error: 'Failed to update agent role' },
-            { status: 500 }
-          )
-        }
-      }
-    } else {
-      // Insert new agent with admin role using admin client
-      const { error: insertError } = await adminClient
-        .from('agents')
-        .insert({
-          id: user.id,
-          role: RoleType.ADMIN,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
-
-      if (insertError) {
-        console.error('Error creating agent:', insertError)
-        return NextResponse.json(
-          { error: 'Failed to create agent' },
-          { status: 500 }
-        )
-      }
+    if (!isAdmin) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Admin access required' },
+        { status: 403 }
+      )
     }
 
-    return NextResponse.json({ success: true })
+    const setupData = await request.json()
+
+    // Create default roles
+    const { data: roles, error: rolesError } = await supabase
+      .from('roles')
+      .insert([
+        {
+          name: 'admin',
+          description: 'Full system access',
+          created_by: user.id,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        },
+        {
+          name: 'agent',
+          description: 'Support agent access',
+          created_by: user.id,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        },
+        {
+          name: 'customer',
+          description: 'Customer access',
+          created_by: user.id,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }
+      ])
+      .select()
+
+    if (rolesError) {
+      console.error('Error creating default roles:', rolesError)
+      return NextResponse.json(
+        { error: 'Failed to create default roles' },
+        { status: 500 }
+      )
+    }
+
+    // Create default permissions
+    const { data: permissions, error: permissionsError } = await supabase
+      .from('permissions')
+      .insert([
+        {
+          name: 'view_tickets',
+          description: 'View tickets',
+          created_by: user.id,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        },
+        {
+          name: 'create_tickets',
+          description: 'Create tickets',
+          created_by: user.id,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        },
+        {
+          name: 'update_tickets',
+          description: 'Update tickets',
+          created_by: user.id,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        },
+        {
+          name: 'delete_tickets',
+          description: 'Delete tickets',
+          created_by: user.id,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }
+      ])
+      .select()
+
+    if (permissionsError) {
+      console.error('Error creating default permissions:', permissionsError)
+      return NextResponse.json(
+        { error: 'Failed to create default permissions' },
+        { status: 500 }
+      )
+    }
+
+    // Assign permissions to roles
+    const adminRole = roles.find(r => r.name === 'admin')
+    const agentRole = roles.find(r => r.name === 'agent')
+    const customerRole = roles.find(r => r.name === 'customer')
+
+    if (!adminRole || !agentRole || !customerRole) {
+      return NextResponse.json(
+        { error: 'Failed to find created roles' },
+        { status: 500 }
+      )
+    }
+
+    const { error: rolePermissionsError } = await supabase
+      .from('role_permissions')
+      .insert([
+        // Admin gets all permissions
+        ...permissions.map(p => ({
+          role_id: adminRole.id,
+          permission_id: p.id,
+          created_by: user.id,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })),
+        // Agent gets view, create, update permissions
+        ...permissions
+          .filter(p => p.name !== 'delete_tickets')
+          .map(p => ({
+            role_id: agentRole.id,
+            permission_id: p.id,
+            created_by: user.id,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })),
+        // Customer gets view and create permissions
+        ...permissions
+          .filter(p => ['view_tickets', 'create_tickets'].includes(p.name))
+          .map(p => ({
+            role_id: customerRole.id,
+            permission_id: p.id,
+            created_by: user.id,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }))
+      ])
+
+    if (rolePermissionsError) {
+      console.error('Error assigning permissions to roles:', rolePermissionsError)
+      return NextResponse.json(
+        { error: 'Failed to assign permissions to roles' },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({
+      message: 'Initial setup completed successfully',
+      roles,
+      permissions
+    })
   } catch (error) {
-    console.error('Setup error:', error)
+    console.error('Error in POST /api/admin/setup:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
