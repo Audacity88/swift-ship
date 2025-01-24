@@ -15,7 +15,7 @@ const agentSchema = z.object({
   email: z.string().email(),
   role: z.enum(['agent', 'admin']),
   team_id: z.string().uuid().optional(),
-  avatar: z.string().url().optional()
+  avatar_url: z.string().url().optional()
 })
 
 export async function POST(request: NextRequest) {
@@ -107,12 +107,13 @@ export async function POST(request: NextRequest) {
       // Create auth user with password reset required
       const { data: newAuthUser, error: createAuthError } = await adminClient.auth.admin.createUser({
         email: validatedData.email,
-        email_confirm: false,
+        email_confirm: true,
         password: Math.random().toString(36).slice(-12) + Math.random().toString(36).slice(-12),
         user_metadata: {
           name: validatedData.name,
           role: validatedData.role.toUpperCase(),
-          isAgent: true
+          isAgent: true,
+          force_password_reset: true
         }
       })
 
@@ -157,7 +158,9 @@ export async function POST(request: NextRequest) {
       }
 
       // Send password reset email
-      const { error: resetError } = await adminClient.auth.admin.sendPasswordResetEmail(validatedData.email)
+      const { error: resetError } = await adminClient.auth.resetPasswordForEmail(validatedData.email, {
+        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback?type=recovery&next=/auth/update-password`
+      })
 
       if (resetError) {
         console.error('Password reset email error:', resetError)
@@ -240,13 +243,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Map the avatar field to avatar_url for consistency
-    const agentsWithAvatars = agents.map(agent => ({
-      ...agent,
-      avatar_url: agent.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(agent.name.toLowerCase())}`
-    }))
-
-    return NextResponse.json(agentsWithAvatars)
+    return NextResponse.json(agents)
   } catch (error) {
     console.error('Error in GET /api/agents:', error)
     return NextResponse.json(

@@ -6,15 +6,16 @@ export async function GET(request: Request) {
   const code = requestUrl.searchParams.get('code')
   const next = requestUrl.searchParams.get('next') || '/'
   const code_verifier = requestUrl.searchParams.get('code_verifier')
+  const type = requestUrl.searchParams.get('type')
 
-  if (!code || !code_verifier) {
+  if (!code) {
     return NextResponse.redirect(new URL('/auth/auth-error?error=missing_code', requestUrl))
   }
 
   try {
     const supabase = getServerSupabase()
 
-    // Exchange the code for a session using PKCE
+    // Exchange the code for a session
     const { data: { session }, error } = await supabase.auth.exchangeCodeForSession(code)
     
     if (error) {
@@ -27,6 +28,11 @@ export async function GET(request: Request) {
     if (userError || !user) {
       console.error('User verification error:', userError)
       return NextResponse.redirect(new URL('/auth/auth-error?error=user_verification_failed', requestUrl))
+    }
+
+    // Check if this is a password reset flow
+    if (type === 'recovery' || user.user_metadata?.force_password_reset) {
+      return NextResponse.redirect(new URL('/auth/update-password', requestUrl))
     }
 
     // Clear PKCE parameters from cookies

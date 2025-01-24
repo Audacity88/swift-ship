@@ -11,6 +11,14 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
+  // Allow access to auth pages and update-password page
+  if (
+    request.nextUrl.pathname.startsWith('/auth/') ||
+    request.nextUrl.pathname === '/auth/update-password'
+  ) {
+    return NextResponse.next()
+  }
+
   // Create a response to modify its headers
   const response = NextResponse.next()
 
@@ -42,23 +50,52 @@ export async function middleware(request: NextRequest) {
   )
 
   try {
+    // Get the user
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    // If no user or error, check for recovery flow
+    if (!user || userError) {
+      const type = request.nextUrl.searchParams.get('type')
+      const token = request.nextUrl.searchParams.get('token')
+      const hasAccessToken = request.url.includes('#access_token=')
+
+      // If we have a token, this is a password reset flow
+      if (token) {
+        return NextResponse.redirect(new URL('/auth/update-password', request.url))
+      }
+
+      // Allow access to update-password page with access token
+      if (request.nextUrl.pathname === '/auth/update-password' && hasAccessToken) {
+        return NextResponse.next()
+      }
+
+      // Handle recovery flow
+      if (type === 'recovery') {
+        return NextResponse.redirect(new URL('/auth/update-password', request.url))
+      }
+      
+      const redirectUrl = new URL('/auth/signin', request.url)
+      redirectUrl.searchParams.set('next', request.nextUrl.pathname)
+      return NextResponse.redirect(redirectUrl)
+    }
+
+    // Check if user needs to reset password
+    if (user.user_metadata?.force_password_reset && !request.nextUrl.pathname.startsWith('/auth/update-password')) {
+      return NextResponse.redirect(new URL('/auth/update-password', request.url))
+    }
+
     // Only check for root path
     if (request.nextUrl.pathname === '/') {
-      // Get the user
-      const { data: { user } } = await supabase.auth.getUser()
-      
-      if (user) {
-        // Check if user is an agent
-        const { data: agent } = await supabase
-          .from('agents')
-          .select('id, role')
-          .eq('id', user.id)
-          .single()
+      // Check if user is an agent
+      const { data: agent } = await supabase
+        .from('agents')
+        .select('id, role')
+        .eq('id', user.id)
+        .single()
 
-        // If user is not an agent, redirect to home
-        if (!agent) {
-          return NextResponse.redirect(new URL('/home', request.url))
-        }
+      // If user is not an agent, redirect to home
+      if (!agent) {
+        return NextResponse.redirect(new URL('/home', request.url))
       }
     }
 
