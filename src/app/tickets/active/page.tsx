@@ -5,70 +5,54 @@ import { useRouter } from 'next/navigation'
 import { Filter, SortAsc, SortDesc } from 'lucide-react'
 import TicketList from '@/components/features/tickets/TicketList'
 import { TicketStatus, TicketPriority } from '@/types/enums'
-import { UserRole } from '@/types/role'
+import { RoleType } from '@/types/role'
+import { useAuth } from '@/lib/hooks/useAuth'
 import type { TicketListItem } from '@/types/ticket'
-
-// Mock data - replace with actual API calls
-const mockTickets: TicketListItem[] = [
-  {
-    id: '1',
-    title: 'Unable to access dashboard after recent update',
-    status: TicketStatus.OPEN,
-    priority: TicketPriority.HIGH,
-    customer: {
-      id: '1',
-      name: 'John Doe',
-      email: 'john@example.com'
-    },
-    assignee: {
-      id: '1',
-      name: 'Support Agent',
-      email: 'agent@example.com',
-      role: 'agent'
-    },
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    tags: [
-      { id: '1', name: 'bug', color: '#DE350B' },
-      { id: '2', name: 'dashboard', color: '#00B8D9' },
-    ],
-  },
-  // Add more mock tickets as needed
-]
-
-const statusOptions: TicketStatus[] = [
-  TicketStatus.OPEN,
-  TicketStatus.IN_PROGRESS,
-  TicketStatus.RESOLVED,
-  TicketStatus.CLOSED
-]
-
-const priorityOptions: TicketPriority[] = [
-  TicketPriority.URGENT,
-  TicketPriority.HIGH,
-  TicketPriority.MEDIUM,
-  TicketPriority.LOW
-]
+import { useQuery } from '@tanstack/react-query'
+import { getServerSupabase } from '@/lib/supabase-client'
 
 export default function ActiveTicketsPage() {
   const router = useRouter()
+  const { user } = useAuth()
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list')
   const [selectedStatus, setSelectedStatus] = useState<TicketStatus[]>([])
   const [selectedPriority, setSelectedPriority] = useState<TicketPriority[]>([])
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
 
-  // Filter tickets based on selected filters
-  const filteredTickets = mockTickets.filter((ticket) => {
-    if (selectedStatus.length && !selectedStatus.includes(ticket.status)) return false
-    if (selectedPriority.length && !selectedPriority.includes(ticket.priority)) return false
-    return true
-  })
+  const { data: response = { data: [] }, isLoading } = useQuery<{ data: TicketListItem[] }>({
+    queryKey: ['active-tickets', selectedStatus, selectedPriority, sortOrder],
+    queryFn: async () => {
+      const params = new URLSearchParams()
+      
+      // Add filters if selected
+      if (selectedStatus.length > 0) {
+        selectedStatus.forEach(status => {
+          params.append('status', status);
+        });
+      }
+      if (selectedPriority.length > 0) {
+        selectedPriority.forEach(priority => {
+          params.append('priority', priority.toLowerCase());
+        });
+      }
+      // Add sorting
+      params.set('sortField', 'created_at')
+      params.set('sortDirection', sortOrder)
+      // Set default type
+      params.set('type', 'ticket')
 
-  // Sort tickets by date
-  const sortedTickets = [...filteredTickets].sort((a, b) => {
-    const dateA = new Date(a.createdAt).getTime()
-    const dateB = new Date(b.createdAt).getTime()
-    return sortOrder === 'asc' ? dateA - dateB : dateB - dateA
+      console.log('Fetching tickets with params:', params.toString())
+      const response = await fetch(`/api/tickets?${params.toString()}`, {
+        credentials: 'include'
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch tickets')
+      }
+      const data = await response.json()
+      console.log('Received tickets:', data)
+      return data
+    }
   })
 
   const handleTicketClick = (ticketId: string) => {
@@ -79,11 +63,12 @@ export default function ActiveTicketsPage() {
     <div className="space-y-6">
       {/* Page Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-gray-900">Active Tickets</h1>
+        <h1 className="text-2xl font-semibold text-gray-900">
+          {user?.role === RoleType.ADMIN ? 'Open Tickets' : 'My Tickets'}
+        </h1>
         <button
           onClick={() => setSortOrder(order => order === 'asc' ? 'desc' : 'asc')}
-          className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 \
-            transition-colors"
+          className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
         >
           {sortOrder === 'asc' ? (
             <>
@@ -111,24 +96,25 @@ export default function ActiveTicketsPage() {
           <div>
             <label className="text-sm text-gray-600 mb-1.5 block">Status</label>
             <div className="flex flex-wrap gap-2">
-              {statusOptions.map((status) => (
-                <button
-                  key={status}
-                  onClick={() => setSelectedStatus(prev => 
-                    prev.includes(status)
-                      ? prev.filter(s => s !== status)
-                      : [...prev, status]
-                  )}
-                  className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
-                    selectedStatus.includes(status)
-                      ? 'bg-primary text-white'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                  style={selectedStatus.includes(status) ? { backgroundColor: '#0052CC' } : {}}
-                >
-                  {status.replace('_', ' ')}
-                </button>
-              ))}
+              {Object.values(TicketStatus)
+                .map((status) => (
+                  <button
+                    key={status}
+                    onClick={() => setSelectedStatus(prev => 
+                      prev.includes(status)
+                        ? prev.filter(s => s !== status)
+                        : [...prev, status]
+                    )}
+                    className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
+                      selectedStatus.includes(status)
+                        ? 'bg-primary text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                    style={selectedStatus.includes(status) ? { backgroundColor: '#0052CC' } : {}}
+                  >
+                    {status.replace('_', ' ')}
+                  </button>
+                ))}
             </div>
           </div>
 
@@ -136,7 +122,7 @@ export default function ActiveTicketsPage() {
           <div>
             <label className="text-sm text-gray-600 mb-1.5 block">Priority</label>
             <div className="flex flex-wrap gap-2">
-              {priorityOptions.map((priority) => (
+              {Object.values(TicketPriority).map((priority) => (
                 <button
                   key={priority}
                   onClick={() => setSelectedPriority(prev => 
@@ -151,7 +137,7 @@ export default function ActiveTicketsPage() {
                   }`}
                   style={selectedPriority.includes(priority) ? { backgroundColor: '#0052CC' } : {}}
                 >
-                  {priority}
+                  {priority.charAt(0).toUpperCase() + priority.slice(1)}
                 </button>
               ))}
             </div>
@@ -160,7 +146,15 @@ export default function ActiveTicketsPage() {
       </div>
 
       {/* Tickets List */}
-      <TicketList tickets={sortedTickets} viewMode={viewMode} onTicketClick={handleTicketClick} />
+      {isLoading ? (
+        <div className="text-center py-8">Loading tickets...</div>
+      ) : (
+        <TicketList 
+          tickets={response.data} 
+          viewMode={viewMode} 
+          onTicketClick={handleTicketClick} 
+        />
+      )}
     </div>
   )
-} 
+}

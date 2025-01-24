@@ -6,7 +6,7 @@ import {
   Home, Inbox, Quote, BarChart, Truck, Package, Settings, Ticket, 
   ListChecks, Search, Users, MessageSquare, FileText, Bell, 
   ShoppingCart, UserCircle, UserCog, UsersRound, LifeBuoy, Ship,
-  Moon, Sun
+  Moon, Sun, BarChart2
 } from 'lucide-react'
 import { ROUTES, COLORS } from '@/lib/constants'
 import { useTicketStore } from '@/lib/store/tickets'
@@ -25,62 +25,38 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { icon: Home, label: 'Home', href: ROUTES.dashboard },
-  { 
-    icon: Ticket, 
-    label: ({ user }) => user?.role === RoleType.ADMIN ? 'All Tickets' : 'Tickets',
-    href: `${ROUTES.tickets}/overview`,
-    roles: [RoleType.ADMIN, RoleType.AGENT],
-    badge: () => useTicketStore.getState().tickets.length
-  },
-  { 
-    icon: ListChecks, 
-    label: 'Open Tickets', 
-    href: `${ROUTES.tickets}/active`,
-    roles: [RoleType.ADMIN],
-    badge: () => useTicketStore.getState().tickets.filter(t => t.status !== 'closed').length
-  },
-  { 
-    icon: Quote, 
-    label: 'Quote', 
-    href: ROUTES.quote,
-    roles: [RoleType.CUSTOMER, RoleType.SUPERVISOR]
-  },
-  { 
-    icon: Quote,
-    label: 'Manage Quotes',
-    href: ROUTES.admin.quotes,
-    roles: [RoleType.ADMIN, RoleType.AGENT, RoleType.SUPERVISOR]
-  },
-  { 
-    icon: Truck, 
-    label: 'Shipments', 
-    href: ROUTES.shipments,
-    roles: [RoleType.CUSTOMER, RoleType.AGENT, RoleType.SUPERVISOR]
-  },
-  { 
-    icon: BarChart, 
-    label: 'Analytics', 
-    href: ROUTES.analytics,
-    roles: [RoleType.ADMIN, RoleType.SUPERVISOR]
-  },
-  { 
-    icon: LifeBuoy, 
-    label: 'Customer Support', 
-    href: '/portal',
-    roles: [RoleType.CUSTOMER]
-  },
-  { 
-    icon: UserCog, 
-    label: 'Agents', 
-    href: ROUTES.agents,
-    roles: [RoleType.ADMIN]
+  {
+    icon: Home,
+    label: 'Home',
+    href: '/',
   },
   {
-    icon: UsersRound,
-    label: 'Teams',
-    href: ROUTES.teams,
-    roles: [RoleType.ADMIN]
+    icon: Ticket,
+    label: 'Tickets',
+    href: '/tickets/active',
+  },
+  {
+    icon: Quote,
+    label: 'Quote',
+    href: '/quote',
+    roles: [RoleType.CUSTOMER],
+  },
+  {
+    icon: FileText,
+    label: 'Manage Quotes',
+    href: '/quotes',
+  },
+  {
+    icon: BarChart2,
+    label: 'Analytics',
+    href: '/analytics',
+    roles: [RoleType.ADMIN],
+  },
+  {
+    icon: Settings,
+    label: 'Settings',
+    href: '/settings',
+    roles: [RoleType.ADMIN],
   },
 ]
 

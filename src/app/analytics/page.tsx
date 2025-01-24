@@ -5,33 +5,45 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line, AreaChart, Area, PieChart, Pie, Cell
 } from 'recharts'
-import { Download, Filter, Calendar } from 'lucide-react'
+import { Download, Filter, Calendar, BarChart3, Clock, Users, MessageSquare } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import { COLORS } from '@/lib/constants'
+import { useQuery } from '@tanstack/react-query'
+import { subDays } from 'date-fns'
+
+// Sample data for shipping charts
+const shippingStats = [
+  { label: 'Total Shipments', value: '3,640', change: '+12.5%' },
+  { label: 'On-Time Delivery', value: '94.2%', change: '+2.3%' },
+  { label: 'Average Transit Time', value: '2.4 days', change: '-0.5 days' },
+  { label: 'Customer Rating', value: '4.6/5', change: '+0.2' },
+]
 
 // Sample data for charts
 const monthlyShipments = [
-  { month: 'Jan', shipments: 450 },
-  { month: 'Feb', shipments: 380 },
-  { month: 'Mar', shipments: 620 },
-  { month: 'Apr', shipments: 520 },
-  { month: 'May', shipments: 780 },
-  { month: 'Jun', shipments: 890 },
+  { month: 'Jan', tickets: 450 },
+  { month: 'Feb', tickets: 380 },
+  { month: 'Mar', tickets: 620 },
+  { month: 'Apr', tickets: 520 },
+  { month: 'May', tickets: 780 },
+  { month: 'Jun', tickets: 890 },
 ]
 
 const deliveryPerformance = [
-  { date: '2024-01-13', onTime: 95, delayed: 5 },
-  { date: '2024-01-14', onTime: 92, delayed: 8 },
-  { date: '2024-01-15', onTime: 88, delayed: 12 },
-  { date: '2024-01-16', onTime: 94, delayed: 6 },
-  { date: '2024-01-17', onTime: 96, delayed: 4 },
-  { date: '2024-01-18', onTime: 93, delayed: 7 },
-  { date: '2024-01-19', onTime: 97, delayed: 3 },
+  { date: '2024-01-13', resolved: 95, open: 5 },
+  { date: '2024-01-14', resolved: 92, open: 8 },
+  { date: '2024-01-15', resolved: 88, open: 12 },
+  { date: '2024-01-16', resolved: 94, open: 6 },
+  { date: '2024-01-17', resolved: 96, open: 4 },
+  { date: '2024-01-18', resolved: 93, open: 7 },
+  { date: '2024-01-19', resolved: 97, open: 3 },
 ]
 
-const revenueData = [
-  { name: 'Express', value: 45000 },
-  { name: 'Standard', value: 35000 },
-  { name: 'Economy', value: 20000 },
+const priorityData = [
+  { name: 'Urgent', value: 45 },
+  { name: 'High', value: 35 },
+  { name: 'Medium', value: 20 },
+  { name: 'Low', value: 15 },
 ]
 
 const customerSatisfaction = [
@@ -47,16 +59,96 @@ const dateRanges = ['Last 7 days', 'Last 30 days', 'Last 90 days', 'This year', 
 
 export default function AnalyticsPage() {
   const [selectedRange, setSelectedRange] = useState('Last 30 days')
+  const [dateRange, setDateRange] = useState({
+    from: subDays(new Date(), 30),
+    to: new Date()
+  })
+
+  // Fetch stats with date range
+  const { data: stats, isLoading: isLoadingStats } = useQuery({
+    queryKey: ['ticketStats', { from: dateRange.from.toISOString(), to: dateRange.to.toISOString() }],
+    queryFn: async () => {
+      const response = await fetch(`/api/tickets/stats?from=${dateRange.from.toISOString()}&to=${dateRange.to.toISOString()}`, {
+        credentials: 'include'
+      })
+      if (!response.ok) throw new Error('Failed to fetch stats')
+      return response.json()
+    },
+    // Add default data to prevent undefined
+    placeholderData: {
+      openTickets: 0,
+      avgResponseTime: '0.0h',
+      customerSatisfaction: 0,
+      totalConversations: 0,
+      detailedStats: {
+        counts: {
+          priority: {},
+          status: {}
+        },
+        resolutionTimes: {},
+        slaCompliance: {},
+        volumeTrends: [],
+        agentMetrics: []
+      }
+    }
+  })
+
+  const statsConfig = [
+    {
+      label: 'Open Tickets',
+      value: (stats?.openTickets ?? 0).toString(),
+      change: '+12%',
+      icon: BarChart3,
+      color: '#0052CC',
+    },
+    {
+      label: 'Avg Response Time',
+      value: stats?.avgResponseTime ?? '0h',
+      change: '-30m',
+      icon: Clock,
+      color: '#00B8D9',
+    },
+    {
+      label: 'Customer Satisfaction',
+      value: `${stats?.customerSatisfaction ?? 0}%`,
+      change: '+2%',
+      icon: Users,
+      color: '#36B37E',
+    },
+    {
+      label: 'Total Conversations',
+      value: (stats?.totalConversations ?? 0).toLocaleString(),
+      change: '+15%',
+      icon: MessageSquare,
+      color: '#6554C0',
+    },
+  ]
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-gray-900">Analytics Dashboard</h1>
         <div className="flex items-center gap-4">
           <select
             value={selectedRange}
-            onChange={(e) => setSelectedRange(e.target.value)}
+            onChange={(e) => {
+              setSelectedRange(e.target.value)
+              // Update date range based on selection
+              const now = new Date()
+              switch (e.target.value) {
+                case 'Last 7 days':
+                  setDateRange({ from: subDays(now, 7), to: now })
+                  break
+                case 'Last 30 days':
+                  setDateRange({ from: subDays(now, 30), to: now })
+                  break
+                case 'Last 90 days':
+                  setDateRange({ from: subDays(now, 90), to: now })
+                  break
+                // Add other cases as needed
+              }
+            }}
             className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm"
           >
             {dateRanges.map((range) => (
@@ -76,33 +168,62 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
-      {/* Metrics Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {[
-          { label: 'Total Shipments', value: '3,640', change: '+12.5%' },
-          { label: 'On-Time Delivery', value: '94.2%', change: '+2.3%' },
-          { label: 'Average Transit Time', value: '2.4 days', change: '-0.5 days' },
-          { label: 'Customer Rating', value: '4.6/5', change: '+0.2' },
-        ].map((metric) => (
-          <div key={metric.label} className="bg-white p-6 rounded-xl border border-gray-200">
-            <p className="text-sm text-gray-600">{metric.label}</p>
-            <div className="mt-2 flex items-end justify-between">
-              <p className="text-2xl font-semibold">{metric.value}</p>
-              <span className={`text-sm font-medium ${
-                metric.change.startsWith('+') ? 'text-green-600' : 'text-red-600'
-              }`}>
-                {metric.change}
-              </span>
+      {/* Shipping Section */}
+      <div>
+        <h2 className="text-lg font-semibold mb-4">Shipping Analytics</h2>
+        
+        {/* Shipping Metrics Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {shippingStats.map((metric) => (
+            <div key={metric.label} className="bg-white p-6 rounded-xl border border-gray-200">
+              <p className="text-sm text-gray-600">{metric.label}</p>
+              <div className="mt-2 flex items-end justify-between">
+                <p className="text-2xl font-semibold">{metric.value}</p>
+                <span className={`text-sm font-medium ${
+                  metric.change.startsWith('+') ? 'text-green-600' : 'text-red-600'
+                }`}>
+                  {metric.change}
+                </span>
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
+      </div>
+
+      {/* Ticket Section */}
+      <div>
+        <h2 className="text-lg font-semibold mb-4">Ticket Analytics</h2>
+        
+        {/* Ticket Metrics Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {statsConfig.map((stat) => {
+            const Icon = stat.icon
+            return (
+              <div 
+                key={stat.label} 
+                className="bg-white p-6 rounded-xl border border-gray-200 transition-all hover:shadow-md"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="p-2 rounded-lg" style={{ backgroundColor: `${stat.color}20` }}>
+                    <Icon className="w-5 h-5" style={{ color: stat.color }} />
+                  </div>
+                  <Badge variant={stat.change.startsWith('+') ? 'default' : 'secondary'}>
+                    {stat.change}
+                  </Badge>
+                </div>
+                <h3 className="mt-4 text-2xl font-semibold text-gray-900">{stat.value}</h3>
+                <p className="mt-1 text-sm text-gray-600">{stat.label}</p>
+              </div>
+            )
+          })}
+        </div>
       </div>
 
       {/* Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Monthly Shipments */}
+        {/* Monthly Tickets */}
         <div className="bg-white p-6 rounded-xl border border-gray-200">
-          <h3 className="text-lg font-semibold mb-4">Monthly Shipments</h3>
+          <h3 className="text-lg font-semibold mb-4">Monthly Tickets</h3>
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={monthlyShipments}>
@@ -116,15 +237,15 @@ export default function AnalyticsPage() {
                     borderRadius: '8px',
                   }}
                 />
-                <Bar dataKey="shipments" fill={COLORS.primary} radius={[4, 4, 0, 0]} />
+                <Bar dataKey="tickets" fill={COLORS.primary} radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        {/* Delivery Performance */}
+        {/* Resolution Performance */}
         <div className="bg-white p-6 rounded-xl border border-gray-200">
-          <h3 className="text-lg font-semibold mb-4">Delivery Performance</h3>
+          <h3 className="text-lg font-semibold mb-4">Resolution Performance</h3>
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={deliveryPerformance}>
@@ -140,7 +261,7 @@ export default function AnalyticsPage() {
                 />
                 <Area
                   type="monotone"
-                  dataKey="onTime"
+                  dataKey="resolved"
                   stackId="1"
                   stroke={COLORS.success}
                   fill={COLORS.success}
@@ -148,7 +269,7 @@ export default function AnalyticsPage() {
                 />
                 <Area
                   type="monotone"
-                  dataKey="delayed"
+                  dataKey="open"
                   stackId="1"
                   stroke={COLORS.negative}
                   fill={COLORS.negative}
@@ -159,14 +280,14 @@ export default function AnalyticsPage() {
           </div>
         </div>
 
-        {/* Revenue by Service */}
+        {/* Tickets by Priority */}
         <div className="bg-white p-6 rounded-xl border border-gray-200">
-          <h3 className="text-lg font-semibold mb-4">Revenue by Service</h3>
+          <h3 className="text-lg font-semibold mb-4">Tickets by Priority</h3>
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
-                  data={revenueData}
+                  data={priorityData}
                   cx="50%"
                   cy="50%"
                   innerRadius={60}
@@ -174,8 +295,9 @@ export default function AnalyticsPage() {
                   paddingAngle={5}
                   dataKey="value"
                 >
-                  <Cell fill={COLORS.primary} />
+                  <Cell fill={COLORS.negative} />
                   <Cell fill={COLORS.warning} />
+                  <Cell fill={COLORS.primary} />
                   <Cell fill={COLORS.success} />
                 </Pie>
                 <Tooltip
@@ -188,10 +310,10 @@ export default function AnalyticsPage() {
               </PieChart>
             </ResponsiveContainer>
             <div className="flex justify-center gap-6 mt-4">
-              {revenueData.map((entry, index) => (
+              {priorityData.map((entry, index) => (
                 <div key={entry.name} className="flex items-center gap-2">
                   <div className="w-3 h-3 rounded-full"
-                    style={{ backgroundColor: [COLORS.primary, COLORS.warning, COLORS.success][index] }}
+                    style={{ backgroundColor: [COLORS.negative, COLORS.warning, COLORS.primary, COLORS.success][index] }}
                   />
                   <span className="text-sm text-gray-600">{entry.name}</span>
                 </div>
