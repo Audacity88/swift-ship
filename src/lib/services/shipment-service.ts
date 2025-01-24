@@ -31,7 +31,7 @@ export const shipmentService = {
           quote_id: quoteId,
           customer_id: customerId,
           type: quote.metadata.packageDetails.type,
-          status: 'quote_requested',
+          status: 'quote_accepted',
           origin: quote.metadata.destination.from,
           destination: quote.metadata.destination.to,
           scheduled_pickup: quote.metadata.destination.pickupDate,
@@ -59,7 +59,34 @@ export const shipmentService = {
         throw error
       }
 
-      return data
+      // Ensure status is set to quote_accepted
+      const { error: updateError } = await supabase
+        .from('shipments')
+        .update({ 
+          status: 'quote_accepted',
+          updated_by: user.id,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', data.id)
+
+      if (updateError) {
+        console.error('Failed to update shipment status:', updateError)
+        throw updateError
+      }
+
+      // Get the updated shipment
+      const { data: updatedShipment, error: fetchError } = await supabase
+        .from('shipments')
+        .select('*')
+        .eq('id', data.id)
+        .single()
+
+      if (fetchError) {
+        console.error('Failed to fetch updated shipment:', fetchError)
+        throw fetchError
+      }
+
+      return updatedShipment
     } catch (error) {
       console.error('Error in createFromQuote:', error)
       throw error
@@ -366,8 +393,8 @@ export const shipmentService = {
         customer_id: quote.customer_id,
         type: data.type,
         status: 'quote_requested' as ShipmentStatus,
-        origin: data.origin || quoteDestination.from || null,
-        destination: data.destination || quoteDestination.to || null,
+        origin: data.origin || (quoteDestination.from?.address || quoteDestination.from || null),
+        destination: data.destination || (quoteDestination.to?.address || quoteDestination.to || null),
         scheduled_pickup: data.scheduled_pickup || (quoteDestination.pickupDate ? new Date(quoteDestination.pickupDate).toISOString() : null),
         estimated_delivery: data.estimated_delivery || null,
         tracking_number: generateTrackingNumber(),
@@ -405,7 +432,34 @@ export const shipmentService = {
         // Don't fail the request, but log the error
       }
 
-      return shipment
+      // Ensure status is set to quote_accepted
+      const { error: updateError } = await supabase
+        .from('shipments')
+        .update({ 
+          status: 'quote_accepted',
+          updated_by: user.id,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', shipment.id)
+
+      if (updateError) {
+        console.error('Failed to update shipment status:', updateError)
+        throw updateError
+      }
+
+      // Get the updated shipment
+      const { data: updatedShipment, error: fetchError } = await supabase
+        .from('shipments')
+        .select('*')
+        .eq('id', shipment.id)
+        .single()
+
+      if (fetchError) {
+        console.error('Failed to fetch updated shipment:', fetchError)
+        throw fetchError
+      }
+
+      return updatedShipment
     } catch (error) {
       console.error('Error in createShipment:', error)
       throw error

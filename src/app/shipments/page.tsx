@@ -161,19 +161,19 @@ export default function ShipmentsPage() {
                     <div>
                       <h3 className="text-sm font-medium text-gray-900 mb-3">Package Details</h3>
                       <div className="space-y-2 text-sm">
-                        {shipment.metadata.weight && (
-                          <p className="text-gray-500">Weight: {shipment.metadata.weight}</p>
+                        {shipment.metadata.quote_metadata?.packageDetails?.weight && (
+                          <p className="text-gray-500">Weight: {shipment.metadata.quote_metadata.packageDetails.weight} metric tons</p>
                         )}
-                        {shipment.metadata.volume && (
-                          <p className="text-gray-500">Volume: {shipment.metadata.volume}</p>
+                        {shipment.metadata.quote_metadata?.packageDetails?.volume && (
+                          <p className="text-gray-500">Volume: {shipment.metadata.quote_metadata.packageDetails.volume} m³</p>
                         )}
-                        {shipment.metadata.container_size && (
-                          <p className="text-gray-500">Container Size: {shipment.metadata.container_size}</p>
+                        {shipment.metadata.quote_metadata?.packageDetails?.containerSize && (
+                          <p className="text-gray-500">Container Size: {shipment.metadata.quote_metadata.packageDetails.containerSize}</p>
                         )}
-                        {shipment.metadata.pallet_count && (
-                          <p className="text-gray-500">Pallets: {shipment.metadata.pallet_count}</p>
+                        {shipment.metadata.quote_metadata?.packageDetails?.palletCount && (
+                          <p className="text-gray-500">Pallets: {shipment.metadata.quote_metadata.packageDetails.palletCount}</p>
                         )}
-                        {shipment.metadata.hazardous && (
+                        {shipment.metadata.quote_metadata?.packageDetails?.hazardous && (
                           <p className="text-yellow-600">⚠️ Contains hazardous materials</p>
                         )}
                       </div>
@@ -202,41 +202,47 @@ export default function ShipmentsPage() {
                     </div>
                   </div>
 
-                  {/* Timeline */}
+                  {/* Last Event */}
                   {shipment.events && shipment.events.length > 0 && (
                     <div className="mt-6 pt-6 border-t border-gray-100">
-                      <h3 className="text-sm font-medium text-gray-900 mb-4">Shipment Timeline</h3>
-                      <div className="space-y-4">
-                        {shipment.events.map((event, index) => {
-                          const EventIcon = statusColors[event.status].icon
+                      <h3 className="text-sm font-medium text-gray-900 mb-4">Last Event</h3>
+                      <div>
+                        {(() => {
+                          const lastEvent = shipment.events[0]
+                          const EventIcon = statusColors[lastEvent.status].icon
 
                           return (
-                            <div key={event.id} className="flex items-start gap-3">
+                            <div className="flex items-start gap-3">
                               <div className="relative flex flex-col items-center">
-                                <div className={`w-8 h-8 rounded-full ${statusColors[event.status].bg} flex items-center justify-center`}>
-                                  <EventIcon className={`w-4 h-4 ${statusColors[event.status].text}`} />
+                                <div className={`w-8 h-8 rounded-full ${statusColors[lastEvent.status].bg} flex items-center justify-center`}>
+                                  <EventIcon className={`w-4 h-4 ${statusColors[lastEvent.status].text}`} />
                                 </div>
-                                {index < shipment.events.length - 1 && (
-                                  <div className="w-0.5 h-full bg-gray-200 absolute top-8" />
-                                )}
                               </div>
                               <div>
                                 <p className="text-sm font-medium text-gray-900">
-                                  {event.status.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
+                                  {lastEvent.status === 'quote_requested' 
+                                    ? 'Shipment Created'
+                                    : lastEvent.status.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
                                 </p>
-                                {event.location && (
-                                  <p className="text-sm text-gray-500">{event.location}</p>
-                                )}
-                                {event.notes && (
-                                  <p className="text-sm text-gray-500">{event.notes}</p>
+                                {lastEvent.status === 'quote_requested' ? (
+                                  <p className="text-sm text-gray-500">Quote accepted and preparing for shipment</p>
+                                ) : (
+                                  <>
+                                    {lastEvent.location && (
+                                      <p className="text-sm text-gray-500">{lastEvent.location}</p>
+                                    )}
+                                    {lastEvent.notes && (
+                                      <p className="text-sm text-gray-500">{lastEvent.notes}</p>
+                                    )}
+                                  </>
                                 )}
                                 <p className="text-xs text-gray-400 mt-1">
-                                  {format(new Date(event.created_at), 'MMM d, yyyy h:mm a')}
+                                  {format(new Date(lastEvent.created_at), 'MMM d, yyyy h:mm a')}
                                 </p>
                               </div>
                             </div>
                           )
-                        })}
+                        })()}
                       </div>
                     </div>
                   )}

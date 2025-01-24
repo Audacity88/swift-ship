@@ -5,9 +5,21 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 import { format } from 'date-fns'
 import { Package, MapPin, Calendar, DollarSign, Truck, Pencil, Trash2 } from 'lucide-react'
 import type { QuoteRequest } from '@/types/quote'
+import { useState } from 'react'
 
 interface QuoteDetailViewProps {
   quote: QuoteRequest
@@ -58,6 +70,31 @@ export function QuoteDetailView({
   isAdmin = false,
   isDeleting = false
 }: QuoteDetailViewProps) {
+  const [quotePrice, setQuotePrice] = useState<string>('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const handleSubmitQuote = async (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault()
+    }
+    
+    if (!onSubmitQuote || !quotePrice) return
+    
+    try {
+      setIsSubmitting(true)
+      const price = parseFloat(quotePrice)
+      if (isNaN(price) || price <= 0) {
+        return
+      }
+      await onSubmitQuote(quote.id, price)
+      setQuotePrice('')
+    } catch (error) {
+      console.error('Error submitting quote:', error)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
   return (
     <Card className="p-6 relative">
       {/* Action Buttons - Show for admins or when edit/delete handlers are provided */}
@@ -143,18 +180,7 @@ export function QuoteDetailView({
           /* Quote Form */
           <div>
             <h4 className="font-medium mb-2">Submit Quote</h4>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault()
-                const form = e.target as HTMLFormElement
-                const price = parseFloat(form.price.value)
-                if (price > 0) {
-                  onSubmitQuote(quote.id, price)
-                  form.reset()
-                }
-              }}
-              className="space-y-4"
-            >
+            <div className="space-y-4">
               <div>
                 <Label htmlFor={`price-${quote.id}`}>Price (USD)</Label>
                 <div className="relative">
@@ -168,13 +194,41 @@ export function QuoteDetailView({
                     required
                     className="pl-8"
                     placeholder="0.00"
+                    value={quotePrice}
+                    onChange={(e) => setQuotePrice(e.target.value)}
                   />
                 </div>
               </div>
-              <Button type="submit" className="w-full">
-                Submit Quote
-              </Button>
-            </form>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button 
+                    type="button" 
+                    className="w-full"
+                    disabled={!quotePrice || isSubmitting}
+                  >
+                    Submit Quote
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Confirm Quote Submission</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Are you sure you want to submit this quote for ${quotePrice}? 
+                      This will notify the customer and cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction 
+                      onClick={handleSubmitQuote}
+                      disabled={isSubmitting}
+                    >
+                      {isSubmitting ? 'Submitting...' : 'Submit Quote'}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
           </div>
         ) : (
           /* Package Details */
