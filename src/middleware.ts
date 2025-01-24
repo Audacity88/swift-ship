@@ -72,12 +72,17 @@ export async function middleware(request: NextRequest) {
     const { data: { session }, error: sessionError } = await supabase.auth.getSession()
     // console.log('[Middleware] Session check:', { hasSession: !!session, error: sessionError?.message })
 
+    // Get user type early to use throughout middleware
+    const { data: { user } } = await supabase.auth.getUser()
+    const isCustomer = user?.user_metadata?.type === 'customer'
+
     // Handle auth pages
     if (request.nextUrl.pathname.startsWith('/auth/')) {
-      // If we have a session on auth pages, redirect to home
+      // If we have a session on auth pages, redirect based on user type
       if (session && !request.nextUrl.pathname.startsWith('/auth/signout')) {
-        console.log('[Middleware] Authenticated user on auth page, redirecting to home')
-        return NextResponse.redirect(new URL('/home', request.url))
+        const redirectUrl = isCustomer ? '/home' : '/'
+        console.log('[Middleware] Authenticated user on auth page, redirecting to:', redirectUrl)
+        return NextResponse.redirect(new URL(redirectUrl, request.url))
       }
       console.log('[Middleware] Allowing access to auth page:', request.nextUrl.pathname)
       return response
@@ -93,10 +98,17 @@ export async function middleware(request: NextRequest) {
 
     // Check admin routes access
     if (request.nextUrl.pathname.startsWith('/admin/')) {
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      if (user?.user_metadata?.type !== 'admin' && user?.user_metadata?.type !== 'agent') {
-        console.log('[Middleware] Non-admin/agent user attempting to access admin route, redirecting to home')
+      if (isCustomer) {
+        console.log('[Middleware] Customer attempting to access admin route, redirecting to home')
         return NextResponse.redirect(new URL('/', request.url))
+      }
+    }
+
+    // Redirect customers to home page if trying to access dashboard
+    if (request.nextUrl.pathname === '/') {
+      if (isCustomer) {
+        console.log('[Middleware] Customer attempting to access dashboard, redirecting to home')
+        return NextResponse.redirect(new URL('/home', request.url))
       }
     }
 

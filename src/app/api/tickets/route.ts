@@ -41,7 +41,8 @@ const ticketFiltersSchema = z.object({
   search: z.string().nullish(),
   dateFrom: z.string().nullish(),
   dateTo: z.string().nullish(),
-  unassigned: z.boolean().optional()
+  unassigned: z.boolean().optional(),
+  assignedToMe: z.boolean().optional()
 })
 
 const paginationSchema = z.object({
@@ -116,7 +117,8 @@ export async function GET(request: NextRequest) {
         search: searchParams.get('search'),
         dateFrom: searchParams.get('dateFrom'),
         dateTo: searchParams.get('dateTo'),
-        unassigned: searchParams.get('unassigned') === 'true'
+        unassigned: searchParams.get('unassigned') === 'true',
+        assignedToMe: searchParams.get('assignedToMe') === 'true'
       })
 
       // Start building the query
@@ -145,6 +147,10 @@ export async function GET(request: NextRequest) {
       if (filters.unassigned) {
         console.log('Applying unassigned filter')
         query = query.is('assignee_id', null)
+      }
+      if (filters.assignedToMe) {
+        console.log('Applying assigned to me filter')
+        query = query.eq('assignee_id', user.id)
       }
 
       // Add sorting

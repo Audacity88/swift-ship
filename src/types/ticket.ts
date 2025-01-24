@@ -5,7 +5,7 @@ import { z } from 'zod'
 export enum TicketStatus {
   OPEN = 'open',
   IN_PROGRESS = 'in_progress',
-  AWAITING_RESPONSE = 'awaiting_response',
+  WAITING = 'waiting',
   RESOLVED = 'resolved',
   CLOSED = 'closed'
 }

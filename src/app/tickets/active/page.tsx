@@ -18,10 +18,11 @@ export default function ActiveTicketsPage() {
   const [selectedStatus, setSelectedStatus] = useState<TicketStatus[]>([])
   const [selectedPriority, setSelectedPriority] = useState<TicketPriority[]>([])
   const [showUnassigned, setShowUnassigned] = useState(false)
+  const [assignedToMe, setAssignedToMe] = useState(false)
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
 
   const { data: response = { data: [] }, isLoading } = useQuery<{ data: TicketListItem[] }>({
-    queryKey: ['active-tickets', selectedStatus, selectedPriority, showUnassigned, sortOrder],
+    queryKey: ['active-tickets', selectedStatus, selectedPriority, showUnassigned, assignedToMe, sortOrder],
     queryFn: async () => {
       const params = new URLSearchParams()
       
@@ -39,6 +40,10 @@ export default function ActiveTicketsPage() {
       // Add unassigned filter
       if (showUnassigned) {
         params.append('unassigned', 'true');
+      }
+      // Add assigned to me filter
+      if (assignedToMe) {
+        params.append('assignedToMe', 'true');
       }
       // Add sorting
       params.set('sortField', 'created_at')
@@ -68,9 +73,7 @@ export default function ActiveTicketsPage() {
     <div className="space-y-6">
       {/* Page Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-gray-900">
-          {user?.role === RoleType.ADMIN ? 'Open Tickets' : 'My Tickets'}
-        </h1>
+        <h1 className="text-2xl font-semibold text-gray-900"> Tickets </h1>
         <button
           onClick={() => setSortOrder(order => order === 'asc' ? 'desc' : 'asc')}
           className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
@@ -153,7 +156,10 @@ export default function ActiveTicketsPage() {
             <label className="text-sm text-gray-600 mb-1.5 block">Assignment</label>
             <div className="flex flex-wrap gap-2">
               <button
-                onClick={() => setShowUnassigned(prev => !prev)}
+                onClick={() => {
+                  setShowUnassigned(prev => !prev)
+                  if (!showUnassigned) setAssignedToMe(false)
+                }}
                 className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
                   showUnassigned
                     ? 'bg-primary text-white'
@@ -162,6 +168,20 @@ export default function ActiveTicketsPage() {
                 style={showUnassigned ? { backgroundColor: '#0052CC' } : {}}
               >
                 Unassigned
+              </button>
+              <button
+                onClick={() => {
+                  setAssignedToMe(prev => !prev)
+                  if (!assignedToMe) setShowUnassigned(false)
+                }}
+                className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
+                  assignedToMe
+                    ? 'bg-primary text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+                style={assignedToMe ? { backgroundColor: '#0052CC' } : {}}
+              >
+                Assigned to Me
               </button>
             </div>
           </div>

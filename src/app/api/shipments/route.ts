@@ -50,7 +50,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    // Create server-side Supabase client
+    console.log('Starting shipment creation...')
     const cookieStore = await cookies()
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -58,7 +58,9 @@ export async function POST(request: Request) {
       {
         cookies: {
           get(name: string) {
-            return cookieStore.get(name)?.value
+            const cookie = cookieStore.get(name)
+            console.log('Cookie retrieved:', { name, value: cookie?.value })
+            return cookie?.value
           },
           set(name: string, value: string, options: any) {
             cookieStore.set({ name, value, ...options })
@@ -69,11 +71,13 @@ export async function POST(request: Request) {
         },
       }
     )
+    console.log('Supabase client created')
 
-    // Get authenticated user
     const { data: { user }, error: userError } = await supabase.auth.getUser()
+    console.log('Auth check result:', { user: user?.id, error: userError?.message })
     
     if (userError || !user) {
+      console.log('Authentication failed:', userError)
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -96,7 +100,7 @@ export async function POST(request: Request) {
 
     // Create shipment using the service with server context
     try {
-      const shipment = await shipmentService.createShipment({ supabase }, {
+      const shipment = await shipmentService.createShipment(supabase, {
         quote_id,
         type,
         origin,

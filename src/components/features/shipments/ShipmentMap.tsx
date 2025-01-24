@@ -101,8 +101,12 @@ export function ShipmentMap({ origin, destination, currentLocation }: ShipmentMa
   useEffect(() => {
     if (!map.current || !mapLoaded || !coordinates.origin || !coordinates.destination) return
 
+    const abortController = new AbortController()
+
     const updateMap = async () => {
       try {
+        if (abortController.signal.aborted) return
+
         // Clear existing markers
         markersRef.current.forEach(marker => marker.remove())
         markersRef.current = []
@@ -166,12 +170,18 @@ export function ShipmentMap({ origin, destination, currentLocation }: ShipmentMa
           })
         }
       } catch (err) {
-        console.error('Error updating map:', err)
-        setError('Failed to update map')
+        if (!abortController.signal.aborted) {
+          console.error('Error updating map:', err)
+          setError('Failed to update map')
+        }
       }
     }
 
     void updateMap()
+
+    return () => {
+      abortController.abort()
+    }
   }, [coordinates, mapLoaded])
 
   // Helper function to add a marker to the map

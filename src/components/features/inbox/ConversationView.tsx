@@ -282,9 +282,18 @@ export function ConversationView({
             <Switch
               id="internal-note"
               checked={isInternalNote}
-              onCheckedChange={onInternalNoteChange}
+              onCheckedChange={(checked) => {
+                if (onInternalNoteChange) {
+                  onInternalNoteChange(checked)
+                }
+              }}
             />
-            <Label htmlFor="internal-note" className="text-sm">Internal Note</Label>
+            <Label 
+              htmlFor="internal-note" 
+              className="text-sm cursor-pointer select-none"
+            >
+              Internal Note
+            </Label>
           </div>
         )}
         {attachments.length > 0 && (

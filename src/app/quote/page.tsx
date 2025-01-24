@@ -720,7 +720,8 @@ export default function QuotePage() {
         customer_id: user.id
       }
 
-      console.log('Sending shipment creation request:', shipmentData)
+      console.log('Creating shipment with data:', shipmentData)
+      console.log('User context:', { id: user.id, email: user.email })
 
       // Create the shipment
       const response = await fetch('/api/shipments', {
@@ -728,23 +729,27 @@ export default function QuotePage() {
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify(shipmentData)
       })
 
+      console.log('Shipment creation response status:', response.status)
+      const responseData = await response.json()
+      console.log('Shipment creation response:', responseData)
+
       if (!response.ok) {
-        const errorData = await response.json()
-        console.error('Failed to create shipment:', errorData)
-        throw new Error(errorData.error || 'Failed to create shipment')
+        console.error('Failed to create shipment:', responseData)
+        throw new Error(responseData.error || 'Failed to create shipment')
       }
 
-      const data = await response.json()
-
       // Update the ticket status
+      console.log('Updating ticket status for ID:', quoteId)
       const ticketResponse = await fetch(`/api/tickets/${quoteId}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify({
           status: 'in_progress',
           metadata: {
@@ -755,15 +760,19 @@ export default function QuotePage() {
         })
       })
 
+      console.log('Ticket update response status:', ticketResponse.status)
+      const ticketData = await ticketResponse.json()
+      console.log('Ticket update response:', ticketData)
+
       if (!ticketResponse.ok) {
-        const error = await ticketResponse.json()
-        throw new Error(error.message || 'Failed to update ticket')
+        console.error('Failed to update ticket:', ticketData)
+        throw new Error(ticketData.message || 'Failed to update ticket')
       }
 
       // Redirect to shipments page
       router.push('/shipments')
     } catch (error) {
-      console.error('Error creating shipment:', error)
+      console.error('Error in handleCreateShipment:', error)
       setError(error instanceof Error ? error.message : 'Failed to create shipment')
     }
   }

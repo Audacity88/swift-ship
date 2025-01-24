@@ -52,7 +52,7 @@ const navItems: NavItem[] = [
     icon: FileText,
     label: 'Manage Quotes',
     href: '/admin/quotes',
-    roles: [RoleType.AGENT, RoleType.ADMIN],
+    roles: [RoleType.AGENT],
   },
   {
     icon: BarChart2,

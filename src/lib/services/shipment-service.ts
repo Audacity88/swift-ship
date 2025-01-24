@@ -1,6 +1,7 @@
 import { getServerSupabase, type ServerContext } from '@/lib/supabase-client'
 import { Shipment, ShipmentEvent, ShipmentStatus, ShipmentType } from '@/types/shipment'
 import { generateTrackingNumber } from '@/lib/utils/tracking'
+import { SupabaseClient } from '@supabase/supabase-js'
 
 export const shipmentService = {
   async createFromQuote(context: ServerContext, quoteId: string, customerId: string): Promise<Shipment> {
@@ -31,7 +32,7 @@ export const shipmentService = {
           quote_id: quoteId,
           customer_id: customerId,
           type: quote.metadata.packageDetails.type,
-          status: 'quote_accepted',
+          status: 'shipment_created',
           origin: quote.metadata.destination.from,
           destination: quote.metadata.destination.to,
           scheduled_pickup: quote.metadata.destination.pickupDate,
@@ -46,8 +47,6 @@ export const shipmentService = {
             selected_service: quote.metadata.selectedService,
             quoted_price: quote.metadata.quotedPrice
           },
-          created_by: user.id,
-          updated_by: user.id,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
@@ -63,8 +62,7 @@ export const shipmentService = {
       const { error: updateError } = await supabase
         .from('shipments')
         .update({ 
-          status: 'quote_accepted',
-          updated_by: user.id,
+          status: 'shipment_created',
           updated_at: new Date().toISOString()
         })
         .eq('id', data.id)
@@ -353,7 +351,7 @@ export const shipmentService = {
     }
   },
 
-  async createShipment(context: ServerContext, data: {
+  async createShipment(supabase: SupabaseClient, data: {
     quote_id?: string
     type: ShipmentType
     origin: string
@@ -365,14 +363,28 @@ export const shipmentService = {
     status?: string
   }): Promise<Shipment> {
     try {
-      const supabase = context.supabase || getServerSupabase(context)
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      
+      if (userError || !user) {
+        throw new Error('Unauthorized')
+      }
+
+      // Convert empty strings to null for date fields
+      const scheduled_pickup = data.scheduled_pickup?.trim() || null
+      const estimated_delivery = data.estimated_delivery?.trim() || null
+
       const { data: shipment, error } = await supabase
         .from('shipments')
         .insert({
-          ...data,
-          status: data.status || 'quote_accepted',
+          quote_id: data.quote_id,
+          customer_id: data.customer_id,
+          type: data.type,
+          status: data.status || 'shipment_created',
+          origin: data.origin,
+          destination: data.destination,
+          scheduled_pickup,
+          estimated_delivery,
           tracking_number: generateTrackingNumber(),
-          metadata: {},
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
@@ -382,10 +394,6 @@ export const shipmentService = {
       if (error) {
         console.error('Failed to create shipment:', error)
         throw error
-      }
-
-      if (!shipment) {
-        throw new Error('Failed to create shipment - no record returned')
       }
 
       return shipment

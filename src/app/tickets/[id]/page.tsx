@@ -8,7 +8,7 @@ import {
   Tag, Link as LinkIcon, Users, ChevronDown, MessageSquare
 } from 'lucide-react'
 import { COLORS } from '@/lib/constants'
-import { TicketStatus, TicketPriority } from '@/types/ticket'
+import { TicketStatus, TicketPriority } from '@/types/enums'
 import type { Ticket, TicketComment, TicketType } from '@/types/ticket'
 import type { User } from '@/types/user'
 import type { QuoteRequest } from '@/types/quote'
@@ -33,6 +33,7 @@ import { TicketConversation } from '@/components/features/tickets/TicketConversa
 import { QuoteDetailView } from '@/components/features/quotes/QuoteDetailView'
 import type { ServerContext } from '@/lib/supabase-client'
 import { getServerSupabase } from '@/lib/supabase-client'
+import { statusWorkflow } from '@/lib/services'
 
 interface Tag {
   id: string
@@ -293,16 +294,40 @@ export default function TicketPage() {
     if (!ticket) return
     
     try {
-      const updatedTicket = await ticketService.updateTicket(undefined, ticketId, {
-        status: newStatus,
-        updatedAt: new Date().toISOString()
-      })
+      // Get the user's role first
+      const supabase = getServerSupabase()
+      const { data: agent } = await supabase
+        .from('agents')
+        .select('role')
+        .eq('id', currentUserId)
+        .single()
 
+      if (!agent) {
+        throw new Error('Could not find agent details')
+      }
+
+      await statusWorkflow.executeTransition(
+        undefined,
+        ticketId,
+        ticket.status as TicketStatus,  // Cast to ensure type compatibility
+        newStatus,
+        {
+          id: currentUserId!,
+          role: agent.role,
+          name: '',
+          email: ''
+        },
+        reason
+      )
+
+      // Refresh ticket data after status change
+      const updatedTicket = await ticketService.getTicket(undefined, ticketId)
       if (!updatedTicket) return
       
       setTicket(updatedTicket)
     } catch (error) {
       console.error('Failed to update status:', error)
+      throw error
     }
   }
 
