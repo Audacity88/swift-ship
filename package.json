@@ -55,7 +55,7 @@
     "lucide-react": "^0.473.0",
     "mapbox-gl": "^3.9.3",
     "maplibre-gl": "^4.7.1",
-    "next": "15.1.5",
+    "next": "^15.1.6",
     "next-auth": "^4.24.11",
     "picomatch": "^4.0.2",
     "radar-sdk-js": "^4.4.10",

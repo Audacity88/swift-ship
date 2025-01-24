@@ -16,9 +16,21 @@ const nextConfig = {
         port: '',
         pathname: '/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'api.dicebear.com',
+        pathname: '/7.x/**',
+      },
     ],
+    dangerouslyAllowSVG: true,
+    contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
   },
   experimental: {
+    turbo: {
+      rules: {
+        // Configure any specific rules for Turbopack
+      },
+    },
     serverActions: {
       enabled: true
     }
@@ -45,6 +57,9 @@ const nextConfig = {
     }
     return config
   },
+  // Add middleware configuration
+  skipMiddlewareUrlNormalize: true,
+  skipTrailingSlashRedirect: true,
 }
 
 module.exports = nextConfig 
