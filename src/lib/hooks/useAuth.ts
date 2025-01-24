@@ -3,10 +3,42 @@ import { useRouter } from 'next/navigation'
 import { createBrowserClient } from '@supabase/ssr'
 import { RoleType } from '@/types/role'
 
-// Create Supabase client outside the hook to prevent recreation
-const supabase = createBrowserClient(
+// Create a function to get a fresh client each time
+const getSupabaseClient = () => createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      flowType: 'pkce',
+      storageKey: 'sb-auth-token',
+      storage: {
+        getItem: (key) => {
+          try {
+            return window.localStorage.getItem(key)
+          } catch {
+            return null
+          }
+        },
+        setItem: (key, value) => {
+          try {
+            window.localStorage.setItem(key, value)
+          } catch {
+            // Ignore storage errors
+          }
+        },
+        removeItem: (key) => {
+          try {
+            window.localStorage.removeItem(key)
+          } catch {
+            // Ignore storage errors
+          }
+        }
+      }
+    }
+  }
 )
 
 // Debug logger with consistent format
@@ -24,11 +56,10 @@ const log = {
 
 export interface User {
   id: string
-  name: string
   email: string
-  role: RoleType
-  isAgent: boolean
-  avatar_url?: string | null
+  name: string
+  role: 'customer' | 'agent' | 'admin'
+  avatar?: string | null
 }
 
 export function useAuth() {
@@ -40,11 +71,26 @@ export function useAuth() {
   // Add signOut function
   const signOut = async () => {
     try {
+      const supabase = getSupabaseClient()
       const { error } = await supabase.auth.signOut()
       if (error) {
         log.error('Error signing out', error)
         return false
       }
+
+      // Clear local storage
+      try {
+        window.localStorage.clear()
+      } catch {
+        // Ignore storage errors
+      }
+
+      // Clear user state
+      setUser(null)
+      setLoading(false)
+
+      // Redirect to sign in
+      router.replace('/auth/signin')
       return true
     } catch (error) {
       log.error('Exception during sign out', error)
@@ -82,6 +128,7 @@ export function useAuth() {
       log.debug('Starting auth initialization...')
 
       try {
+        const supabase = getSupabaseClient()
         // Get authenticated user data
         const { data: { user: authUser }, error: userError } = await supabase.auth.getUser()
         log.debug('User check result', { 
@@ -125,14 +172,14 @@ export function useAuth() {
         if (customer && !customerError) {
           log.debug('Setting user as existing customer')
           if (!mounted) return
-          setUser({
+          const user: User = {
             id: customer.id,
-            name: customer.name || authUser.email?.split('@')[0] || 'Customer',
-            email: customer.email || authUser.email,
-            role: RoleType.CUSTOMER,
-            isAgent: false,
-            avatar_url: customer.avatar
-          })
+            email: customer.email,
+            name: customer.name,
+            role: 'customer',
+            avatar: customer.avatar
+          }
+          setUser(user)
           setLoading(false)
           setInitialized(true)
           return
@@ -153,14 +200,14 @@ export function useAuth() {
         if (agent && !agentError) {
           log.debug('Setting user as existing agent')
           if (!mounted) return
-          setUser({
+          const user: User = {
             id: agent.id,
-            name: agent.name || authUser.email?.split('@')[0] || 'Agent',
-            email: agent.email || authUser.email,
-            role: agent.role || RoleType.AGENT,
-            isAgent: true,
-            avatar_url: agent.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(agent.name.toLowerCase())}`
-          })
+            email: agent.email,
+            name: agent.name,
+            role: agent.role,
+            avatar: agent.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(agent.name.toLowerCase())}`
+          }
+          setUser(user)
           setLoading(false)
           setInitialized(true)
           return
@@ -184,14 +231,14 @@ export function useAuth() {
 
           if (!createError && newCustomer && mounted) {
             log.debug('Setting user as new customer')
-            setUser({
+            const user: User = {
               id: newCustomer.id,
-              name: newCustomer.name,
               email: newCustomer.email,
-              role: RoleType.CUSTOMER,
-              isAgent: false,
-              avatar_url: newCustomer.avatar
-            })
+              name: newCustomer.name,
+              role: 'customer',
+              avatar: newCustomer.avatar
+            }
+            setUser(user)
             setLoading(false)
             setInitialized(true)
             return
@@ -222,6 +269,7 @@ export function useAuth() {
   useEffect(() => {
     if (!initialized) return
 
+    const supabase = getSupabaseClient()
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       log.debug('Auth state changed', { event, hasSession: !!session })
       
@@ -254,20 +302,19 @@ export function useAuth() {
             .maybeSingle()
 
           if (agent && !agentError) {
-            const role = agent.role.toUpperCase() as keyof typeof RoleType
-            setUser({
+            const user: User = {
               id: agent.id,
-              name: agent.name || authUser.email?.split('@')[0] || 'Agent',
-              email: agent.email || authUser.email || '',
-              role: RoleType[role],
-              isAgent: true,
-              avatar_url: agent.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(agent.name.toLowerCase())}`
-            })
+              email: agent.email,
+              name: agent.name,
+              role: agent.role,
+              avatar: agent.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(agent.name.toLowerCase())}`
+            }
+            setUser(user)
             setLoading(false)
             return
           }
 
-          // If not an agent or if there was an error checking agents, check if user is a customer
+          // If not an agent, check if customer
           const { data: customer, error: customerError } = await supabase
             .from('customers')
             .select('*')
@@ -275,21 +322,24 @@ export function useAuth() {
             .maybeSingle()
 
           if (customer && !customerError) {
-            setUser({
+            const user: User = {
               id: customer.id,
-              name: customer.name || authUser.email?.split('@')[0] || 'Customer',
-              email: customer.email || authUser.email,
-              role: RoleType.CUSTOMER,
-              isAgent: false,
-              avatar_url: customer.avatar
-            })
-          } else {
-            setUser(null)
+              email: customer.email,
+              name: customer.name,
+              role: 'customer',
+              avatar: customer.avatar
+            }
+            setUser(user)
+            setLoading(false)
+            return
           }
-        } catch (error) {
-          log.error('Error handling auth state change', error)
+
+          // If we get here, something went wrong
           setUser(null)
-        } finally {
+          setLoading(false)
+        } catch (error) {
+          log.error('Error processing sign in', error)
+          setUser(null)
           setLoading(false)
         }
       }

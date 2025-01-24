@@ -36,7 +36,7 @@ interface Agent {
   email: string
   role: 'agent' | 'admin'
   team_id?: string
-  avatar_url?: string
+  avatar?: string
 }
 
 export function EditAgentDialog({ open, onOpenChange, agentId }: EditAgentDialogProps) {

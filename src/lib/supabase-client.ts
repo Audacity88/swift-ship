@@ -5,17 +5,11 @@ import type { Database } from '@/types/supabase'
 
 export type ServerContext = GetServerSidePropsContext | { req: NextApiRequest; res: NextApiResponse } | undefined
 
-let supabaseClient: ReturnType<typeof createServerClient> | ReturnType<typeof createBrowserClient> | null = null
-
+// Remove singleton pattern to ensure fresh client on each call
 export const getServerSupabase = (context?: ServerContext) => {
-  // Return existing client if already initialized
-  if (supabaseClient) {
-    return supabaseClient
-  }
-
   // If we're in a server context (have req/res), create a server client
   if (context?.req) {
-    supabaseClient = createServerClient(
+    return createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
@@ -39,7 +33,7 @@ export const getServerSupabase = (context?: ServerContext) => {
   } 
   // If we're in a browser context, create a browser client
   else if (typeof window !== 'undefined') {
-    supabaseClient = createBrowserClient<Database>(
+    return createBrowserClient<Database>(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
@@ -47,7 +41,31 @@ export const getServerSupabase = (context?: ServerContext) => {
           persistSession: true,
           autoRefreshToken: true,
           detectSessionInUrl: true,
-          flowType: 'pkce'
+          flowType: 'pkce',
+          storageKey: 'sb-auth-token',
+          storage: {
+            getItem: (key) => {
+              try {
+                return window.localStorage.getItem(key)
+              } catch {
+                return null
+              }
+            },
+            setItem: (key, value) => {
+              try {
+                window.localStorage.setItem(key, value)
+              } catch {
+                // Ignore storage errors
+              }
+            },
+            removeItem: (key) => {
+              try {
+                window.localStorage.removeItem(key)
+              } catch {
+                // Ignore storage errors
+              }
+            }
+          }
         },
         global: {
           headers: {
@@ -58,5 +76,5 @@ export const getServerSupabase = (context?: ServerContext) => {
     )
   }
 
-  return supabaseClient
+  throw new Error('No Supabase client available')
 } 

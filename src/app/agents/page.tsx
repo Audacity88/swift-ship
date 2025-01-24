@@ -13,7 +13,7 @@ interface Agent {
   name: string
   email: string
   role: 'agent' | 'admin'
-  avatar_url?: string
+  avatar?: string
 }
 
 export const dynamic = 'force-dynamic'
@@ -88,7 +88,7 @@ export default function AgentsPage() {
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full overflow-hidden bg-gray-100">
                         <Image
-                          src={agent.avatar_url || '/images/default-avatar.png'}
+                          src={agent.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(agent.name.toLowerCase())}`}
                           alt={agent.name}
                           width={32}
                           height={32}

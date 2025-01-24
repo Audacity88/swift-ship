@@ -6,11 +6,11 @@ import { cookies } from 'next/headers'
 
 // Validation schema for updating an agent
 const updateAgentSchema = z.object({
-  name: z.string().min(1).optional(),
-  email: z.string().email().optional(),
-  role: z.enum(['agent', 'admin']).optional(),
-  team_id: z.string().uuid().optional(),
-  avatar_url: z.string().url().optional()
+  name: z.string(),
+  email: z.string().email(),
+  role: z.enum(['agent', 'admin']),
+  team_id: z.string().optional(),
+  avatar: z.string().url().optional()
 })
 
 export async function PUT(
@@ -131,7 +131,7 @@ export async function PUT(
       if (validatedData.name) updateFields.name = validatedData.name
       if (validatedData.email) updateFields.email = validatedData.email
       if (validatedData.role) updateFields.role = validatedData.role
-      if (validatedData.avatar_url) updateFields.avatar = validatedData.avatar_url
+      if (validatedData.avatar) updateFields.avatar = validatedData.avatar
 
       const { data: agent, error: updateAgentError } = await supabase
         .from('agents')

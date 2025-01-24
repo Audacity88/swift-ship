@@ -83,7 +83,16 @@ export function Header() {
       const success = await signOut()
       if (!success) {
         console.error('Failed to sign out')
+        return
       }
+
+      // Clear any local state/caches
+      setSearchQuery('')
+      setSearchResults([])
+      setIsSearching(false)
+      setShowProfileMenu(false)
+      
+      // The auth hook will handle the redirect
     } catch (error) {
       console.error('Error signing out:', error)
     }
@@ -201,13 +210,11 @@ export function Header() {
           >
             <div className="relative w-8 h-8 rounded-full overflow-hidden bg-gray-100">
               <Image
-                src={user?.avatar_url || `/images/default-avatar.png`}
-                alt={user?.name || "Profile"}
+                className="h-8 w-8 rounded-full"
                 width={32}
                 height={32}
-                className="object-cover"
-                priority
-                unoptimized
+                src={user?.avatar || `/images/default-avatar.png`}
+                alt={`${user?.name}'s profile picture`}
               />
             </div>
             <ChevronDown className={`w-4 h-4 text-gray-600 transition-transform ${showProfileMenu ? 'rotate-180' : ''}`} />

@@ -11,11 +11,11 @@ type AgentRole = {
 
 // Validation schema for creating/updating an agent
 const agentSchema = z.object({
-  name: z.string().min(1),
+  name: z.string(),
   email: z.string().email(),
   role: z.enum(['agent', 'admin']),
-  team_id: z.string().uuid().optional(),
-  avatar_url: z.string().url().optional()
+  team_id: z.string().optional(),
+  avatar: z.string().url().optional()
 })
 
 export async function POST(request: NextRequest) {
@@ -104,12 +104,19 @@ export async function POST(request: NextRequest) {
         process.env.SUPABASE_SERVICE_ROLE_KEY!
       )
 
-      // Create auth user with password reset required
-      const { data: newAuthUser, error: createAuthError } = await adminClient.auth.admin.createUser({
+      console.log('[CreateAgent] Inviting user:', {
         email: validatedData.email,
-        email_confirm: true,
-        password: Math.random().toString(36).slice(-12) + Math.random().toString(36).slice(-12),
-        user_metadata: {
+        name: validatedData.name,
+        role: validatedData.role
+      })
+
+      // Send invite email which will create the user
+      const inviteUrl = `${process.env.NEXT_PUBLIC_APP_URL}/auth/update-password`
+      console.log('[CreateAgent] Sending invite email with redirect URL:', inviteUrl)
+
+      const { data: inviteData, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(validatedData.email, {
+        redirectTo: inviteUrl,
+        data: {
           name: validatedData.name,
           role: validatedData.role.toUpperCase(),
           isAgent: true,
@@ -117,26 +124,33 @@ export async function POST(request: NextRequest) {
         }
       })
 
-      if (createAuthError) {
-        console.error('Create auth user error:', createAuthError)
+      if (inviteError) {
+        console.error('[CreateAgent] Error sending invite email:', inviteError)
         return NextResponse.json(
-          { error: `Failed to create user account: ${createAuthError.message}` },
+          { error: `Failed to invite user: ${inviteError.message}` },
           { status: 500 }
         )
       }
 
-      if (!newAuthUser?.user) {
+      if (!inviteData?.user) {
+        console.error('[CreateAgent] No user returned from invite')
         return NextResponse.json(
-          { error: 'Failed to create user account: No user returned' },
+          { error: 'Failed to invite user: No user returned' },
           { status: 500 }
         )
       }
+
+      console.log('[CreateAgent] User invited successfully:', {
+        userId: inviteData.user.id,
+        metadata: inviteData.user.user_metadata
+      })
 
       // Create agent record
+      console.log('[CreateAgent] Creating agent record')
       const { data: agent, error: createAgentError } = await adminClient
         .from('agents')
         .insert({
-          id: newAuthUser.user.id,
+          id: inviteData.user.id,
           name: validatedData.name,
           email: validatedData.email,
           role: validatedData.role,
@@ -148,25 +162,16 @@ export async function POST(request: NextRequest) {
         .single()
 
       if (createAgentError) {
-        console.error('Create agent record error:', createAgentError)
+        console.error('[CreateAgent] Create agent record error:', createAgentError)
         // Cleanup: Delete the auth user if agent creation fails
-        await adminClient.auth.admin.deleteUser(newAuthUser.user.id)
+        await adminClient.auth.admin.deleteUser(inviteData.user.id)
         return NextResponse.json(
           { error: `Failed to create agent record: ${createAgentError.message}` },
           { status: 500 }
         )
       }
 
-      // Send password reset email
-      const { error: resetError } = await adminClient.auth.resetPasswordForEmail(validatedData.email, {
-        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback?type=recovery&next=/auth/update-password`
-      })
-
-      if (resetError) {
-        console.error('Password reset email error:', resetError)
-        // Don't return error as the agent was created successfully
-      }
-
+      console.log('[CreateAgent] Agent record created:', agent)
       return NextResponse.json(agent)
     } catch (error) {
       if (error instanceof z.ZodError) {
