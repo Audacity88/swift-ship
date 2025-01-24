@@ -30,7 +30,7 @@ const navItems: NavItem[] = [
     icon: Quote, 
     label: 'Quote', 
     href: ROUTES.quote,
-    roles: [RoleType.CUSTOMER, RoleType.AGENT, RoleType.SUPERVISOR]
+    roles: [RoleType.CUSTOMER, RoleType.SUPERVISOR]
   },
   { 
     icon: Quote,
@@ -110,7 +110,7 @@ const quickAccessItems: NavItem[] = [
     icon: ShoppingCart, 
     label: 'Upgrade', 
     href: ROUTES.upgrade,
-    roles: [RoleType.CUSTOMER, RoleType.AGENT, RoleType.SUPERVISOR]
+    roles: [RoleType.CUSTOMER, RoleType.SUPERVISOR]
   },
   { 
     icon: Settings, 

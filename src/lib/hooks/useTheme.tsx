@@ -1,5 +1,6 @@
 'use client'
 
+import React, { useEffect, type PropsWithChildren } from 'react'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
@@ -22,4 +23,18 @@ export const useTheme = create<ThemeStore>()(
       name: 'theme-storage',
     }
   )
-) 
+)
+
+export function ThemeProvider({ children }: PropsWithChildren) {
+  const { theme } = useTheme()
+
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark')
+    } else {
+      document.documentElement.classList.remove('dark')
+    }
+  }, [theme])
+
+  return <>{children}</>
+} 

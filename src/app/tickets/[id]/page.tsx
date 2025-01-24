@@ -405,37 +405,41 @@ export default function TicketPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-4rem)]">
+    <div className="h-full bg-white dark:bg-gray-900">
       {/* Main Ticket Content */}
-      <div className="flex-1 overflow-auto border-r border-gray-200">
+      <div className="max-w-4xl mx-auto">
         <div className="p-6">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h1 className="text-2xl font-semibold text-gray-900">
+              <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">
                 {ticket.title}
               </h1>
-              <div className="mt-1 text-sm text-gray-500">
+              <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                 Created {new Date(ticket.createdAt).toLocaleString()}
               </div>
               {/* Add SLA Status Display */}
               {slaStatus && (
                 <div className="mt-2 flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-gray-500" />
+                  <Clock className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                   <div className="text-sm">
-                    <span className={`font-medium ${slaStatus.isBreached ? 'text-red-600' : 'text-green-600'}`}>
+                    <span className={`font-medium ${
+                      slaStatus.isBreached 
+                        ? 'text-red-600 dark:text-red-400' 
+                        : 'text-green-600 dark:text-green-400'
+                    }`}>
                       {slaStatus.name}
                     </span>
                     {slaStatus.isPaused ? (
                       <button
                         onClick={handleResumeSla}
-                        className="ml-2 text-blue-600 hover:text-blue-800"
+                        className="ml-2 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
                       >
                         Resume
                       </button>
                     ) : (
                       <button
                         onClick={() => handlePauseSla('Manual pause')}
-                        className="ml-2 text-blue-600 hover:text-blue-800"
+                        className="ml-2 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
                       >
                         Pause
                       </button>
@@ -470,152 +474,6 @@ export default function TicketPage() {
             ticketId={ticket.id}
             currentUserId={currentUserId || ''}
             isAgent={true}
-          />
-        </div>
-      </div>
-
-      {/* Ticket Properties Sidebar */}
-      <div className="w-80 overflow-auto bg-gray-50 p-6 space-y-6">
-        {/* Requester */}
-        <div>
-          <h3 className="text-sm font-medium text-gray-700 mb-2">Requester</h3>
-          <div className="flex items-center gap-3 p-2 bg-white rounded-lg border border-gray-200">
-            <div className="relative w-8 h-8 rounded-full overflow-hidden">
-              <Image
-                src="/images/default-avatar.png"
-                alt="Profile"
-                width={32}
-                height={32}
-                className="object-cover"
-              />
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-medium">{ticket.customer.name}</p>
-              <p className="text-xs text-gray-500">{ticket.customer.email}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Assignee */}
-        <div>
-          <h3 className="text-sm font-medium text-gray-700 mb-2">Assignee</h3>
-          <button className="flex items-center gap-3 w-full p-2 bg-white rounded-lg border border-gray-200 hover:bg-gray-50">
-            <div className="relative w-8 h-8 rounded-full overflow-hidden">
-              <Image
-                src="/images/default-avatar.png"
-                alt="Profile"
-                width={32}
-                height={32}
-                className="object-cover"
-              />
-            </div>
-            <span className="flex-1 text-left text-sm">
-              {ticket.assignee?.name || 'Unassigned'}
-            </span>
-            <ChevronDown className="w-4 h-4 text-gray-400" />
-          </button>
-        </div>
-
-        {/* Type */}
-        <div className="relative">
-          <h3 className="text-sm font-medium text-gray-700 mb-2">Type</h3>
-          <button
-            onClick={() => setShowTypeDropdown(true)}
-            className="flex items-center gap-3 w-full p-2 bg-white rounded-lg border border-gray-200 hover:bg-gray-50"
-          >
-            <AlertCircle className="w-5 h-5 text-[#DE350B]" />
-            <span className="flex-1 text-left text-sm">{selectedType}</span>
-            <ChevronDown className="w-4 h-4 text-gray-400" />
-          </button>
-          <TypeDropdown
-            show={showTypeDropdown}
-            onClose={() => setShowTypeDropdown(false)}
-            selectedType={selectedType}
-            onSelect={setSelectedType}
-          />
-        </div>
-
-        {/* Priority */}
-        <div className="relative">
-          <h3 className="text-sm font-medium text-gray-700 mb-2">Priority</h3>
-          <button
-            onClick={() => setShowPriorityDropdown(true)}
-            className="flex items-center gap-3 w-full p-2 bg-white rounded-lg border border-gray-200 hover:bg-gray-50"
-          >
-            <div className="w-2 h-2 rounded-full bg-yellow-500" />
-            <span className="flex-1 text-left text-sm">{selectedPriority}</span>
-            <ChevronDown className="w-4 h-4 text-gray-400" />
-          </button>
-          <PriorityDropdown
-            show={showPriorityDropdown}
-            onClose={() => setShowPriorityDropdown(false)}
-            selectedPriority={selectedPriority}
-            onSelect={(priority) => setSelectedPriority(priority as TicketPriority)}
-          />
-        </div>
-
-        {/* Tags */}
-        <div className="relative">
-          <h3 className="text-sm font-medium text-gray-700 mb-2">Tags</h3>
-          <button
-            onClick={() => setShowTagsDropdown(true)}
-            className="flex items-center gap-2 w-full p-2 bg-white rounded-lg border border-gray-200 hover:bg-gray-50"
-          >
-            <Tag className="w-4 h-4 text-gray-400" />
-            <div className="flex-1 flex items-center gap-2">
-              {tags.map(tag => (
-                <span 
-                  key={tag.id} 
-                  className="px-2 py-1 text-xs rounded"
-                  style={{ 
-                    backgroundColor: `${tag.color}20`,
-                    color: tag.color
-                  }}
-                >
-                  {tag.name}
-                </span>
-              ))}
-            </div>
-            <ChevronDown className="w-4 h-4 text-gray-400" />
-          </button>
-          <TagsDropdown
-            show={showTagsDropdown}
-            onClose={() => setShowTagsDropdown(false)}
-            selectedTags={tags.map(t => t.name)}
-            onAdd={handleAddTag}
-            onRemove={handleRemoveTag}
-          />
-        </div>
-
-        {/* Linked Problem */}
-        <div>
-          <h3 className="text-sm font-medium text-gray-700 mb-2">Linked Problem</h3>
-          <button className="flex items-center gap-2 w-full p-2 bg-white rounded-lg border border-gray-200 hover:bg-gray-50">
-            <LinkIcon className="w-4 h-4 text-gray-400" />
-            <span className="flex-1 text-left text-sm text-gray-500">None</span>
-            <ChevronDown className="w-4 h-4 text-gray-400" />
-          </button>
-        </div>
-
-        {/* Followers */}
-        <div className="relative">
-          <h3 className="text-sm font-medium text-gray-700 mb-2">Followers</h3>
-          <button
-            onClick={() => setShowFollowersDropdown(true)}
-            className="flex items-center gap-2 w-full p-2 bg-white rounded-lg border border-gray-200 hover:bg-gray-50"
-          >
-            <Users className="w-4 h-4 text-gray-400" />
-            <span className="flex-1 text-left text-sm">
-              {followers.length} {followers.length === 1 ? 'follower' : 'followers'}
-            </span>
-            <ChevronDown className="w-4 h-4 text-gray-400" />
-          </button>
-          <FollowersDropdown
-            show={showFollowersDropdown}
-            onClose={() => setShowFollowersDropdown(false)}
-            followers={followers}
-            onAdd={handleAddFollower}
-            onRemove={handleRemoveFollower}
           />
         </div>
       </div>

@@ -52,7 +52,18 @@ export default function ShipmentsPage() {
       
       try {
         setIsLoading(true)
-        const fetchedShipments = await shipmentService.getCustomerShipments(undefined, user.id)
+        let fetchedShipments
+        
+        if (user.role === 'agent') {
+          // Agents can see all shipments
+          const result = await shipmentService.listShipments(undefined, {
+            limit: 100 // Adjust this number based on your needs
+          })
+          fetchedShipments = result.data
+        } else {
+          // Customers only see their own shipments
+          fetchedShipments = await shipmentService.getCustomerShipments(undefined, user.id)
+        }
         
         // Get events for each shipment
         const shipmentsWithEvents = await Promise.all(
@@ -98,7 +109,9 @@ export default function ShipmentsPage() {
   return (
     <div className="max-w-4xl mx-auto p-6">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-semibold text-gray-900">My Shipments</h1>
+        <h1 className="text-2xl font-semibold text-gray-900">
+          {user?.role === 'agent' ? 'All Shipments' : 'My Shipments'}
+        </h1>
       </div>
 
       <div className="space-y-6">

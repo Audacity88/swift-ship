@@ -62,15 +62,17 @@ export default function InboxPage() {
       // Get all tickets with their messages
       const tickets = await conversationService.getTicketsWithMessages(undefined, user.id)
 
-      // Map the tickets to the format we need
-      const mappedTickets = tickets.map((ticket: Ticket) => ({
-        id: ticket.id,
-        subject: ticket.title,
-        status: ticket.status,
-        createdAt: ticket.created_at,
-        customer: ticket.customer,
-        latestMessage: ticket.messages[0]
-      }))
+      // Map the tickets to the format we need and sort by most recent
+      const mappedTickets = tickets
+        .map((ticket: Ticket) => ({
+          id: ticket.id,
+          subject: ticket.title,
+          status: ticket.status,
+          createdAt: ticket.created_at,
+          customer: ticket.customer,
+          latestMessage: ticket.messages[0]
+        }))
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
 
       setTickets(mappedTickets)
     } catch (err: any) {
