@@ -22,6 +22,53 @@ interface AgentContext {
   metadata?: Record<string, any>;
 }
 
+interface SearchResult {
+  title: string;
+  content: string;
+  url?: string;
+  score: number;
+}
+
+async function searchSimilarDocuments(
+  openai: OpenAI,
+  supabaseClient: any,
+  query: string,
+  matchThreshold: number = 0.7,
+  matchCount: number = 3
+): Promise<SearchResult[]> {
+  try {
+    // Get embedding for the query
+    const embeddingResponse = await openai.embeddings.create({
+      model: 'text-embedding-3-small',
+      input: query,
+    });
+
+    const embedding = embeddingResponse.data[0].embedding;
+
+    // Search for similar content in Supabase
+    const { data: matches, error } = await supabaseClient.rpc(
+      'match_embeddings',
+      {
+        query_embedding: embedding,
+        match_threshold: matchThreshold,
+        match_count: matchCount
+      }
+    );
+
+    if (error) throw error;
+
+    return matches.map((match: any) => ({
+      title: match.title,
+      content: match.content,
+      url: match.url,
+      score: match.similarity
+    }));
+  } catch (error) {
+    console.error('Error searching documents:', error);
+    return [];
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -96,27 +143,9 @@ serve(async (req) => {
     )
 
     try {
-      // Generate embedding for routing
-      const embeddingResponse = await openai.embeddings.create({
-        model: 'text-embedding-3-small',
-        input: message,
-      })
-      const embedding = embeddingResponse.data[0].embedding
-
-      // Search for similar content
-      const { data: matches, error: searchError } = await supabaseClient.rpc(
-        'match_embeddings',
-        {
-          query_embedding: embedding,
-          match_threshold: 0.7,
-          match_count: 3,
-        }
-      )
-
-      if (searchError) {
-        console.error('Search error:', searchError)
-        throw searchError
-      }
+      // Search for relevant documents
+      const similarDocs = await searchSimilarDocuments(openai, supabaseClient, message);
+      const context = similarDocs.map(doc => `Title: ${doc.title}\nContent: ${doc.content}`).join('\n\n');
 
       // Determine agent type based on content
       const routingResponse = await openai.chat.completions.create({
@@ -134,9 +163,7 @@ serve(async (req) => {
           },
           {
             role: 'user',
-            content: `Query: ${message}\n\nSimilar content: ${matches
-              ?.map((m) => m.content)
-              .join('\n') || 'No similar content found'}`,
+            content: `Query: ${message}\n\nSimilar content: ${context}`,
           },
         ],
         temperature: 0,
@@ -144,14 +171,19 @@ serve(async (req) => {
 
       const agentType = routingResponse.choices[0].message?.content?.trim() || 'DOCS_AGENT'
 
-      // Get agent response
+      // Get agent response with context
       const agentResponse = await openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
         messages: [
           {
             role: 'system',
             content: `You are a ${agentType.toLowerCase().replace('_', ' ')}. 
-            Context from similar queries:\n${matches?.map((m) => m.content).join('\n') || 'No context available'}`,
+            Use the following context from our knowledge base to help answer the user's question:
+            ${context}
+            
+            If you find relevant information in the context, use it to provide accurate answers.
+            If you need to reference documentation, include the relevant links.
+            If you cannot find relevant information in the context, provide a general response based on your knowledge.`,
           },
           ...(Array.isArray(conversationHistory) ? conversationHistory : []),
           { role: 'user', content: message },
@@ -163,6 +195,11 @@ serve(async (req) => {
         metadata: {
           agent: agentType,
           timestamp: Date.now(),
+          context: similarDocs.map(doc => ({
+            title: doc.title,
+            url: doc.url,
+            score: doc.score,
+          })),
         },
       }
 

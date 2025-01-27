@@ -55,6 +55,11 @@ const navItems: NavItem[] = [
     roles: [RoleType.CUSTOMER],
   },
   {
+    icon: MessageSquare,
+    label: 'AI Support',
+    href: '/ai-support',
+  },
+  {
     icon: FileText,
     label: 'Manage Quotes',
     href: '/admin/quotes',
