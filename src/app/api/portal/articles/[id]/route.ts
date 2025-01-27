@@ -59,6 +59,23 @@ export async function GET(
       )
     }
 
+    // Format the content with proper HTML structure
+    if (article.content) {
+      const formattedContent = article.content
+        .replace(/^# (.*$)/gm, '<h1>$1</h1>')  // Main headings
+        .replace(/^## (.*$)/gm, '<h2>$1</h2>')  // Sub headings
+        .replace(/^### (.*$)/gm, '<h3>$1</h3>')  // Sub-sub headings
+        .replace(/^\d\. (.+)$/gm, (match, p1) => `<ol><li>${p1}</li></ol>`)  // Numbered lists
+        .replace(/^- (.+)$/gm, (match, p1) => `<ul><li>${p1}</li></ul>`)  // Bullet points
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')  // Bold text
+        .replace(/\*([^*]+)\*/g, '<em>$1</em>')  // Italic text
+        .replace(/\n\n/g, '</p><p>')  // Paragraphs
+        .replace(/^(?!<[ho]|<[up])/gm, '<p>$&')  // Wrap remaining text in paragraphs
+        .replace(/<\/([uo])l><\1l>/g, '')  // Combine adjacent list items
+
+      article.content = formattedContent
+    }
+
     return NextResponse.json(article)
   } catch (error) {
     console.error('[Article API] Unexpected error:', error)

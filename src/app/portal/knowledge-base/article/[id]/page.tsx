@@ -7,6 +7,10 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ChevronLeft, ThumbsUp, ThumbsDown, Tag } from 'lucide-react'
 import { toast } from 'sonner'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import remarkBreaks from 'remark-breaks'
+import rehypeRaw from 'rehype-raw'
 
 interface Article {
   id: string
@@ -133,21 +137,44 @@ export default function ArticlePage() {
           <ChevronLeft className="mr-2 h-4 w-4" />
           Back to Articles
         </Button>
-        <h1 className="text-2xl font-bold mb-2">{article.title}</h1>
-        <div className="flex flex-wrap items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mb-4">
-          <span>Category: {article.category.name}</span>
+        <h1 className="text-3xl font-bold mb-4">{article.title}</h1>
+        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground mb-6">
+          <span className="flex items-center gap-2">
+            <Tag className="h-4 w-4" />
+            {article.category.name}
+          </span>
           <span className="mx-2">•</span>
-          <span>Last updated: {new Date(article.updated_at).toLocaleDateString()}</span>
+          <span>Updated {new Date(article.updated_at).toLocaleDateString()}</span>
           <span className="mx-2">•</span>
-          <span>Author: {article.author.name}</span>
+          <span>By {article.author.name}</span>
         </div>
       </div>
 
-      <Card className="p-6 mb-8">
-        <div 
-          className="prose dark:prose-invert max-w-none"
-          dangerouslySetInnerHTML={{ __html: article.content }}
-        />
+      <Card className="p-8 mb-8">
+        <div className="prose prose-lg dark:prose-invert max-w-none
+            prose-headings:font-bold prose-h1:text-3xl prose-h2:text-2xl prose-h3:text-xl
+            prose-p:text-base prose-p:leading-7
+            prose-a:text-primary hover:prose-a:underline
+            prose-strong:font-semibold
+            prose-ul:list-disc prose-ol:list-decimal
+            prose-blockquote:border-l-4 prose-blockquote:border-muted
+            prose-pre:bg-muted prose-pre:p-4 prose-pre:rounded-lg">
+          <ReactMarkdown 
+            remarkPlugins={[remarkGfm, remarkBreaks]}
+            rehypePlugins={[rehypeRaw]}
+            components={{
+              h1: ({node, ...props}) => <h1 className="text-3xl font-bold mb-4" {...props} />,
+              h2: ({node, ...props}) => <h2 className="text-2xl font-bold mt-8 mb-4" {...props} />,
+              h3: ({node, ...props}) => <h3 className="text-xl font-bold mt-6 mb-3" {...props} />,
+              ul: ({node, ...props}) => <ul className="list-disc pl-6 mb-4" {...props} />,
+              ol: ({node, ...props}) => <ol className="list-decimal pl-6 mb-4" {...props} />,
+              li: ({node, ...props}) => <li className="mb-1" {...props} />,
+              p: ({node, ...props}) => <p className="mb-4" {...props} />
+            }}
+          >
+            {article.content}
+          </ReactMarkdown>
+        </div>
       </Card>
 
       <div className="border-t dark:border-gray-800 pt-6">
@@ -155,7 +182,7 @@ export default function ArticlePage() {
         <div className="flex items-center gap-4">
           <Button
             variant="outline"
-            className="flex items-center gap-2"
+            className="flex items-center gap-2 min-w-[100px]"
             onClick={() => handleVote(true)}
             disabled={hasVoted}
           >
@@ -164,7 +191,7 @@ export default function ArticlePage() {
           </Button>
           <Button
             variant="outline"
-            className="flex items-center gap-2"
+            className="flex items-center gap-2 min-w-[100px]"
             onClick={() => handleVote(false)}
             disabled={hasVoted}
           >
@@ -173,10 +200,10 @@ export default function ArticlePage() {
           </Button>
         </div>
 
-        <div className="mt-6">
-          <p className="text-sm text-gray-500 dark:text-gray-400">
+        <div className="mt-8 p-4 bg-muted rounded-lg">
+          <p className="text-sm text-muted-foreground">
             Still need help?{' '}
-            <Link href="/portal/contact" className="text-primary hover:underline">
+            <Link href="/portal/contact" className="text-primary hover:underline font-medium">
               Contact our support team
             </Link>
           </p>
