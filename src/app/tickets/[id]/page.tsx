@@ -35,6 +35,7 @@ import type { ServerContext } from '@/lib/supabase-client'
 import { getServerSupabase } from '@/lib/supabase-client'
 import { statusWorkflow } from '@/lib/services'
 import { tagService } from '@/lib/services'
+import { cn } from '@/lib/utils'
 
 interface Tag {
   id: string
@@ -59,6 +60,7 @@ export default function TicketPage() {
   const [slaStatus, setSlaStatus] = useState<any>(null)
   const [isQuoteTicket, setIsQuoteTicket] = useState(false)
   const [quoteData, setQuoteData] = useState<QuoteRequest | null>(null)
+  const [isCustomer, setIsCustomer] = useState(false)
 
   // Dropdown visibility states
   const [showTypeDropdown, setShowTypeDropdown] = useState(false)
@@ -80,8 +82,18 @@ export default function TicketPage() {
           return
         }
 
+        // Check if user is a customer
+        const { data: customer } = await supabase
+          .from('customers')
+          .select('id')
+          .eq('id', user.id)
+          .single()
+
+        const isCustomer = !!customer
+
         setIsAuthenticated(true)
         setCurrentUserId(user.id)
+        setIsCustomer(isCustomer)
       } catch (error) {
         console.error('Auth error:', error)
         setError('Authentication failed')
@@ -170,7 +182,7 @@ export default function TicketPage() {
     if (isAuthenticated === true) {
       void fetchTicket()
     }
-  }, [ticketId, isAuthenticated, tags])
+  }, [isAuthenticated, ticketId])
 
   // Add SLA status fetch
   useEffect(() => {
@@ -451,66 +463,124 @@ export default function TicketPage() {
   return (
     <div className="h-full bg-white dark:bg-gray-900">
       {/* Main Ticket Content */}
-      <div className="max-w-4xl mx-auto">
+      <div className="mx-auto max-w-3xl">
         <div className="p-6">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">
-                {ticket.title}
-              </h1>
-              <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                Created {new Date(ticket.createdAt).toLocaleString()}
-              </div>
-              {/* Add SLA Status Display */}
-              {slaStatus && (
-                <div className="mt-2 flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-                  <div className="text-sm">
-                    <span className={`font-medium ${
-                      slaStatus.isBreached 
-                        ? 'text-red-600 dark:text-red-400' 
-                        : 'text-green-600 dark:text-green-400'
-                    }`}>
-                      {slaStatus.name}
-                    </span>
-                    {slaStatus.isPaused ? (
-                      <button
-                        onClick={handleResumeSla}
-                        className="ml-2 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-                      >
-                        Resume
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => handlePauseSla('Manual pause')}
-                        className="ml-2 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-                      >
-                        Pause
-                      </button>
-                    )}
+          {isCustomer ? (
+            <>
+              {/* Combined header for customers */}
+              <div className="mb-6">
+                <div className="flex items-center justify-between">
+                  <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">
+                    {ticket.title}
+                  </h1>
+                  <div className="flex items-center gap-2">
+                    <div className="text-sm text-muted-foreground">
+                      #{ticketId?.slice(0, 8)}
+                    </div>
+                    <div className={cn(
+                      "px-2 py-1 text-sm rounded-full",
+                      ticket.status === 'open' 
+                        ? "bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-100"
+                        : "bg-muted text-muted-foreground"
+                    )}>
+                      {ticket.status}
+                    </div>
                   </div>
                 </div>
-              )}
-            </div>
-            <div className="flex items-center gap-4">
-              <StatusTransition
-                ticketId={ticket.id}
-                currentStatus={ticket.status}
-                onStatusChange={handleStatusChange}
-              />
-            </div>
-          </div>
+                <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  Created {new Date(ticket.createdAt).toLocaleString()}
+                </div>
+              </div>
 
-          {/* Quote Detail View */}
-          {isQuoteTicket && quoteData && (
-            <div className="mb-6">
-              <QuoteDetailView
-                quote={quoteData}
-                onSubmitQuote={handleSubmitQuote}
-                onCreateShipment={handleCreateShipment}
-                mode={quoteData.status === 'open' ? 'pending' : 'quoted'}
-              />
-            </div>
+              {/* Conversation View - only component shown to customers */}
+              <div className="mt-6">
+                <TicketConversation
+                  ticketId={ticket.id}
+                  currentUserId={currentUserId!}
+                  isAgent={false}
+                  className="h-[calc(100vh-12rem)]"
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Full agent view with all components */}
+              <div className="mb-6">
+                <div className="flex items-center justify-between">
+                  <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">
+                    {ticket.title}
+                  </h1>
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2">
+                      <div className="text-sm text-muted-foreground">
+                        #{ticketId?.slice(0, 8)}
+                      </div>
+                      <StatusTransition
+                        ticketId={ticket.id}
+                        currentStatus={ticket.status}
+                        onStatusChange={handleStatusChange}
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  Created {new Date(ticket.createdAt).toLocaleString()}
+                </div>
+                {/* SLA Status Display - only for agents */}
+                {slaStatus && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className={`font-medium ${
+                        slaStatus.isBreached 
+                          ? 'text-red-600 dark:text-red-400' 
+                          : 'text-green-600 dark:text-green-400'
+                      }`}>
+                        {slaStatus.name}
+                      </span>
+                      •
+                      {slaStatus.isPaused ? (
+                        <button
+                          onClick={handleResumeSla}
+                          className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                        >
+                          Resume
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handlePauseSla('Manual pause')}
+                          className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                        >
+                          Pause
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Quote Detail View - only for agents */}
+              {isQuoteTicket && quoteData && (
+                <div className="mb-6">
+                  <QuoteDetailView
+                    quote={quoteData}
+                    onSubmitQuote={handleSubmitQuote}
+                    onCreateShipment={handleCreateShipment}
+                    mode={quoteData.status === 'open' ? 'pending' : 'quoted'}
+                  />
+                </div>
+              )}
+
+              {/* Conversation View - for agents */}
+              <div className="mt-6">
+                <TicketConversation
+                  ticketId={ticket.id}
+                  currentUserId={currentUserId!}
+                  isAgent={true}
+                  className="h-[calc(100vh-12rem)]"
+                />
+              </div>
+            </>
           )}
         </div>
       </div>

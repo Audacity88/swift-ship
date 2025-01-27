@@ -42,7 +42,7 @@ export default function NewTicketPage() {
 
       await createTicket({ supabase }, ticketData)
       toast.success('Your support request has been submitted successfully! We will review it and get back to you soon.')
-      router.push('/portal') // Redirect to portal home/inbox instead of ticket details
+      router.push('/support') // Redirect to support page instead of portal
     } catch (error) {
       console.error('Error creating ticket:', error)
       toast.error('Failed to submit support request. Please try again.')

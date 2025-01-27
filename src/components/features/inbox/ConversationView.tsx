@@ -18,6 +18,7 @@ interface ConversationViewProps {
   onInternalNoteChange?: (value: boolean) => void
   title?: string
   status?: string
+  hideHeader?: boolean
 }
 
 const SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000000'
@@ -44,7 +45,8 @@ export function ConversationView({
   isAgent = false,
   onInternalNoteChange,
   title = 'Untitled Conversation',
-  status = 'open'
+  status = 'open',
+  hideHeader = false
 }: ConversationViewProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -198,21 +200,23 @@ export function ConversationView({
 
   return (
     <div className="flex flex-col h-full">
-      {/* Conversation Header */}
-      <div className={cn(
-        "px-6 py-4",
-        "border-b border-border",
-        "bg-card"
-      )}>
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold">{title}</h2>
-            <p className="text-sm text-muted-foreground">
-              #{ticketId?.slice(0, 8)} • {status}
-            </p>
+      {/* Conversation Header - only show if not hidden */}
+      {!hideHeader && (
+        <div className={cn(
+          "px-6 py-4",
+          "border-b border-border",
+          "bg-card"
+        )}>
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold">{title}</h2>
+              <p className="text-sm text-muted-foreground">
+                #{ticketId?.slice(0, 8)} • {status}
+              </p>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Messages Thread */}
       <div className="flex-1 p-6 overflow-auto space-y-4">
