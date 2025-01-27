@@ -35,7 +35,7 @@ export default function TicketTagsPage() {
           throw new Error(error.error || 'Failed to fetch ticket tags')
         }
         const data = await response.json()
-        setSelectedTags((data.ticket?.metadata?.tags || []))
+        setSelectedTags((data.ticket?.tags || []))
       } catch (error) {
         console.error('Failed to load ticket tags:', error)
       }
@@ -79,10 +79,14 @@ export default function TicketTagsPage() {
         ? selectedTags.filter(t => t.id !== tag.id)
         : [...selectedTags, tag]
 
-      const response = await fetch('/api/tickets/' + ticketId, {
-        method: 'PATCH',
+      const response = await fetch('/api/tags', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tags: newTags.map(t => t.id) }),
+        body: JSON.stringify({
+          operation: isSelected ? 'remove' : 'add',
+          tagIds: [tag.id],
+          ticketIds: [ticketId]
+        }),
         credentials: 'include'
       })
 

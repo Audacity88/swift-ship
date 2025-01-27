@@ -34,6 +34,7 @@ import { QuoteDetailView } from '@/components/features/quotes/QuoteDetailView'
 import type { ServerContext } from '@/lib/supabase-client'
 import { getServerSupabase } from '@/lib/supabase-client'
 import { statusWorkflow } from '@/lib/services'
+import { tagService } from '@/lib/services'
 
 interface Tag {
   id: string
@@ -114,6 +115,7 @@ export default function TicketPage() {
       }
       
       try {
+        console.log('[Ticket Page] Fetching ticket data for ID:', ticketId)
         const ticketData = await ticketService.getTicket(undefined, ticketId)
         if (!ticketData) {
           setError('Ticket not found')
@@ -121,11 +123,18 @@ export default function TicketPage() {
           return
         }
 
+        console.log('[Ticket Page] Received ticket data:', {
+          id: ticketData.id,
+          tags: ticketData.tags,
+          metadata: ticketData.metadata
+        })
+
         setTicket(ticketData)
         setSelectedType((ticketData.metadata as any)?.type || 'problem')
         setSelectedPriority(ticketData.priority)
         setSelectedAssignee(ticketData.assignee?.id || null)
-        setTags((ticketData.metadata as any)?.tags || [])
+        setTags(ticketData.tags || [])
+        console.log('[Ticket Page] Updated tags state:', ticketData.tags || [])
 
         // Check if this is a quote ticket
         const metadata = ticketData.metadata as any
@@ -151,7 +160,7 @@ export default function TicketPage() {
           })
         }
       } catch (error) {
-        console.error('Error fetching ticket:', error)
+        console.error('[Ticket Page] Error fetching ticket:', error)
         setError(error instanceof Error ? error.message : 'Failed to fetch ticket')
       } finally {
         setIsLoading(false)
@@ -216,39 +225,49 @@ export default function TicketPage() {
     if (!ticket) return
     
     try {
+      console.log('[Ticket Page] Adding new tag:', tagName)
       const newTag: Tag = {
         id: `tag_${Date.now()}`,
         name: tagName,
         color: '#' + Math.floor(Math.random()*16777215).toString(16)
       }
 
-      await ticketService.updateTicket(undefined, ticketId, {
-        metadata: {
-          ...ticket.metadata,
-          tags: [...tags, newTag]
-        }
-      })
+      // Create the tag first
+      const createdTag = await tagService.createTag(undefined, tagName)
+      console.log('[Ticket Page] Tag created:', createdTag)
       
-      setTags(prev => [...prev, newTag])
+      // Add the tag to the ticket
+      await tagService.addTagToTicket(undefined, createdTag.id, ticketId)
+      console.log('[Ticket Page] Tag added to ticket')
+      
+      // Update local state
+      setTags(prev => {
+        const newTags = [...prev, createdTag]
+        console.log('[Ticket Page] Updated tags state:', newTags)
+        return newTags
+      })
     } catch (error) {
-      console.error('Failed to add tag:', error)
+      console.error('[Ticket Page] Failed to add tag:', error)
     }
   }
 
-  const handleRemoveTag = async (tagName: string) => {
+  const handleRemoveTag = async (tagId: string) => {
     if (!ticket) return
     
     try {
-      await ticketService.updateTicket(undefined, ticketId, {
-        metadata: {
-          ...ticket.metadata,
-          tags: tags.filter(t => t.name !== tagName)
-        }
-      })
+      console.log('[Ticket Page] Removing tag:', tagId)
+      // Remove the tag from the ticket
+      await tagService.removeTagFromTicket(undefined, tagId, ticketId)
+      console.log('[Ticket Page] Tag removed from ticket')
       
-      setTags(prev => prev.filter(t => t.name !== tagName))
+      // Update local state
+      setTags(prev => {
+        const newTags = prev.filter(t => t.id !== tagId)
+        console.log('[Ticket Page] Updated tags state:', newTags)
+        return newTags
+      })
     } catch (error) {
-      console.error('Failed to remove tag:', error)
+      console.error('[Ticket Page] Failed to remove tag:', error)
     }
   }
 

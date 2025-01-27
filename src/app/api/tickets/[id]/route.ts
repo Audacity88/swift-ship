@@ -60,7 +60,14 @@ export async function GET(
       .select(`
         *,
         customer:customer_id(*),
-        assignee:assignee_id(*)
+        assignee:assignee_id(*),
+        ticket_tags(
+          tags(
+            id,
+            name,
+            color
+          )
+        )
       `)
       .eq('id', id)
       .single()
@@ -88,7 +95,17 @@ export async function GET(
       )
     }
 
-    return NextResponse.json({ ticket })
+    // Transform ticket tags into the expected format
+    const transformedTicket = {
+      ...ticket,
+      tags: ticket.ticket_tags.map((tt: any) => ({
+        id: tt.tags.id,
+        name: tt.tags.name,
+        color: tt.tags.color || '#666666'
+      }))
+    }
+
+    return NextResponse.json({ ticket: transformedTicket })
   } catch (error) {
     console.error('Failed to fetch ticket:', error)
     return NextResponse.json(

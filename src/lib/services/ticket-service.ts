@@ -116,7 +116,18 @@ export const ticketService = {
 
       let query = supabase
         .from('tickets')
-        .select('*, customer:customers(*), assignee:agents!tickets_assignee_id_fkey(*)', { count: 'exact' })
+        .select(`
+          *,
+          customer:customers(*),
+          assignee:agents!tickets_assignee_id_fkey(*),
+          ticket_tags!inner(
+            tags(
+              id,
+              name,
+              color
+            )
+          )
+        `, { count: 'exact' })
 
       // If user is not an admin, only show tickets assigned to them
       if (user.type === 'agent' && user.role !== 'admin') {
@@ -172,7 +183,11 @@ export const ticketService = {
           email: ticket.assignee.email,
           role: ticket.assignee.role
         } : undefined,
-        tags: ticket.metadata?.tags || [],
+        tags: ticket.ticket_tags.map((tt: any) => ({
+          id: tt.tags.id,
+          name: tt.tags.name,
+          color: tt.tags.color || '#666666'
+        }))
       })) as TicketListItem[]
 
       return { data: result, total: count || 0 }
@@ -276,127 +291,90 @@ export const ticketService = {
     }
   },
 
-  async getTicket(context: ServerContext, ticketId: string): Promise<Ticket | null> {
+  async getTicket(
+    context: ServerContext,
+    ticketId: string
+  ): Promise<Ticket | null> {
     try {
+      console.log('[Ticket Service] Getting ticket:', ticketId)
       const supabase = getServerSupabase(context)
       const { data: { user }, error: userError } = await supabase.auth.getUser()
       
       if (userError || !user) {
+        console.error('[Ticket Service] Unauthorized access')
         throw new Error('Unauthorized')
       }
 
-      if (!ticketId || ticketId === 'undefined') {
-        throw new Error('Invalid ticket ID: ID is undefined')
-      }
-
-      // Validate UUID format using regex
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-      if (!uuidRegex.test(ticketId)) {
-        throw new Error(`Invalid ticket ID format: ${ticketId}`)
-      }
-
-      const { data, error } = await supabase
+      console.log('[Ticket Service] Fetching ticket data with tags')
+      const { data: ticketData, error: ticketError } = await supabase
         .from('tickets')
         .select(`
           *,
           customer:customers(*),
           assignee:agents!tickets_assignee_id_fkey(*),
-          messages (
-            id,
-            content,
-            author_type,
-            author_id,
-            created_at,
-            updated_at
+          ticket_tags!inner(
+            tags(
+              id,
+              name,
+              color
+            )
           )
         `)
         .eq('id', ticketId)
         .single()
 
-      if (error || !data) {
-        console.error('Failed to get ticket:', error)
-        throw error
+      if (ticketError) {
+        console.error('[Ticket Service] Failed to fetch ticket:', ticketError)
+        throw ticketError
       }
 
-      // Fetch author details for messages
-      const messageIds = data.messages.map((m: any) => m.author_id)
-      const { data: authorData } = await supabase
-        .from('message_authors')
-        .select('*')
-        .in('author_id', messageIds)
+      if (!ticketData) {
+        console.log('[Ticket Service] No ticket found for ID:', ticketId)
+        return null
+      }
 
-      // Create a map of author details by ID
-      const authorMap = new Map(authorData?.map((author: any) => [author.author_id, author]) || [])
+      console.log('[Ticket Service] Raw ticket data:', {
+        id: ticketData.id,
+        ticket_tags: ticketData.ticket_tags
+      })
 
-      const result: Ticket = {
-        id: data.id,
-        title: data.title,
-        description: data.description,
-        status: data.status,
-        priority: data.priority,
-        type: data.type,
-        isArchived: data.is_archived,
-        metadata: data.metadata || {
-          createdAt: data.created_at,
-          updatedAt: data.updated_at,
-          tags: [],
-          customFields: {}
+      const ticket = {
+        id: ticketData.id,
+        title: ticketData.title,
+        description: ticketData.description,
+        status: ticketData.status,
+        priority: ticketData.priority,
+        type: ticketData.type,
+        source: ticketData.source,
+        createdAt: ticketData.created_at,
+        updatedAt: ticketData.updated_at,
+        customerId: ticketData.customer_id,
+        customer: {
+          id: ticketData.customer.id,
+          name: ticketData.customer.name,
+          email: ticketData.customer.email
         },
-        customerId: data.customer_id,
-        assigneeId: data.assignee_id || undefined,
-        customer: data.customer
-          ? {
-              id: data.customer.id,
-              name: data.customer.name,
-              email: data.customer.email,
-              role: 'customer',
-              isActive: true,
-              createdAt: data.customer.created_at,
-              updatedAt: data.customer.updated_at,
-            }
-          : {
-              id: '',
-              name: '',
-              email: '',
-              role: 'customer',
-              isActive: true,
-              createdAt: '',
-              updatedAt: '',
-            },
-        assignee: data.assignee
-          ? {
-              id: data.assignee.id,
-              name: data.assignee.name,
-              email: data.assignee.email,
-              role: data.assignee.role,
-              isActive: true,
-              createdAt: data.assignee.created_at,
-              updatedAt: data.assignee.updated_at
-            }
-          : undefined,
-        comments: data.messages.map((message: any) => {
-          const author = authorMap.get(message.author_id)
-          return {
-            id: message.id,
-            content: message.content,
-            createdAt: message.created_at,
-            updatedAt: message.updated_at,
-            author: author ? {
-              id: author.author_id,
-              name: author.name,
-              email: author.email,
-              type: author.author_type
-            } : undefined
-          }
-        }),
-        createdAt: data.created_at,
-        updatedAt: data.updated_at,
-        resolvedAt: data.resolved_at || undefined,
+        assignee: ticketData.assignee ? {
+          id: ticketData.assignee.id,
+          name: ticketData.assignee.name,
+          email: ticketData.assignee.email,
+          role: ticketData.assignee.role
+        } : undefined,
+        tags: ticketData.ticket_tags.map((tt: any) => ({
+          id: tt.tags.id,
+          name: tt.tags.name,
+          color: tt.tags.color || '#666666'
+        }))
       }
 
-      return result
+      console.log('[Ticket Service] Transformed ticket data:', {
+        id: ticket.id,
+        tags: ticket.tags
+      })
+
+      return ticket
     } catch (error) {
-      console.error('Error in getTicket:', error)
+      console.error('[Ticket Service] Error in getTicket:', error)
       throw error
     }
   },
