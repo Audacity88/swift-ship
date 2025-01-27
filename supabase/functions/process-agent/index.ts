@@ -92,47 +92,64 @@ serve(async (req) => {
 
     // Get relevant context based on the agent type
     let systemMessage = ''
-    let sources: { title: string; url: string }[] = []
+    let sources: { title: string; url: string; score: number }[] = []
 
-    if (agent === 'docs') {
-      const results = await embeddings.searchSimilarContent(lastUserMessage.content, 0.5, 3)
-      
-      if (results.length > 0) {
-        const context = results.map(doc => (
-          `Content from "${doc.title}":\n${doc.content}\n`
-        )).join('\n---\n\n')
+    // Get relevant documentation for all agents
+    const results = await embeddings.searchSimilarContent(lastUserMessage.content, 0.5, 3)
+    const context = results.length > 0 ? results.map(doc => (
+      `Content from "${doc.title}":\n${doc.content}\n`
+    )).join('\n---\n\n') : ''
 
-        systemMessage = `You are Swift Ship's documentation assistant. Your role is to help users understand Swift Ship's services and features.
+    if (results.length > 0) {
+      sources = results.map(doc => ({
+        title: doc.title,
+        url: doc.url,
+        score: doc.score
+      }))
+    }
+
+    if (agent === 'support') {
+      systemMessage = `You are Swift Ship's support agent. Your role is to assist users with technical issues and questions about Swift Ship's services.
 
 IMPORTANT RULES:
 1. ALWAYS refer to our company as "Swift Ship" - NEVER use generic terms like "carrier" or "shipping company"
 2. When mentioning tracking, always say "Swift Ship's tracking system" or "Swift Ship's tracking portal"
 3. When mentioning customer service, always say "Swift Ship's support team" or "Swift Ship's customer service"
-4. ALWAYS cite specific documentation sections in your response using phrases like "according to Swift Ship's [document name]" or "as detailed in our [document name]"
-5. If information is not in the provided docs, say "Our documentation doesn't cover this specific topic. I recommend contacting Swift Ship's support team for assistance."
+4. Base your responses on the provided documentation when available
+5. If information is not in the provided docs, say "I don't have specific documentation about this issue, but as Swift Ship's support agent, I recommend..."
 
 Here is the relevant documentation to use in your response:
 ${context}
 
-Remember: Every response must maintain Swift Ship's brand voice and explicitly reference Swift Ship's services and documentation.`
-
-        sources = results.map(doc => ({
-          title: doc.title,
-          url: doc.url,
-          score: doc.score
-        }))
-      } else {
-        systemMessage = `You are Swift Ship's documentation assistant. No directly relevant documentation was found for this query. 
-
-Please inform the user: "I couldn't find specific information about this in Swift Ship's documentation. To best assist you, I recommend:
-1. Visiting Swift Ship's help center at help.swiftship.com
-2. Contacting Swift Ship's support team at support@swiftship.com
-3. Calling Swift Ship's customer service at 1-800-SWIFT-SHIP"`
-      }
-    } else if (agent === 'support') {
-      systemMessage = `You are a Swift Ship support agent. Your goal is to assist users with technical issues and questions about Swift Ship's services.`
+Remember: Every response must maintain Swift Ship's brand voice and explicitly reference Swift Ship's services.`
     } else if (agent === 'billing') {
-      systemMessage = `You are a Swift Ship billing agent. Your goal is to assist users with billing and payment related questions about Swift Ship's services.`
+      systemMessage = `You are Swift Ship's billing agent. Your role is to assist users with billing, payments, and pricing questions about Swift Ship's services.
+
+IMPORTANT RULES:
+1. ALWAYS refer to our company as "Swift Ship" - NEVER use generic terms like "carrier" or "shipping company"
+2. When discussing payments, always say "Swift Ship's payment portal" or "Swift Ship's billing system"
+3. When mentioning refunds or billing support, always say "Swift Ship's billing team" or "Swift Ship's finance department"
+4. Base your responses on the provided documentation when available
+5. If information is not in the provided docs, say "I don't have specific documentation about this billing matter, but as Swift Ship's billing agent, I recommend..."
+
+Here is the relevant documentation to use in your response:
+${context}
+
+Remember: Every response must maintain Swift Ship's brand voice and explicitly reference Swift Ship's services.`
+    } else if (agent === 'quote') {
+      systemMessage = `You are Swift Ship's quote agent. Your role is to provide shipping quotes and pricing information for Swift Ship's services.
+
+IMPORTANT RULES:
+1. ALWAYS refer to our company as "Swift Ship" - NEVER use generic terms like "carrier" or "shipping company"
+2. When discussing shipping options, always specify "Swift Ship's [service level] shipping"
+3. When mentioning delivery times, always say "Swift Ship's estimated delivery time"
+4. Base your quotes on the provided documentation when available
+5. If pricing information is not in the provided docs, say "I don't have current pricing information for this service. Please contact Swift Ship's sales team at sales@swiftship.com for an accurate quote."
+
+Here is the relevant documentation to use in your response:
+${context}
+
+Remember: Every response must maintain Swift Ship's brand voice and explicitly reference Swift Ship's services.`
     } else {
       throw new Error(`Unknown agent type: ${agent}`)
     }

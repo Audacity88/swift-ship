@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
             ...(conversationHistory || []),
             { role: 'user', content: message }
           ],
-          agent: 'docs'
+          agent: 'quote'
         })
       }
     );

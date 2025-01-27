@@ -219,6 +219,10 @@ export const ticketService = {
 
       // If the user is an agent, automatically assign the ticket to them
       const assigneeId = user.type === 'agent' ? user.id : payload.assigneeId || null
+      
+      // Only set created_by and updated_by if the user is an agent
+      const createdBy = user.type === 'agent' ? user.id : null
+      const updatedBy = user.type === 'agent' ? user.id : null
 
       const { data, error } = await supabase
         .from('tickets')
@@ -235,8 +239,8 @@ export const ticketService = {
           },
           type: 'question',
           source: 'web',
-          created_by: user.id,
-          updated_by: user.id,
+          created_by: createdBy,
+          updated_by: updatedBy,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })

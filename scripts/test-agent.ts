@@ -1,5 +1,6 @@
-import { config } from 'dotenv';
+import 'dotenv/config';
 import { resolve } from 'path';
+import { config } from 'dotenv';
 import fetch from 'node-fetch';
 
 // Load environment variables from .env.local
@@ -9,18 +10,13 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-  console.error('Missing required environment variables:', {
-    SUPABASE_URL: !!SUPABASE_URL,
-    SUPABASE_SERVICE_ROLE_KEY: !!SUPABASE_SERVICE_ROLE_KEY
-  });
-  process.exit(1);
+  throw new Error('Missing required environment variables');
 }
 
 async function testAgent(query: string, agent: string) {
-  console.log(`\nTesting ${agent} agent with query: "${query}"\n`);
+  console.log(`\nTesting ${agent} with query: "${query}"\n`);
   
   const url = `${SUPABASE_URL}/functions/v1/process-agent`;
-  console.log('Request URL:', url);
   
   try {
     const response = await fetch(url, {
@@ -35,68 +31,90 @@ async function testAgent(query: string, agent: string) {
       }),
     });
 
-    console.log('Response Status:', response.status);
-    
-    // Log headers as an object
-    const headers: { [key: string]: string } = {};
-    response.headers.forEach((value, key) => {
-      headers[key] = value;
-    });
-    console.log('Response Headers:', headers);
-
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Error Response:', errorText);
-      throw new Error(`HTTP error! status: ${response.status}`);
+      throw new Error(`HTTP error! status: ${response.status}\n${errorText}`);
     }
 
-    const data = await response.json();
-    console.log('Response:', JSON.stringify(data, null, 2));
-    
-    if (data.sources?.length) {
-      console.log('\nSources:');
-      data.sources.forEach((source: { title: string; url: string }) => {
+    // Handle streaming response
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let sources = [];
+
+    for await (const chunk of response.body) {
+      const text = decoder.decode(Buffer.from(chunk));
+      buffer += text;
+      
+      // Process complete lines
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || ''; // Keep the last incomplete line in the buffer
+      
+      for (const line of lines) {
+        if (line.trim() === '' || !line.startsWith('data: ')) continue;
+        
+        try {
+          const data = JSON.parse(line.slice(5));
+          if (data.type === 'chunk') {
+            process.stdout.write(data.content);
+          } else if (data.type === 'sources') {
+            sources = data.sources;
+          }
+        } catch (error) {
+          console.error('Error parsing JSON:', line);
+        }
+      }
+    }
+
+    // Process any remaining data in the buffer
+    if (buffer.trim() !== '') {
+      const lines = buffer.split('\n');
+      for (const line of lines) {
+        if (line.trim() === '' || !line.startsWith('data: ')) continue;
+        
+        try {
+          const data = JSON.parse(line.slice(5));
+          if (data.type === 'chunk') {
+            process.stdout.write(data.content);
+          } else if (data.type === 'sources') {
+            sources = data.sources;
+          }
+        } catch (error) {
+          console.error('Error parsing JSON:', line);
+        }
+      }
+    }
+
+    if (sources?.length) {
+      console.log('\n\nSources:');
+      sources.forEach((source: { title: string; url: string }) => {
         console.log(`- ${source.title} (${source.url})`);
       });
     }
     
     console.log('\n' + '-'.repeat(80) + '\n');
-    return data;
   } catch (error: any) {
-    console.error('Error details:', {
-      name: error?.name || 'Unknown error',
-      message: error?.message || 'No error message available',
-      stack: error?.stack || 'No stack trace available',
-    });
-    throw error;
+    console.error('Error:', error.message);
   }
 }
 
-// Test queries for different agents
-const tests = [
-  // Documentation queries
-  { query: 'How do I track my package?', agent: 'docs' },
-  { query: 'What should I do if my package is lost?', agent: 'docs' },
-  { query: 'Tell me about international shipping', agent: 'docs' },
-  
-  // Support queries
-  { query: 'I can\'t log into my account', agent: 'support' },
-  { query: 'The tracking page is not loading', agent: 'support' },
-  
-  // Billing queries
-  { query: 'How much does international shipping cost?', agent: 'billing' },
-  { query: 'Can I get a refund for a cancelled shipment?', agent: 'billing' },
-];
-
-// Run all tests sequentially
 async function runTests() {
-  for (const test of tests) {
-    try {
-      await testAgent(test.query, test.agent);
-    } catch (error) {
-      console.error(`Test failed for query "${test.query}" with agent "${test.agent}":`, error);
-    }
-  }
+  // Test Quote Agent
+  await testAgent(
+    "I need a quote for shipping a 20kg package from New York to London",
+    "quote"
+  );
+
+  // Test Support Agent
+  await testAgent(
+    "I'm having trouble tracking my package. The tracking number is SS123456789",
+    "support"
+  );
+
+  // Test Billing Agent
+  await testAgent(
+    "I need a refund for my cancelled shipment SS987654321",
+    "billing"
+  );
 }
 
-runTests(); 
+runTests().catch(console.error); 

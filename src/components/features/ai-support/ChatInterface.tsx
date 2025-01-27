@@ -152,6 +152,28 @@ export function ChatInterface() {
             >
               <div className="space-y-2 w-full">
                 <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>
+                {message.metadata?.context && (
+                  <div className="mt-2 text-sm">
+                    <p className="text-muted-foreground mb-1">Sources:</p>
+                    <ul className="list-disc pl-4 space-y-1 text-blue-500 mb-1">
+                      {message.metadata.context.map((source, index) => (
+                        <li key={index}>
+                          <a 
+                            href={source.url} 
+                            className="text-blue-500 hover:text-blue-600 hover:underline"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            {source.title}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="mt-2 text-xs">
+                      <p>Need more help? <a href="/portal/tickets/new" className="text-blue-500 hover:text-blue-600 hover:underline">Contact Support</a></p>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -166,8 +188,8 @@ export function ChatInterface() {
                     </p>
                     {streamingMessage.metadata.context && streamingMessage.metadata.context.length > 0 && (
                       <div className="space-y-1">
-                        <p className="text-xs opacity-70">Sources:</p>
-                        <ul className="text-xs opacity-70 space-y-1">
+                        <p className="text-xs">Sources:</p>
+                        <ul className="text-xs space-y-1 text-blue-500 mb-1">
                           {streamingMessage.metadata.context.map((source, idx) => (
                             <li key={idx}>
                               {source.url ? (
@@ -175,18 +197,21 @@ export function ChatInterface() {
                                   href={source.url}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="hover:underline"
+                                  className="text-blue-500 hover:text-blue-600 hover:underline"
                                 >
-                                  {source.title} ({Math.round(source.score * 100)}% match)
+                                  {source.title}
                                 </a>
                               ) : (
-                                <span>{source.title} ({Math.round(source.score * 100)}% match)</span>
+                                <span className="text-blue-500">{source.title}</span>
                               )}
                             </li>
                           ))}
                         </ul>
                       </div>
                     )}
+                    <div className="mt-2 text-xs">
+                      <p>Need more help? <a href="/portal/tickets/new" className="text-blue-500 hover:text-blue-600 hover:underline">Contact Support</a></p>
+                    </div>
                   </div>
                 )}
               </div>

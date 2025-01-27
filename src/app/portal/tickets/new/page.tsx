@@ -9,12 +9,17 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Card } from '@/components/ui/card'
 import { toast } from 'sonner'
+import { createBrowserClient } from '@supabase/ssr'
 
 export default function NewTicketPage() {
   const router = useRouter()
   const { user } = useAuth()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [description, setDescription] = useState('')
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  )
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -35,7 +40,7 @@ export default function NewTicketPage() {
         type: 'question' as TicketType, // Default type
       }
 
-      await createTicket(ticketData)
+      await createTicket({ supabase }, ticketData)
       toast.success('Your support request has been submitted successfully! We will review it and get back to you soon.')
       router.push('/portal') // Redirect to portal home/inbox instead of ticket details
     } catch (error) {
