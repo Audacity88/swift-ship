@@ -17,6 +17,11 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "Customer Support Dashboard",
   description: "Customer Support Dashboard with Analytics and Ticket Management",
+  icons: {
+    icon: '/favicon.ico',
+    shortcut: '/favicon-16x16.png',
+    apple: '/favicon-32x32.png'
+  }
 };
 
 export default function RootLayout({
