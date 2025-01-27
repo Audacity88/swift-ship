@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { Search, Tag, Plus, X } from 'lucide-react'
+import { useAuth } from '@/lib/hooks/useAuth'
 
 interface Tag {
   id: string
@@ -11,6 +12,7 @@ interface Tag {
 }
 
 export default function TicketTagsPage() {
+  const { user } = useAuth()
   const [searchQuery, setSearchQuery] = useState('')
   const [availableTags, setAvailableTags] = useState<Tag[]>([])
   const [selectedTags, setSelectedTags] = useState<Tag[]>([])
@@ -23,6 +25,7 @@ export default function TicketTagsPage() {
   // Load current ticket tags
   useEffect(() => {
     const loadTicketTags = async () => {
+      if (!user) return
       try {
         const response = await fetch('/api/tickets/' + ticketId, {
           credentials: 'include'
@@ -32,17 +35,18 @@ export default function TicketTagsPage() {
           throw new Error(error.error || 'Failed to fetch ticket tags')
         }
         const data = await response.json()
-        setSelectedTags(data.data.tags || [])
+        setSelectedTags((data.ticket?.metadata?.tags || []))
       } catch (error) {
         console.error('Failed to load ticket tags:', error)
       }
     }
     loadTicketTags()
-  }, [ticketId])
+  }, [ticketId, user])
 
   // Load available tags
   useEffect(() => {
     const loadTags = async () => {
+      if (!user) return
       try {
         const response = await fetch('/api/tags', {
           credentials: 'include'
@@ -58,7 +62,7 @@ export default function TicketTagsPage() {
       }
     }
     loadTags()
-  }, [])
+  }, [user])
 
   // Filter tags based on search query
   const filteredTags = availableTags.filter((tag) => {
@@ -67,6 +71,7 @@ export default function TicketTagsPage() {
   })
 
   const handleTagToggle = async (tag: Tag) => {
+    if (!user) return
     setIsLoading(true)
     try {
       const isSelected = selectedTags.some(t => t.id === tag.id)
@@ -94,6 +99,10 @@ export default function TicketTagsPage() {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  if (!user) {
+    return null
   }
 
   return (

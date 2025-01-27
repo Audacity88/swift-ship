@@ -1,12 +1,40 @@
 import { NextResponse } from 'next/server'
-import { getServerSupabase } from '@/lib/supabase-client'
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
 import { tagService } from '@/lib/services'
 import type { Tag } from '@/types/tag'
 
 // GET /api/tags - Get all tags
 export async function GET() {
   try {
-    const supabase = getServerSupabase()
+    const cookieStore = await cookies()
+    
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
+            return cookieStore.get(name)?.value
+          },
+          set(name: string, value: string, options: any) {
+            try {
+              cookieStore.set({ name, value, ...options })
+            } catch (error) {
+              // Handle cookie setting error silently
+            }
+          },
+          remove(name: string, options: any) {
+            try {
+              cookieStore.delete(name)
+            } catch (error) {
+              // Handle cookie removal error silently
+            }
+          },
+        },
+      }
+    )
+
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
     if (userError || !user) {
@@ -94,7 +122,31 @@ export async function POST(request: Request) {
 // PUT /api/tags/:id - Update a tag
 export async function PUT(request: Request) {
   try {
-    const supabase = getServerSupabase()
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
+            return cookies().get(name)?.value
+          },
+          set(name: string, value: string, options: any) {
+            try {
+              cookies().set({ name, value, ...options })
+            } catch (error) {
+              // Handle cookie setting error silently
+            }
+          },
+          remove(name: string, options: any) {
+            try {
+              cookies().delete(name)
+            } catch (error) {
+              // Handle cookie removal error silently
+            }
+          },
+        },
+      }
+    )
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
     if (userError || !user) {
@@ -145,7 +197,31 @@ export async function PUT(request: Request) {
 // DELETE /api/tags/:id - Delete a tag
 export async function DELETE(request: Request) {
   try {
-    const supabase = getServerSupabase()
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
+            return cookies().get(name)?.value
+          },
+          set(name: string, value: string, options: any) {
+            try {
+              cookies().set({ name, value, ...options })
+            } catch (error) {
+              // Handle cookie setting error silently
+            }
+          },
+          remove(name: string, options: any) {
+            try {
+              cookies().delete(name)
+            } catch (error) {
+              // Handle cookie removal error silently
+            }
+          },
+        },
+      }
+    )
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
     if (userError || !user) {
@@ -192,6 +268,32 @@ export async function DELETE(request: Request) {
 export async function PATCH(request: Request) {
   try {
     // Check authentication
+    const cookieStore = await cookies()
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
+            return cookieStore.get(name)?.value
+          },
+          set(name: string, value: string, options: any) {
+            try {
+              cookieStore.set({ name, value, ...options })
+            } catch (error) {
+              // Handle cookie setting error silently
+            }
+          },
+          remove(name: string, options: any) {
+            try {
+              cookieStore.delete(name)
+            } catch (error) {
+              // Handle cookie removal error silently
+            }
+          },
+        },
+      }
+    )
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     if (userError || !user) {
       return NextResponse.json(
