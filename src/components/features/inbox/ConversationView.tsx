@@ -234,8 +234,8 @@ export function ConversationView({
             >
               <div className="relative w-8 h-8 flex-shrink-0">
                 <Image
-                  src="/images/default-avatar.png"
-                  alt="User"
+                  src={message.author?.avatar_url || "/images/default-avatar.png"}
+                  alt={message.author?.name || "User"}
                   fill
                   className="rounded-full object-cover"
                 />
@@ -250,7 +250,7 @@ export function ConversationView({
                       ? 'System'
                       : isOwnMessage
                       ? 'You'
-                      : 'User'}
+                      : message.author?.name || 'User'}
                   </span>
                   <span className="text-xs text-muted-foreground">
                     {formatMessageDate(message.created_at)}
