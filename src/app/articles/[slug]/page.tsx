@@ -1,5 +1,6 @@
 'use client'
 
+import React from 'react'
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -42,7 +43,7 @@ export default function ArticlePage() {
   useEffect(() => {
     const fetchArticle = async () => {
       try {
-        const response = await fetch(`/api/portal/articles/${params.id}`, {
+        const response = await fetch(`/api/articles/${params.slug}`, {
           credentials: 'include'
         })
         
@@ -60,10 +61,10 @@ export default function ArticlePage() {
       }
     }
 
-    if (params.id) {
+    if (params.slug) {
       fetchArticle()
     }
-  }, [params.id])
+  }, [params.slug])
 
   const handleVote = async (isHelpful: boolean) => {
     if (!article || hasVoted) {
@@ -72,7 +73,7 @@ export default function ArticlePage() {
     }
 
     try {
-      const response = await fetch(`/api/portal/articles/${article.id}/feedback`, {
+      const response = await fetch(`/api/articles/${params.slug}/feedback`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ isHelpful }),
@@ -116,9 +117,9 @@ export default function ArticlePage() {
       <div className="container py-8">
         <div className="text-center">
           <p className="text-gray-500 dark:text-gray-400">Article not found or unavailable</p>
-          <Link href="/portal/knowledge-base">
+          <Link href="/articles">
             <Button variant="link" className="mt-4">
-              Return to Knowledge Base
+              Return to Articles
             </Button>
           </Link>
         </div>
@@ -203,7 +204,7 @@ export default function ArticlePage() {
         <div className="mt-8 p-4 bg-muted rounded-lg">
           <p className="text-sm text-muted-foreground">
             Still need help?{' '}
-            <Link href="/portal/contact" className="text-primary hover:underline font-medium">
+            <Link href="/contact" className="text-primary hover:underline font-medium">
               Contact our support team
             </Link>
           </p>

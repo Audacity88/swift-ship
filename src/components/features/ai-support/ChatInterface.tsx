@@ -11,11 +11,11 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   metadata?: {
-    agent?: 'DOCS_AGENT' | 'SUPPORT_AGENT' | 'BILLING_AGENT';
-    timestamp: number;
+    agent?: string;
+    timestamp?: number;
     context?: Array<{
       title: string;
-      url?: string;
+      url: string;
       score: number;
     }>;
   };
@@ -25,6 +25,7 @@ export function ChatInterface() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [streamingMessage, setStreamingMessage] = useState<Message | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,7 +39,8 @@ export function ChatInterface() {
       },
     };
 
-    setMessages((prev) => [...prev, userMessage]);
+    const updatedMessages = [...messages, userMessage];
+    setMessages(updatedMessages);
     setInput('');
     setIsLoading(true);
 
@@ -50,37 +52,85 @@ export function ChatInterface() {
         },
         body: JSON.stringify({
           message: userMessage.content,
-          conversationHistory: messages,
+          conversationHistory: updatedMessages,
         }),
       });
 
-      const data = await response.json();
-
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to get response');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to get response');
       }
 
-      const assistantMessage: Message = {
-        role: 'assistant',
-        content: data.content,
-        metadata: {
-          agent: data.metadata.agent,
-          timestamp: data.metadata.timestamp,
-          context: data.metadata.context,
-        },
-      };
+      if (!response.body) throw new Error('No response body');
 
-      setMessages((prev) => [...prev, assistantMessage]);
+      // Initialize streaming message
+      setStreamingMessage({
+        role: 'assistant',
+        content: '',
+        metadata: {
+          timestamp: Date.now(),
+        },
+      });
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const text = decoder.decode(value);
+          const lines = text.split('\n');
+          
+          for (const line of lines) {
+            if (line.trim() === '' || !line.startsWith('data: ')) continue;
+
+            try {
+              const data = JSON.parse(line.slice(5));
+
+              if (data.type === 'chunk') {
+                setStreamingMessage(prev => ({
+                  role: 'assistant',
+                  content: prev ? prev.content + data.content : data.content,
+                  metadata: {
+                    timestamp: Date.now(),
+                  }
+                }));
+              } else if (data.type === 'sources') {
+                setStreamingMessage(prev => {
+                  if (!prev) return null;
+                  
+                  // Just update the streaming message with sources
+                  return {
+                    ...prev,
+                    metadata: {
+                      ...prev.metadata,
+                      agent: 'DOCS_AGENT',
+                      context: data.sources
+                    }
+                  };
+                });
+              }
+            } catch (e) {
+              // Silently handle parsing errors
+            }
+          }
+        }
+      } catch (error) {
+        throw error;
+      } finally {
+        reader.releaseLock();
+      }
     } catch (error) {
-      console.error('Chat Error:', error);
-      const errorMessage: Message = {
+      const errorMessage = {
         role: 'assistant',
         content: 'Sorry, I encountered an error while processing your request. Please try again.',
         metadata: {
           timestamp: Date.now(),
         },
       };
-      setMessages((prev) => [...prev, errorMessage]);
+      setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
     }
@@ -94,24 +144,31 @@ export function ChatInterface() {
             <div
               key={index}
               className={cn(
-                'flex w-max max-w-[80%] rounded-lg px-4 py-2',
+                'flex w-full max-w-[80%] rounded-lg px-4 py-2',
                 message.role === 'user'
                   ? 'ml-auto bg-primary text-primary-foreground'
                   : 'bg-muted'
               )}
             >
-              <div className="space-y-2">
-                <p className="text-sm">{message.content}</p>
-                {message.metadata?.agent && (
+              <div className="space-y-2 w-full">
+                <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>
+              </div>
+            </div>
+          ))}
+          {streamingMessage && (
+            <div className="flex w-full max-w-[80%] rounded-lg px-4 py-2 bg-muted">
+              <div className="space-y-2 w-full">
+                <p className="text-sm whitespace-pre-wrap break-words">{streamingMessage.content}</p>
+                {streamingMessage.metadata?.agent && (
                   <div className="space-y-1">
                     <p className="text-xs opacity-70">
-                      Answered by: {message.metadata.agent.replace('_', ' ')}
+                      Answered by: {streamingMessage.metadata.agent.replace('_', ' ')}
                     </p>
-                    {message.metadata.context && message.metadata.context.length > 0 && (
+                    {streamingMessage.metadata.context && streamingMessage.metadata.context.length > 0 && (
                       <div className="space-y-1">
                         <p className="text-xs opacity-70">Sources:</p>
                         <ul className="text-xs opacity-70 space-y-1">
-                          {message.metadata.context.map((source, idx) => (
+                          {streamingMessage.metadata.context.map((source, idx) => (
                             <li key={idx}>
                               {source.url ? (
                                 <a 
@@ -134,8 +191,8 @@ export function ChatInterface() {
                 )}
               </div>
             </div>
-          ))}
-          {isLoading && (
+          )}
+          {isLoading && !streamingMessage && (
             <div className="flex w-max max-w-[80%] rounded-lg px-4 py-2 bg-muted">
               <p className="text-sm">Thinking...</p>
             </div>
@@ -143,11 +200,11 @@ export function ChatInterface() {
         </div>
       </ScrollArea>
       <form onSubmit={handleSubmit} className="p-4 border-t bg-background">
-        <div className="flex gap-2">
+        <div className="flex gap-4">
           <Textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask a question..."
+            placeholder="Type your message..."
             className="min-h-[60px]"
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
@@ -156,11 +213,7 @@ export function ChatInterface() {
               }
             }}
           />
-          <Button 
-            type="submit" 
-            size="icon"
-            disabled={isLoading || !input.trim()}
-          >
+          <Button type="submit" size="icon" disabled={isLoading}>
             <Send className="h-4 w-4" />
           </Button>
         </div>

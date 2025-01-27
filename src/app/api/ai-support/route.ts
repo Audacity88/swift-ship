@@ -1,32 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-interface AgentMessage {
+interface Message {
   role: 'system' | 'user' | 'assistant';
   content: string;
   metadata?: {
-    agentId: string;
-    timestamp: number;
-    tools?: string[];
-  };
-}
-
-interface AgentResponse {
-  content: string;
-  metadata: {
-    agent: 'DOCS_AGENT' | 'SUPPORT_AGENT' | 'BILLING_AGENT';
-    timestamp: number;
+    agent?: string;
+    timestamp?: number;
+    context?: Array<{
+      title: string;
+      url: string;
+      score: number;
+    }>;
   };
 }
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
 export async function POST(req: NextRequest) {
   try {
     const { message, conversationHistory } = await req.json();
+    console.log('Received request:', { message, conversationHistory });
 
     if (!message) {
       return NextResponse.json(
@@ -42,37 +39,46 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Call the edge function
-    const { data, error } = await supabase.functions.invoke<AgentResponse>('process-agent', {
-      body: { 
-        message, 
-        conversationHistory: conversationHistory || [] 
+    // Call the edge function with streaming
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/process-agent`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+        },
+        body: JSON.stringify({
+          messages: [
+            ...(conversationHistory || []),
+            { role: 'user', content: message }
+          ],
+          agent: 'docs'
+        })
       }
-    });
+    );
 
-    if (error) {
+    if (!response.ok) {
+      const error = await response.text();
       console.error('Edge Function Error:', error);
       return NextResponse.json(
-        { error: error.message || 'Failed to process request' },
-        { status: error.status || 500 }
+        { error: error || 'Failed to process request' },
+        { status: response.status }
       );
     }
 
-    if (!data) {
-      return NextResponse.json(
-        { error: 'No response from agent' },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json(data);
-  } catch (error: any) {
-    console.error('AI Support Error:', error);
+    // Return the streaming response directly
+    return new Response(response.body, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive'
+      }
+    });
+  } catch (error) {
+    console.error('API Error:', error);
     return NextResponse.json(
-      { 
-        error: error.message || 'Failed to process request',
-        details: process.env.NODE_ENV === 'development' ? error.toString() : undefined
-      },
+      { error: error instanceof Error ? error.message : 'Internal server error' },
       { status: 500 }
     );
   }
