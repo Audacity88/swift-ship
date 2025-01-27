@@ -1,54 +1,86 @@
-import { BaseAgent, AgentContext, AgentMessage } from './base-agent';
+import { BaseAgent } from './base-agent';
+import { AgentMessage } from './types';
+import { EmbeddingsService, SearchResult } from '../services/embeddings-service';
 
 export class DocsAgent extends BaseAgent {
+  private embeddingsService: EmbeddingsService;
+
   constructor() {
-    super(
-      'docs',
-      'documentation',
-      `You are a documentation agent responsible for answering questions using the knowledge base.
-      Your goals:
-      1. Provide accurate information from the documentation
-      2. Include relevant links to full documentation when available
-      3. Explain technical concepts clearly
-      4. Suggest related topics that might be helpful
-      
-      Always cite your sources using markdown links.`
-    );
+    super({
+      name: 'Documentation Agent',
+      description: 'I help answer questions about our documentation and knowledge base.',
+      goals: [
+        'Provide accurate information from our knowledge base',
+        'Include relevant links to documentation',
+        'Explain technical concepts clearly',
+        'Suggest related topics when appropriate'
+      ]
+    });
+    this.embeddingsService = EmbeddingsService.getInstance();
   }
 
-  public async process(context: AgentContext): Promise<AgentMessage> {
-    const lastMessage = context.messages[context.messages.length - 1];
-    
-    if (!lastMessage || lastMessage.role !== 'user') {
-      return this.createMessage('I need a question to help you with documentation.');
+  private async getRelevantContext(query: string): Promise<string> {
+    try {
+      const results = await this.embeddingsService.searchSimilarContent(query, 0.5, 3);
+      if (!results.length) return '';
+
+      // Format the context with the most relevant documents
+      return results.map(doc => (
+        `From ${doc.title} (${doc.url}):\n${doc.content}\n`
+      )).join('\n---\n\n');
+    } catch (error) {
+      console.error('Error getting relevant context:', error);
+      return '';
+    }
+  }
+
+  async process(messages: AgentMessage[]): Promise<AgentMessage> {
+    try {
+      // Get the last user message
+      const lastUserMessage = messages.findLast(m => m.role === 'user');
+      if (!lastUserMessage) {
+        return this.createMessage('I need a question to help you with.');
+      }
+
+      // Get relevant context from our knowledge base
+      const context = await this.getRelevantContext(lastUserMessage.content);
+      
+      // Prepare the system message with context
+      const systemMessage = `You are a helpful documentation agent. Use the following relevant documentation to answer the user's question. If you can't find a relevant answer in the documentation, say so.
+
+Relevant documentation:
+${context || 'No directly relevant documentation found.'}`;
+
+      // Get completion from OpenAI
+      const completion = await this.getCompletion([
+        { role: 'system', content: systemMessage },
+        ...messages.slice(-5) // Include last 5 messages for context
+      ]);
+
+      // Create response with metadata about sources used
+      const sources = context ? this.extractSources(context) : [];
+      return this.createMessage(completion, { sources });
+
+    } catch (error) {
+      console.error('Error in DocsAgent:', error);
+      return this.createMessage(
+        'I encountered an error while trying to process your request. Please try again.'
+      );
+    }
+  }
+
+  private extractSources(context: string): { title: string; url: string }[] {
+    const sourceRegex = /From (.*?) \((.*?)\):/g;
+    const sources: { title: string; url: string }[] = [];
+    let match;
+
+    while ((match = sourceRegex.exec(context)) !== null) {
+      sources.push({
+        title: match[1],
+        url: match[2]
+      });
     }
 
-    // Generate embedding for the query
-    const embedding = await this.generateEmbedding(lastMessage.content);
-    
-    // Search for relevant documentation
-    const matches = await this.searchSimilarContent(embedding, 0.7, 3);
-    
-    // Prepare context from matches
-    const docsContext = matches.map(match => {
-      const metadata = match.metadata as { title?: string; url?: string };
-      return `
-Article: ${metadata.title || 'Untitled'}
-URL: ${metadata.url || '#'}
-Content: ${match.content}
-Similarity: ${match.similarity}
----`;
-    }).join('\n');
-
-    // Get completion with documentation context
-    const completion = await this.getCompletion([
-      { 
-        role: 'system', 
-        content: `Here is the relevant documentation:\n${docsContext}`
-      },
-      lastMessage
-    ]);
-
-    return this.createMessage(completion);
+    return sources;
   }
 } 

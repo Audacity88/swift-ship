@@ -51,7 +51,6 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.0.4",
     "date-fns": "^4.1.0",
-    "dotenv": "^16.4.7",
     "lowlight": "^3.3.0",
     "lucide-react": "^0.473.0",
     "mapbox-gl": "^3.9.3",
@@ -88,18 +87,37 @@
     "@testing-library/user-event": "^14.5.2",
     "@types/jest": "^29.5.12",
     "@types/node": "^20.17.16",
+    "@types/node-fetch": "^2.6.12",
     "@types/react": "^19.0.8",
     "@types/react-dom": "^19",
+    "dotenv": "^16.4.7",
     "eslint": "^9",
     "eslint-config-next": "15.1.5",
     "identity-obj-proxy": "^3.0.0",
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^29.7.0",
+    "node-fetch": "^2.7.0",
     "node-mocks-http": "^1.16.2",
     "postcss": "^8",
     "tailwindcss": "^3.4.1",
     "tailwindcss-animate": "^1.0.7",
     "ts-node": "^10.9.2",
     "typescript": "^5.7.3"
-  }
+  },
+  "description": "This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).",
+  "main": "jest.config.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Audacity88/swift-ship.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Audacity88/swift-ship/issues"
+  },
+  "homepage": "https://github.com/Audacity88/swift-ship#readme"
 }

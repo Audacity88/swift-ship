@@ -122,9 +122,6 @@ importers:
       date-fns:
         specifier: ^4.1.0
         version: 4.1.0
-      dotenv:
-        specifier: ^16.4.7
-        version: 16.4.7
       lowlight:
         specifier: ^3.3.0
         version: 3.3.0
@@ -228,12 +225,18 @@ importers:
       '@types/node':
         specifier: ^20.17.16
         version: 20.17.16
+      '@types/node-fetch':
+        specifier: ^2.6.12
+        version: 2.6.12
       '@types/react':
         specifier: ^19.0.8
         version: 19.0.8
       '@types/react-dom':
         specifier: ^19
         version: 19.0.3(@types/react@19.0.8)
+      dotenv:
+        specifier: ^16.4.7
+        version: 16.4.7
       eslint:
         specifier: ^9
         version: 9.19.0(jiti@1.21.7)
@@ -249,6 +252,9 @@ importers:
       jest-environment-jsdom:
         specifier: ^29.7.0
         version: 29.7.0
+      node-fetch:
+        specifier: ^2.7.0
+        version: 2.7.0
       node-mocks-http:
         specifier: ^1.16.2
         version: 1.16.2(@types/node@20.17.16)

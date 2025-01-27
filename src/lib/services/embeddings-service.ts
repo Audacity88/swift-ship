@@ -1,97 +1,77 @@
 import { createClient } from '@supabase/supabase-js';
+import OpenAI from 'openai';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-interface SearchResult {
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+export interface SearchResult {
+  id: number;
   title: string;
   content: string;
-  url?: string;
-  score: number;
+  url: string;
+  similarity: number;
 }
 
-export async function searchSimilarDocuments(
-  query: string,
-  matchThreshold: number = 0.7,
-  matchCount: number = 3
-): Promise<SearchResult[]> {
-  try {
-    // Get embedding for the query
-    const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: 'text-embedding-3-small',
-        input: query
-      })
-    });
+export class EmbeddingsService {
+  private static instance: EmbeddingsService;
 
-    const { data: [{ embedding }] } = await embeddingResponse.json();
+  private constructor() {}
 
-    // Search for similar content in Supabase
-    const { data: matches, error } = await supabase.rpc(
-      'match_embeddings',
-      {
-        query_embedding: embedding,
-        match_threshold: matchThreshold,
-        match_count: matchCount
-      }
-    );
-
-    if (error) throw error;
-
-    return matches.map((match: any) => ({
-      title: match.title,
-      content: match.content,
-      url: match.url,
-      score: match.similarity
-    }));
-  } catch (error) {
-    console.error('Error searching documents:', error);
-    return [];
+  public static getInstance(): EmbeddingsService {
+    if (!EmbeddingsService.instance) {
+      EmbeddingsService.instance = new EmbeddingsService();
+    }
+    return EmbeddingsService.instance;
   }
-}
 
-export async function addDocument(
-  title: string,
-  content: string,
-  url?: string
-): Promise<boolean> {
-  try {
-    // Get embedding for the content
-    const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: 'text-embedding-3-small',
-        input: content
-      })
+  async generateEmbedding(text: string): Promise<number[]> {
+    const response = await openai.embeddings.create({
+      model: 'text-embedding-3-small',
+      input: text,
     });
+    return response.data[0].embedding;
+  }
 
-    const { data: [{ embedding }] } = await embeddingResponse.json();
-
-    // Insert document with embedding into Supabase
-    const { error } = await supabase
-      .from('embeddings')
-      .insert({
-        title,
-        content,
-        url,
-        embedding
-      });
-
+  async searchSimilarContent(query: string, threshold = 0.5, limit = 5): Promise<SearchResult[]> {
+    // Generate embedding for the query
+    const queryEmbedding = await this.generateEmbedding(query);
+    
+    // Search for similar content
+    const { data: results, error } = await supabase.rpc('match_embeddings', {
+      query_embedding: queryEmbedding,
+      match_threshold: threshold,
+      match_count: limit
+    }) as { data: SearchResult[] | null, error: any };
+    
     if (error) throw error;
-    return true;
-  } catch (error) {
-    console.error('Error adding document:', error);
-    return false;
+    return results || [];
+  }
+
+  async addDocument(title: string, content: string, url: string): Promise<void> {
+    try {
+      // Generate embedding from title + content
+      const embedding = await this.generateEmbedding(`${title}\n\n${content}`);
+
+      // Store in embeddings table
+      const { error: insertError } = await supabase
+        .from('embeddings')
+        .insert({
+          title,
+          content,
+          url,
+          embedding
+        });
+
+      if (insertError) throw insertError;
+    } catch (error) {
+      console.error(`Error adding document: ${title}`, error);
+      throw error;
+    }
   }
 } 
