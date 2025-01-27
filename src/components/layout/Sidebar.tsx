@@ -49,6 +49,12 @@ const navItems: NavItem[] = [
     roles: [RoleType.CUSTOMER],
   },
   {
+    icon: LifeBuoy,
+    label: 'Support',
+    href: '/support',
+    roles: [RoleType.CUSTOMER],
+  },
+  {
     icon: FileText,
     label: 'Manage Quotes',
     href: '/admin/quotes',
