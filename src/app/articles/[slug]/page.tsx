@@ -29,8 +29,12 @@ interface Article {
   status: 'draft' | 'published' | 'archived'
   created_at: string
   updated_at: string
-  helpful_count?: number
-  not_helpful_count?: number
+  metadata: {
+    views: number
+    helpfulCount: number
+    notHelpfulCount: number
+    lastUpdated: string | null
+  }
 }
 
 export default function ArticlePage() {
@@ -92,8 +96,11 @@ export default function ArticlePage() {
         if (!prev) return null
         return {
           ...prev,
-          helpful_count: isHelpful ? (prev.helpful_count || 0) + 1 : prev.helpful_count,
-          not_helpful_count: !isHelpful ? (prev.not_helpful_count || 0) + 1 : prev.not_helpful_count
+          metadata: {
+            ...prev.metadata,
+            helpfulCount: isHelpful ? prev.metadata.helpfulCount + 1 : prev.metadata.helpfulCount,
+            notHelpfulCount: !isHelpful ? prev.metadata.notHelpfulCount + 1 : prev.metadata.notHelpfulCount
+          }
         }
       })
     } catch (error) {
@@ -188,7 +195,7 @@ export default function ArticlePage() {
             disabled={hasVoted}
           >
             <ThumbsUp className="h-4 w-4" />
-            Yes ({article.helpful_count || 0})
+            Yes ({article.metadata.helpfulCount || 0})
           </Button>
           <Button
             variant="outline"
@@ -197,7 +204,7 @@ export default function ArticlePage() {
             disabled={hasVoted}
           >
             <ThumbsDown className="h-4 w-4" />
-            No ({article.not_helpful_count || 0})
+            No ({article.metadata.notHelpfulCount || 0})
           </Button>
         </div>
 
