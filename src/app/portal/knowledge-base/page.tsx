@@ -17,11 +17,13 @@ const categories = [
     articles: [
       {
         id: 'a1111112-1111-1111-1111-111111111112',
-        title: 'Platform Overview'
+        title: 'Platform Overview',
+        slug: 'platform-overview'
       },
       {
         id: 'a1111113-1111-1111-1111-111111111113',
-        title: 'Creating Your First Shipment'
+        title: 'Creating Your First Shipment',
+        slug: 'creating-your-first-shipment'
       }
     ],
   },
@@ -33,15 +35,18 @@ const categories = [
     articles: [
       {
         id: 'a2222223-2222-2222-2222-222222222223',
-        title: 'Shipping Methods'
+        title: 'Shipping Methods',
+        slug: 'shipping-methods'
       },
       {
         id: 'a2222224-2222-2222-2222-222222222224',
-        title: 'Packaging Guidelines'
+        title: 'Packaging Guidelines',
+        slug: 'packaging-guidelines'
       },
       {
         id: 'a2222225-2222-2222-2222-222222222225',
-        title: 'International Shipping'
+        title: 'International Shipping',
+        slug: 'international-shipping'
       }
     ],
   },
@@ -53,15 +58,18 @@ const categories = [
     articles: [
       {
         id: 'a3333334-3333-3333-3333-333333333334',
-        title: 'Real-time Tracking'
+        title: 'Real-time Tracking',
+        slug: 'real-time-tracking'
       },
       {
         id: 'a3333335-3333-3333-3333-333333333335',
-        title: 'Delivery Updates'
+        title: 'Delivery Updates',
+        slug: 'delivery-updates'
       },
       {
         id: 'a3333336-3333-3333-3333-333333333336',
-        title: 'Lost Package Protocol'
+        title: 'Lost Package Protocol',
+        slug: 'lost-package-protocol'
       }
     ],
   },
@@ -73,15 +81,18 @@ const categories = [
     articles: [
       {
         id: 'a4444445-4444-4444-4444-444444444445',
-        title: 'Profile Management'
+        title: 'Profile Management',
+        slug: 'profile-management'
       },
       {
         id: 'a4444446-4444-4444-4444-444444444446',
-        title: 'Notification Settings'
+        title: 'Notification Settings',
+        slug: 'notification-settings'
       },
       {
         id: 'a4444447-4444-4444-4444-444444444447',
-        title: 'Billing Information'
+        title: 'Billing Information',
+        slug: 'billing-information'
       }
     ],
   },
@@ -93,15 +104,18 @@ const categories = [
     articles: [
       {
         id: 'a5555556-5555-5555-5555-555555555556',
-        title: 'Common Issues'
+        title: 'Common Issues',
+        slug: 'common-issues'
       },
       {
         id: 'a5555557-5555-5555-5555-555555555557',
-        title: 'Error Messages'
+        title: 'Error Messages',
+        slug: 'error-messages'
       },
       {
         id: 'a5555558-5555-5555-5555-555555555558',
-        title: 'Contact Support'
+        title: 'Contact Support',
+        slug: 'contact-support'
       }
     ],
   },
@@ -154,7 +168,7 @@ export default function KnowledgeBasePage() {
                         <Button
                           variant="link"
                           className="p-0 h-auto text-sm text-primary hover:text-primary/80"
-                          onClick={() => router.push(`/portal/knowledge-base/article/${article.id}`)}
+                          onClick={() => router.push(`/articles/${article.slug}`)}
                         >
                           {article.title}
                         </Button>
