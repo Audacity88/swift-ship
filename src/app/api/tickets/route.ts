@@ -55,33 +55,49 @@ const sortingSchema = z.object({
   sortDirection: z.enum(['asc', 'desc']).default('desc')
 })
 
-const initSupabase = async () => {
+const initSupabase = async (request?: NextRequest) => {
   const cookieStore = await cookies()
   
+  const options: any = {
+    cookies: {
+      get(name: string) {
+        return cookieStore.get(name)?.value
+      },
+      set(name: string, value: string, options: any) {
+        try {
+          cookieStore.set({ name, value, ...options })
+        } catch (error) {
+          // Handle cookie setting error
+        }
+      },
+      remove(name: string, options: any) {
+        try {
+          cookieStore.set({ name, value: '', ...options })
+        } catch (error) {
+          // Handle cookie removal error
+        }
+      },
+    },
+  }
+
+  // If request is provided, check for Authorization header
+  if (request) {
+    const authHeader = request.headers.get('Authorization')
+    if (authHeader?.startsWith('Bearer ')) {
+      const token = authHeader.substring(7)
+      options.global = {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      }
+    }
+  }
+  
+  // Use service role key for server-side operations
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value
-        },
-        set(name: string, value: string, options: any) {
-          try {
-            cookieStore.set({ name, value, ...options })
-          } catch (error) {
-            // Handle cookie setting error
-          }
-        },
-        remove(name: string, options: any) {
-          try {
-            cookieStore.set({ name, value: '', ...options })
-          } catch (error) {
-            // Handle cookie removal error
-          }
-        },
-      },
-    }
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    options
   )
 }
 
@@ -189,7 +205,7 @@ export async function GET(request: NextRequest) {
 // POST /api/tickets - Create a new ticket
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await initSupabase()
+    const supabase = await initSupabase(request)
     const { data: { user }, error: userError } = await supabase.auth.getUser()
 
     if (userError || !user) {
