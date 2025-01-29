@@ -111,7 +111,7 @@ export class QuoteAgent {
 
   constructor() {}
 
-  private determineStep(messages: AgentMessage[]): 'initial' | 'package_details' | 'addresses' | 'service_selection' | 'confirmation' {
+  private async determineStep(messages: AgentMessage[]): Promise<'initial' | 'package_details' | 'addresses' | 'service_selection' | 'confirmation'> {
     if (messages.length === 0) return 'initial';
 
     const userMessages = messages.filter(m => m.role === 'user');
@@ -125,54 +125,82 @@ export class QuoteAgent {
       lastAssistantMessage
     });
 
-    // If this is the first message and it's asking about creating a quote
-    if (userMessages.length === 1 && lastUserMessage.toLowerCase().includes('create') && lastUserMessage.toLowerCase().includes('quote')) {
-      this.log('First message detected, returning initial step');
+    // Create a system message to help determine the step
+    const systemMessage = `You are a shipping quote assistant. Based on the conversation history, analyze where we are in the quote creation process.
+
+First, write a brief natural response about what information we have or need next.
+Then on a new line, write exactly one of these step identifiers: STEP:initial, STEP:package_details, STEP:addresses, STEP:service_selection, or STEP:confirmation
+
+Example responses:
+"We need to collect the initial shipping details.
+STEP:initial"
+
+"Great! They've provided all the package details, now we need addresses.
+STEP:addresses"
+
+"We have the addresses, let's show them service options.
+STEP:service_selection"
+
+"They've selected a service, let's confirm the quote.
+STEP:confirmation"`;
+
+    // Create the conversation context
+    const context = messages.map(m => ({
+      role: m.role,
+      content: m.content
+    }));
+
+    // Add the system message
+    context.unshift({
+      role: 'system',
+      content: systemMessage
+    });
+
+    try {
+      const openai = new OpenAI({
+        apiKey: Deno.env.get('OPENAI_API_KEY')
+      });
+
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-3.5-turbo',
+        messages: context,
+        temperature: 0,
+        max_tokens: 50
+      });
+
+      const response = completion.choices[0].message.content.trim();
+      this.log('OpenAI response:', response);
+      
+      // Extract the step from the response
+      const stepMatch = response.match(/STEP:(\w+)/);
+      if (stepMatch) {
+        const step = stepMatch[1] as 'initial' | 'package_details' | 'addresses' | 'service_selection' | 'confirmation';
+        this.log('Extracted step:', step);
+        return step;
+      }
+
+      // If we can't find a step identifier, use the fallback logic
+      this.log('No step identifier found in response, using fallback logic');
+      if (userMessages.length === 1 && lastUserMessage.toLowerCase().includes('create')) {
+        return 'initial';
+      }
+      if (lastAssistantMessage.includes('type of shipment')) {
+        return 'package_details';
+      }
+      if (lastAssistantMessage.includes('pickup address')) {
+        return 'addresses';
+      }
+      if (lastAssistantMessage.includes('service option')) {
+        return 'service_selection';
+      }
+      if (lastAssistantMessage.includes('create this shipping quote')) {
+        return 'confirmation';
+      }
+      return 'initial';
+    } catch (error) {
+      this.log('Error determining step with OpenAI:', error);
       return 'initial';
     }
-
-    // First check if we have package details in any user message
-    const packageDetails = this.findLastPackageDetails(messages);
-    if (packageDetails) {
-      this.log('Found package details, moving to addresses step');
-      return 'addresses';
-    }
-
-    // If no package details found, check if we're in the package details collection step
-    if (lastAssistantMessage.includes('type of shipment')) {
-      this.log('Last assistant message asking for shipment type, in package_details step');
-      return 'package_details';
-    }
-
-    // If we have a previous message asking for address details
-    if (lastAssistantMessage.includes('pickup address')) {
-      return 'addresses';
-    }
-
-    // If we have address details in the last user message
-    const addressDetails = this.extractAddressDetails(lastUserMessage);
-    if (addressDetails) {
-      return 'service_selection';
-    }
-
-    // If we have a previous message asking for service selection
-    if (lastAssistantMessage.includes('service option')) {
-      return 'service_selection';
-    }
-
-    // If we have service selection in the last user message
-    const serviceDetails = this.extractServiceSelection(lastUserMessage);
-    if (serviceDetails) {
-      return 'confirmation';
-    }
-
-    // If we have a previous message asking for confirmation
-    if (lastAssistantMessage.includes('create this shipping quote')) {
-      return 'confirmation';
-    }
-
-    this.log('No specific step determined, returning initial');
-    return 'initial';
   }
 
   private extractPackageDetails(content: string): QuoteState['packageDetails'] | null {
@@ -332,21 +360,25 @@ export class QuoteAgent {
       let price = 0;
       let duration = '';
 
-      if (contentLower.includes('1') || contentLower.includes('express')) {
+      // Only match exact service selections
+      if (contentLower.match(/^(?:option\s*)?1\s*$/) || contentLower.match(/\b(?:express|express[\s-]freight)\b/)) {
         type = 'express_freight';
         price = 2500;
         duration = '2-3 business days';
-      } else if (contentLower.includes('2') || contentLower.includes('standard')) {
+      } else if (contentLower.match(/^(?:option\s*)?2\s*$/) || contentLower.match(/\b(?:standard|standard[\s-]freight)\b/)) {
         type = 'standard_freight';
         price = 1500;
         duration = '4-5 business days';
-      } else if (contentLower.includes('3') || contentLower.includes('eco')) {
+      } else if (contentLower.match(/^(?:option\s*)?3\s*$/) || contentLower.match(/\b(?:eco|eco[\s-]freight)\b/)) {
         type = 'eco_freight';
         price = 1000;
         duration = '6-7 business days';
       }
 
-      if (!type) return null;
+      if (!type) {
+        this.log('No service selection found');
+        return null;
+      }
 
       const serviceDetails = {
         type,
@@ -409,7 +441,7 @@ export class QuoteAgent {
     const allMessages = context.messages;
     
     // Determine current step from conversation history
-    const step = this.determineStep(allMessages);
+    const step = await this.determineStep(allMessages);
     this.log('Determined step:', step);
 
     let response: string;
@@ -472,24 +504,65 @@ export class QuoteAgent {
     // If we're waiting for service selection
     else if (step === 'service_selection') {
       const serviceDetails = this.extractServiceSelection(lastUserMessage);
+      const addressDetails = this.extractAddressDetails(lastUserMessage);
       
-      if (serviceDetails) {
+      // If they haven't made a selection yet, show the options
+      if (!serviceDetails) {
+        // Try to get the last known address details to calculate distance
+        let lastAddressDetails = addressDetails;
+        if (!lastAddressDetails) {
+          for (let i = allMessages.length - 1; i >= 0; i--) {
+            if (allMessages[i].role === 'user') {
+              lastAddressDetails = this.extractAddressDetails(allMessages[i].content);
+              if (lastAddressDetails) break;
+            }
+          }
+        }
+
+        if (lastAddressDetails) {
+          const distance = this.calculateDistance(
+            { city: lastAddressDetails.pickup.city || '', state: lastAddressDetails.pickup.state || '' },
+            { city: lastAddressDetails.delivery.city || '', state: lastAddressDetails.delivery.state || '' }
+          );
+          response = QUOTE_MESSAGES.SERVICE_OPTIONS(distance);
+        } else {
+          response = "I couldn't find the address details. Let's start over:\n\n" + QUOTE_MESSAGES.START_QUOTE;
+        }
+      } else {
         response = "Perfect! I've got your service selection:\n\n" +
           `Service: ${serviceDetails.type.replace(/_/g, ' ')}\n` +
           `Price: $${serviceDetails.price}\n` +
           `Estimated Delivery: ${serviceDetails.duration}\n\n` +
           "Would you like me to create this shipping quote for you? (yes/no)";
-      } else {
-        response = "I couldn't understand your service selection. Please choose one of the following options:\n\n" +
-          "1. Express Freight\n" +
-          "2. Standard Freight\n" +
-          "3. Eco Freight";
       }
     }
     // If we're waiting for confirmation
     else if (step === 'confirmation') {
       const confirmation = lastUserMessage.toLowerCase();
-      if (confirmation.includes('yes') || confirmation.includes('yeah') || confirmation.includes('sure')) {
+      
+      // Check if this is the first confirmation message (service selection)
+      const isServiceSelection = /^(?:option\s*)?[123]\s*$/.test(confirmation) || 
+                               confirmation.includes('express') ||
+                               confirmation.includes('standard') ||
+                               confirmation.includes('eco');
+
+      if (isServiceSelection) {
+        // Extract service details from the selection
+        const serviceDetails = this.extractServiceSelection(confirmation);
+        if (serviceDetails) {
+          response = "Perfect! I've got your service selection:\n\n" +
+            `Service: ${serviceDetails.type.replace(/_/g, ' ')}\n` +
+            `Price: $${serviceDetails.price}\n` +
+            `Estimated Delivery: ${serviceDetails.duration}\n\n` +
+            "Would you like me to create this shipping quote for you? (yes/no)";
+        } else {
+          // If we couldn't extract service details, show options again
+          response = "I couldn't understand your service selection. Please choose one of the following options:\n\n" +
+            "1. Express Freight\n" +
+            "2. Standard Freight\n" +
+            "3. Eco Freight";
+        }
+      } else if (confirmation.includes('yes') || confirmation.includes('yeah') || confirmation.includes('sure')) {
         response = "Great! I'm creating your shipping quote now. You'll receive a confirmation email shortly with all the details.\n\n" +
           "Is there anything else I can help you with?";
       } else if (confirmation.includes('no') || confirmation.includes('nope') || confirmation.includes('cancel')) {

@@ -162,10 +162,8 @@ serve(async (req: Request) => {
       // Safely handle messages and conversation history
       const safeHistory = Array.isArray(conversationHistory) ? conversationHistory : [];
       
-      // Create the messages array with the current message if it's not already in history
-      const allMessages = safeHistory.length > 0 
-        ? safeHistory 
-        : [lastUserMessage];
+      // Always use the full conversation history
+      const allMessages = safeHistory;
       
       console.log('Sending messages to quote agent:', {
         messageCount: allMessages.length,

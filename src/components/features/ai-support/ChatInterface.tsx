@@ -53,8 +53,9 @@ export function ChatInterface() {
         timestamp: Date.now(),
       },
     };
-    console.log('User message after creation:', userMessage); // Debug log 1
 
+    // Add user message to state immediately
+    setMessages(prev => [...prev, userMessage]);
     setInput('');
     setIsLoading(true);
 
@@ -64,7 +65,7 @@ export function ChatInterface() {
         throw new Error('Message content is required');
       }
 
-      // Create the updated messages array
+      // Create the updated messages array with the new user message
       const updatedMessages = [...messages, userMessage];
 
       // Log the conversation state for debugging
