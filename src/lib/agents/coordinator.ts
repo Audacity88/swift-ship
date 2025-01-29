@@ -1,8 +1,8 @@
 import { AgentContext, AgentMessage } from './base-agent';
 import { RouterAgent } from './router-agent';
-import { DocsAgent } from './docs-agent';
+import { QuoteAgent } from './quote-agent';
 import { SupportAgent } from './support-agent';
-import { BillingAgent } from './billing-agent';
+import { ShipmentsAgent } from './shipments-agent';
 
 interface AgentResponse {
   message: AgentMessage;
@@ -16,9 +16,9 @@ export class AgentCoordinator {
   constructor() {
     this.routerAgent = new RouterAgent();
     this.agents = new Map([
-      ['DOCS_AGENT', new DocsAgent()],
+      ['QUOTE_AGENT', new QuoteAgent()],
       ['SUPPORT_AGENT', new SupportAgent()],
-      ['BILLING_AGENT', new BillingAgent()]
+      ['SHIPMENTS_AGENT', new ShipmentsAgent()]
     ]);
   }
 
@@ -45,7 +45,7 @@ export class AgentCoordinator {
     try {
       routingDecision = JSON.parse(routingResponse.content);
     } catch (e) {
-      routingDecision = { agent: 'DOCS_AGENT', reason: 'Default routing' };
+      routingDecision = { agent: 'QUOTE_AGENT', reason: 'Default routing' };
     }
 
     // Get the appropriate agent

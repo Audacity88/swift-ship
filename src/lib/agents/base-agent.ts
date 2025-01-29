@@ -16,6 +16,13 @@ export interface AgentMessage extends ChatCompletionMessageParam {
     agentId: string;
     timestamp: number;
     tools?: string[];
+    userId?: string;
+    token?: string;
+    customer?: {
+      id: string;
+      name: string;
+      email: string;
+    };
   };
 }
 
@@ -25,16 +32,23 @@ export interface AgentContext {
 }
 
 export abstract class BaseAgent {
-  protected id: string;
-  protected role: string;
-  protected systemPrompt: string;
-  protected tools: string[];
-  
-  constructor(id: string, role: string, systemPrompt: string, tools: string[] = []) {
-    this.id = id;
-    this.role = role;
-    this.systemPrompt = systemPrompt;
-    this.tools = tools;
+  protected constructor(
+    protected readonly agentId: string,
+    protected readonly agentType: string,
+    protected readonly systemMessage: string
+  ) {}
+
+  public abstract process(context: AgentContext): Promise<AgentMessage>;
+
+  protected createMessage(content: string): AgentMessage {
+    return {
+      role: 'assistant',
+      content: content
+    };
+  }
+
+  protected async processMessage(message: AgentMessage, context: AgentContext): Promise<string> {
+    throw new Error('processMessage must be implemented by derived class');
   }
 
   protected async generateEmbedding(text: string): Promise<number[]> {
@@ -61,28 +75,21 @@ export abstract class BaseAgent {
     temperature = 0.7
   ): Promise<string> {
     const completion = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
+      model: 'gpt-4-turbo-preview',
       messages: [
-        { role: 'system', content: this.systemPrompt },
+        { 
+          role: 'system', 
+          content: `${this.systemMessage}\n\nIMPORTANT: You are an AI assistant focused on helping users with ${this.agentType}-related tasks. Stay focused on your role and follow the rules exactly. Do not deviate from your assigned responsibilities.` 
+        },
         ...messages
       ],
       temperature,
+      max_tokens: 1000,
+      top_p: 0.9,
+      frequency_penalty: 0.5,
+      presence_penalty: 0.5
     });
 
     return completion.choices[0].message.content || '';
-  }
-
-  public abstract process(context: AgentContext): Promise<AgentMessage>;
-
-  protected createMessage(content: string, role: 'assistant' | 'user' = 'assistant'): AgentMessage {
-    return {
-      role,
-      content,
-      metadata: {
-        agentId: this.id,
-        timestamp: Date.now(),
-        tools: this.tools,
-      },
-    };
   }
 } 

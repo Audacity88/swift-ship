@@ -1,86 +1,122 @@
-import { BaseAgent } from './base-agent';
-import { AgentMessage } from './types';
-import { EmbeddingsService, SearchResult } from '../services/embeddings-service';
+import { BaseAgent, AgentContext, AgentMessage } from './base-agent';
+import { supabase } from '@/lib/supabase/client';
 
 export class DocsAgent extends BaseAgent {
-  private embeddingsService: EmbeddingsService;
-
   constructor() {
-    super({
-      name: 'Documentation Agent',
-      description: 'I help answer questions about our documentation and knowledge base.',
-      goals: [
-        'Provide accurate information from our knowledge base',
-        'Include relevant links to documentation',
-        'Explain technical concepts clearly',
-        'Suggest related topics when appropriate'
-      ]
-    });
-    this.embeddingsService = EmbeddingsService.getInstance();
+    super(
+      'docs',
+      'docs',
+      `You are Swift Ship's documentation assistant. Your role is to provide accurate information about Swift Ship's services, policies, and procedures.
+
+IMPORTANT RULES:
+1. ALWAYS refer to our company as "Swift Ship"
+2. Base responses on official documentation
+3. Provide detailed explanations with relevant links
+4. If information is not in docs, direct to support
+5. Maintain professional and helpful tone
+6. Focus on educating and informing users
+
+AVAILABLE TOPICS:
+- Shipping Services & Options
+- Service Level Agreements
+- Pricing Structure
+- Package Guidelines
+- Restricted Items
+- Insurance & Claims
+- Tracking & Delivery
+- Payment & Billing
+- Account Management
+- Contact Information
+
+Remember: Provide accurate, documented information and maintain Swift Ship's brand voice.`
+    );
   }
 
-  private async getRelevantContext(query: string): Promise<string> {
+  private async searchDocs(query: string): Promise<string[]> {
     try {
-      const results = await this.embeddingsService.searchSimilarContent(query, 0.5, 3);
-      if (!results.length) return '';
+      const { data: documents, error } = await supabase.rpc('match_documents', {
+        query_embedding: await this.getEmbedding(query),
+        match_threshold: 0.7,
+        match_count: 5
+      });
 
-      // Format the context with the most relevant documents
-      return results.map(doc => (
-        `From ${doc.title} (${doc.url}):\n${doc.content}\n`
-      )).join('\n---\n\n');
-    } catch (error) {
-      console.error('Error getting relevant context:', error);
-      return '';
-    }
-  }
-
-  async process(messages: AgentMessage[]): Promise<AgentMessage> {
-    try {
-      // Get the last user message
-      const lastUserMessage = messages.findLast(m => m.role === 'user');
-      if (!lastUserMessage) {
-        return this.createMessage('I need a question to help you with.');
+      if (error) {
+        console.error('Error searching documents:', error);
+        return [];
       }
 
-      // Get relevant context from our knowledge base
-      const context = await this.getRelevantContext(lastUserMessage.content);
-      
-      // Prepare the system message with context
-      const systemMessage = `You are a helpful documentation agent. Use the following relevant documentation to answer the user's question. If you can't find a relevant answer in the documentation, say so.
-
-Relevant documentation:
-${context || 'No directly relevant documentation found.'}`;
-
-      // Get completion from OpenAI
-      const completion = await this.getCompletion([
-        { role: 'system', content: systemMessage },
-        ...messages.slice(-5) // Include last 5 messages for context
-      ]);
-
-      // Create response with metadata about sources used
-      const sources = context ? this.extractSources(context) : [];
-      return this.createMessage(completion, { sources });
-
+      return documents.map(doc => doc.content);
     } catch (error) {
-      console.error('Error in DocsAgent:', error);
-      return this.createMessage(
-        'I encountered an error while trying to process your request. Please try again.'
-      );
+      console.error('Error in vector search:', error);
+      return [];
     }
   }
 
-  private extractSources(context: string): { title: string; url: string }[] {
-    const sourceRegex = /From (.*?) \((.*?)\):/g;
-    const sources: { title: string; url: string }[] = [];
-    let match;
-
-    while ((match = sourceRegex.exec(context)) !== null) {
-      sources.push({
-        title: match[1],
-        url: match[2]
-      });
+  private formatResponse(docs: string[], query: string): string {
+    if (docs.length === 0) {
+      return "I don't have specific documentation about that topic. Please contact our support team at support@swiftship.com for more information.";
     }
 
-    return sources;
+    // Combine relevant documentation sections and format them nicely
+    const formattedDocs = docs.map(doc => {
+      // Clean up the document content and format it with markdown
+      const cleanContent = doc.trim()
+        .replace(/\n{3,}/g, '\n\n') // Replace multiple newlines with double newlines
+        .replace(/#{1,6}\s/g, '**') // Replace markdown headers with bold
+        .trim();
+      
+      return cleanContent;
+    });
+
+    return formattedDocs.join('\n\n---\n\n');
+  }
+
+  public async process(context: AgentContext): Promise<AgentMessage> {
+    const lastMessage = context.messages[context.messages.length - 1];
+    
+    if (!lastMessage?.content) {
+      return this.createMessage(
+        "Hello! I can help you find information about Swift Ship's services and policies. What would you like to know?"
+      );
+    }
+
+    try {
+      const query = lastMessage.content;
+      
+      // Analyze the query to determine the topic
+      const topic = await this.getCompletion([
+        {
+          role: 'system',
+          content: 'Analyze the user query and determine which shipping-related topic they are asking about. Return the most relevant topic from: SERVICES, PRICING, PACKAGING, RESTRICTIONS, INSURANCE, TRACKING, BILLING, ACCOUNT, or OTHER.'
+        },
+        {
+          role: 'user',
+          content: query
+        }
+      ], 0);
+
+      // Search documentation based on the topic and query
+      const docs = await this.searchDocs(query);
+
+      // Format response based on available documentation
+      let response = this.formatResponse(docs, query);
+
+      // For service-related queries, always include contact information
+      if (topic.trim() === 'SERVICES') {
+        response += "\n\nFor personalized service recommendations or to get started with a quote, please contact our sales team at sales@swiftship.com.";
+      }
+
+      // For pricing queries, direct to quote creation
+      if (topic.trim() === 'PRICING') {
+        response += "\n\nFor accurate pricing based on your specific needs, please use our quote creation service or contact our sales team.";
+      }
+
+      return this.createMessage(response);
+    } catch (error) {
+      console.error('Error processing documentation request:', error);
+      return this.createMessage(
+        "I encountered an error while searching our documentation. Please try again or contact our support team for assistance."
+      );
+    }
   }
 } 

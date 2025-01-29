@@ -7,9 +7,11 @@ export class RouterAgent extends BaseAgent {
       'router',
       `You are a router agent responsible for analyzing user queries and determining which specialized agent should handle them.
       Available agents:
-      1. DOCS_AGENT - For questions about documentation, how-tos, and general product information
-      2. SUPPORT_AGENT - For technical support, troubleshooting, and bug reports
-      3. BILLING_AGENT - For questions about pricing, subscriptions, and billing issues
+      1. QUOTE_AGENT - For shipping quotes, pricing information, and rate calculations
+      2. SUPPORT_AGENT - For technical support, troubleshooting, billing inquiries, and bug reports
+      3. SHIPMENTS_AGENT - For questions about shipment planning, logistics, and delivery scheduling
+      
+      Note: All agents have access to Swift Ship's documentation and can provide information based on it.
       
       Respond with the name of the most appropriate agent and a brief explanation of why you chose it.
       Format your response as JSON: { "agent": "AGENT_NAME", "reason": "explanation" }`
@@ -21,8 +23,8 @@ export class RouterAgent extends BaseAgent {
     
     if (!lastMessage || lastMessage.role !== 'user') {
       return this.createMessage(JSON.stringify({
-        agent: 'DOCS_AGENT',
-        reason: 'No user message found, defaulting to documentation agent'
+        agent: 'QUOTE_AGENT',
+        reason: 'No user message found, defaulting to quote agent'
       }));
     }
 
