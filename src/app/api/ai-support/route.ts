@@ -49,8 +49,9 @@ export async function POST(req: NextRequest) {
           'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
         },
         body: JSON.stringify({
-          messages: conversationHistory ? [...conversationHistory, { role: 'user', content: message }] : [{ role: 'user', content: message }],
-          agent: agentType,
+          message,
+          conversationHistory: conversationHistory || [],
+          agentType,
           metadata: {
             ...metadata,
             agentType

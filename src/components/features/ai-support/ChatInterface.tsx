@@ -11,8 +11,8 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   metadata?: {
-    agent?: string;
     timestamp?: number;
+    agent?: string;
     context?: Array<{
       title: string;
       url: string;
@@ -21,11 +21,26 @@ interface Message {
   };
 }
 
+interface RequestMetadata {
+  userId: string;
+  customer: {
+    id: string;
+    name: string;
+    email: string;
+  };
+}
+
+interface AIRequestPayload {
+  message: string;
+  conversationHistory: Message[];
+  agentType: 'quote';
+  metadata: RequestMetadata;
+}
+
 export function ChatInterface() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [streamingMessage, setStreamingMessage] = useState<Message | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,13 +53,29 @@ export function ChatInterface() {
         timestamp: Date.now(),
       },
     };
+    console.log('User message after creation:', userMessage); // Debug log 1
 
-    const updatedMessages = [...messages, userMessage];
-    setMessages(updatedMessages);
     setInput('');
     setIsLoading(true);
 
     try {
+      // Ensure we have valid messages before making the request
+      if (!userMessage.content) {
+        throw new Error('Message content is required');
+      }
+
+      // Create the updated messages array
+      const updatedMessages = [...messages, userMessage];
+
+      // Log the conversation state for debugging
+      console.log('Sending request with:', {
+        currentMessage: userMessage.content,
+        historyLength: updatedMessages.length,
+        history: updatedMessages
+      });
+      
+      console.log('User message before request:', userMessage); // Debug log 2
+      
       const response = await fetch('/api/ai-support', {
         method: 'POST',
         headers: {
@@ -52,7 +83,16 @@ export function ChatInterface() {
         },
         body: JSON.stringify({
           message: userMessage.content,
-          conversationHistory: updatedMessages,
+          conversationHistory: [...messages, userMessage],
+          agentType: "quote",
+          metadata: {
+            userId: "user",
+            customer: {
+              id: "customer",
+              name: "Customer",
+              email: "customer@example.com"
+            }
+          }
         }),
       });
 
@@ -63,17 +103,23 @@ export function ChatInterface() {
 
       if (!response.body) throw new Error('No response body');
 
-      // Initialize streaming message
-      setStreamingMessage({
+      // Initialize assistant message
+      const assistantMessage: Message = {
         role: 'assistant',
         content: '',
         metadata: {
           timestamp: Date.now(),
         },
-      });
+      };
+
+      // Add empty assistant message that will be updated
+      setMessages(prev => [...prev, assistantMessage]);
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
+      let accumulatedContent = '';
+      let lastMetadata = {};
+      let buffer = ''; // Buffer for incomplete JSON data
 
       try {
         while (true) {
@@ -81,56 +127,131 @@ export function ChatInterface() {
           if (done) break;
 
           const text = decoder.decode(value);
-          const lines = text.split('\n');
+          buffer += text; // Add new text to buffer
           
-          for (const line of lines) {
-            if (line.trim() === '' || !line.startsWith('data: ')) continue;
+          // Process complete messages from buffer
+          const messages = buffer.split('\n\n');
+          buffer = messages.pop() || ''; // Keep the last potentially incomplete message
+
+          for (const message of messages) {
+            if (!message.trim() || !message.startsWith('data: ')) continue;
 
             try {
-              const data = JSON.parse(line.slice(5));
+              const jsonStr = message.replace(/^data: /, '').trim();
+              const data = JSON.parse(jsonStr);
+              console.log('Received SSE data:', data); // Debug log
 
               if (data.type === 'chunk') {
-                setStreamingMessage(prev => ({
-                  role: 'assistant',
-                  content: prev ? prev.content + data.content : data.content,
-                  metadata: {
-                    timestamp: Date.now(),
-                  }
-                }));
-              } else if (data.type === 'sources') {
-                setStreamingMessage(prev => {
-                  if (!prev) return null;
-                  
-                  // Just update the streaming message with sources
-                  return {
-                    ...prev,
+                accumulatedContent += data.content;
+                setMessages(prev => {
+                  const newMessages = [...prev];
+                  const lastMessage = newMessages[newMessages.length - 1];
+                  newMessages[newMessages.length - 1] = {
+                    ...lastMessage,
+                    content: accumulatedContent,
                     metadata: {
-                      ...prev.metadata,
-                      agent: 'DOCS_AGENT',
+                      ...lastMessage.metadata,
+                      timestamp: Date.now(),
+                    }
+                  };
+                  return newMessages;
+                });
+              } else if (data.type === 'metadata') {
+                lastMetadata = data.metadata;
+                setMessages(prev => {
+                  const newMessages = [...prev];
+                  const lastMessage = newMessages[newMessages.length - 1];
+                  newMessages[newMessages.length - 1] = {
+                    ...lastMessage,
+                    metadata: {
+                      ...lastMessage.metadata,
+                      ...data.metadata
+                    }
+                  };
+                  return newMessages;
+                });
+              } else if (data.type === 'sources') {
+                setMessages(prev => {
+                  const newMessages = [...prev];
+                  const lastMessage = newMessages[newMessages.length - 1];
+                  newMessages[newMessages.length - 1] = {
+                    ...lastMessage,
+                    metadata: {
+                      ...lastMessage.metadata,
+                      agent: 'QUOTE_AGENT',
                       context: data.sources
                     }
                   };
+                  return newMessages;
                 });
+              } else if (data.type === 'debug' && process.env.NODE_ENV === 'development') {
+                // Log debug information in development
+                console.group('Quote Agent Debug Logs');
+                data.logs.forEach((log: string) => console.log(log));
+                console.groupEnd();
               }
             } catch (e) {
-              // Silently handle parsing errors
+              console.error('Error parsing SSE data:', {
+                message,
+                error: e
+              });
             }
           }
         }
+
+        // Process any remaining data in buffer
+        if (buffer.trim() && buffer.startsWith('data: ')) {
+          try {
+            const jsonStr = buffer.replace(/^data: /, '').trim();
+            const data = JSON.parse(jsonStr);
+            
+            if (data.type === 'chunk') {
+              accumulatedContent += data.content;
+            } else if (data.type === 'metadata') {
+              lastMetadata = data.metadata;
+            }
+          } catch (e) {
+            console.error('Error parsing final buffer:', {
+              buffer,
+              error: e
+            });
+          }
+        }
+
+        // After the stream is complete, update messages one final time
+        setMessages(prev => {
+          const newMessages = [...prev];
+          const lastMessage = newMessages[newMessages.length - 1];
+          newMessages[newMessages.length - 1] = {
+            role: 'assistant',
+            content: accumulatedContent,
+            metadata: {
+              ...lastMessage.metadata,
+              ...lastMetadata,
+              timestamp: Date.now(),
+            }
+          };
+          return newMessages;
+        });
       } catch (error) {
+        console.error('Error in stream reading:', error);
         throw error;
       } finally {
         reader.releaseLock();
       }
     } catch (error) {
-      const errorMessage = {
-        role: 'assistant',
-        content: 'Sorry, I encountered an error while processing your request. Please try again.',
-        metadata: {
-          timestamp: Date.now(),
-        },
-      };
-      setMessages(prev => [...prev, errorMessage]);
+      console.error('Error in request:', error);
+      setMessages(prev => {
+        const newMessages = [...prev];
+        newMessages[newMessages.length - 1] = {
+          role: 'assistant',
+          content: 'Sorry, I encountered an error while processing your request. Please try again.',
+          metadata: {
+            timestamp: Date.now(),
+          },
+        };
+        return newMessages;
+      });
     } finally {
       setIsLoading(false);
     }
@@ -177,51 +298,6 @@ export function ChatInterface() {
               </div>
             </div>
           ))}
-          {streamingMessage && (
-            <div className="flex w-full max-w-[80%] rounded-lg px-4 py-2 bg-muted">
-              <div className="space-y-2 w-full">
-                <p className="text-sm whitespace-pre-wrap break-words">{streamingMessage.content}</p>
-                {streamingMessage.metadata?.agent && (
-                  <div className="space-y-1">
-                    <p className="text-xs opacity-70">
-                      Answered by: {streamingMessage.metadata.agent.replace('_', ' ')}
-                    </p>
-                    {streamingMessage.metadata.context && streamingMessage.metadata.context.length > 0 && (
-                      <div className="space-y-1">
-                        <p className="text-xs">Sources:</p>
-                        <ul className="text-xs space-y-1 text-blue-500 mb-1">
-                          {streamingMessage.metadata.context.map((source, idx) => (
-                            <li key={idx}>
-                              {source.url ? (
-                                <a 
-                                  href={source.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-blue-500 hover:text-blue-600 hover:underline"
-                                >
-                                  {source.title}
-                                </a>
-                              ) : (
-                                <span className="text-blue-500">{source.title}</span>
-                              )}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                    <div className="mt-2 text-xs">
-                      <p>Need more help? <a href="/portal/tickets/new" className="text-blue-500 hover:text-blue-600 hover:underline">Contact Support</a></p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-          {isLoading && !streamingMessage && (
-            <div className="flex w-max max-w-[80%] rounded-lg px-4 py-2 bg-muted">
-              <p className="text-sm">Thinking...</p>
-            </div>
-          )}
         </div>
       </ScrollArea>
       <form onSubmit={handleSubmit} className="p-4 border-t bg-background">
