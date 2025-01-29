@@ -1,7 +1,7 @@
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import OpenAI from 'https://esm.sh/openai@4'
-import { QuoteAgent } from './quote-agent.ts'
+import { serve, createClient, OpenAI } from './deps.ts'
+import { QuoteAgent } from './shared/agents/quote-agent.ts'
+import type { AgentContext, AgentMessage } from './shared/types.ts'
+import { AgentFactory } from './shared/agent-factory.ts'
 
 // Maintain a single instance of the quote agent
 const quoteAgent = new QuoteAgent();
@@ -90,150 +90,57 @@ interface AgentResponse {
 }
 
 serve(async (req: Request) => {
-  // Handle CORS preflight requests
+  // Handle CORS
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    const { message, conversationHistory, agentType, metadata } = await req.json() as AgentRequest
+    const { message, conversationHistory, agentType, metadata } = await req.json();
 
-    // Initialize services
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    )
-
-    const openai = new OpenAI({
-      apiKey: Deno.env.get('OPENAI_API_KEY'),
-    })
-
-    const embeddings = new EmbeddingsService(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-      Deno.env.get('OPENAI_API_KEY') ?? ''
-    )
-
-    // Get the last user message
-    const lastUserMessage = conversationHistory?.length > 0 ? conversationHistory[conversationHistory.length - 1] : { role: 'user', content: message }
-    if (!lastUserMessage) {
-      throw new Error('No user message found')
-    }
-
-    // Determine which agent to use and get response
-    const isQuoteAgent = agentType === 'quote' || metadata?.agentType === 'quote'
-    let response: AgentResponse;
-    
-    if (isQuoteAgent) {
-      // Use the existing QuoteAgent instance
-      console.log('Processing quote request with:', {
-        message,
-        conversationHistory,
-        metadata
-      });
-      
-      const allMessages = [
-        ...(conversationHistory || []),
-        { role: 'user' as const, content: message }
-      ];
-      
-      console.log('Sending messages to quote agent:', allMessages);
-      response = await quoteAgent.process({ messages: allMessages, metadata });
-      console.log('Quote agent response:', response);
-      
-      // Create a streaming response for the quote agent's response
-      const stream = new ReadableStream({
-        async start(controller) {
-          try {
-            // Send the response content
-            controller.enqueue(
-              new TextEncoder().encode(
-                `data: ${JSON.stringify({
-                  type: 'chunk',
-                  content: response.content,
-                  metadata: {
-                    agent: 'QUOTE_AGENT',
-                    ...response.metadata
-                  }
-                })}\n\n`
-              )
-            );
-            controller.close();
-          } catch (error) {
-            controller.error(error);
-          }
+    // Convert the conversation history to the expected format
+    const messages: AgentMessage[] = [
+      ...(conversationHistory || []).map((msg: any) => ({
+        role: msg.role,
+        content: msg.content,
+        metadata: msg.metadata
+      })),
+      {
+        role: 'user',
+        content: message,
+        metadata: {
+          timestamp: Date.now(),
+          ...metadata
         }
-      });
+      }
+    ];
 
-      return new Response(stream, {
-        headers: {
-          ...corsHeaders,
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          'Connection': 'keep-alive'
-        }
-      });
-    }
-
-    // For non-quote agents, continue with existing logic
-    let systemMessage = ''
-    let sources: { title: string; url: string; score: number }[] = []
-
-    // Get relevant documentation for non-quote agents
-    const results = await embeddings.searchSimilarContent(lastUserMessage.content, 0.5, 3)
-    sources = results
-    const context = results.length > 0 ? results.map(doc => (
-      `Content from "${doc.title}":\n${doc.content}\n`
-    )).join('\n\n') : ''
+    // Get the appropriate agent
+    const agent = AgentFactory.getAgent(agentType || 'router');
     
-    systemMessage = `You are a helpful assistant with access to the following documentation:\n\n${context}`
-
-    // Get completion from OpenAI
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4-turbo-preview',
-      messages: [
-        { role: 'system', content: systemMessage },
-        ...conversationHistory.slice(-5) // Include last 5 messages for context
-      ],
-      temperature: 0.7,
-      max_tokens: 500,
-      stream: true
+    // Process the request
+    const response = await agent.process({ 
+      messages,
+      metadata: {
+        ...metadata,
+        environment: 'edge',
+        agentType
+      }
     });
 
     // Create a streaming response
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          let fullResponse = '';
-          for await (const chunk of completion) {
-            const content = chunk.choices[0]?.delta?.content || '';
-            if (content) {
-              fullResponse += content;
-              controller.enqueue(
-                new TextEncoder().encode(
-                  `data: ${JSON.stringify({
-                    type: 'chunk',
-                    content,
-                    metadata: {
-                      agent: 'DOCS_AGENT'
-                    }
-                  })}\n\n`
-                )
-              );
-            }
-          }
-          // Send sources at the end
+          // Send the response content
           controller.enqueue(
             new TextEncoder().encode(
               `data: ${JSON.stringify({
-                type: 'sources',
-                sources: sources.map(source => ({
-                  title: source.title,
-                  url: source.url,
-                  score: source.score
-                })),
+                type: 'chunk',
+                content: response.content,
                 metadata: {
-                  agent: 'DOCS_AGENT'
+                  agent: agentType?.toUpperCase() || 'ROUTER_AGENT',
+                  ...response.metadata
                 }
               })}\n\n`
             )
@@ -253,14 +160,21 @@ serve(async (req: Request) => {
         'Connection': 'keep-alive'
       }
     });
+
   } catch (error) {
-    console.error('Error:', error)
+    console.error('Error processing request:', error);
+    
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({
+        error: error instanceof Error ? error.message : 'Unknown error occurred'
+      }),
       {
         status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      },
-    )
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
   }
-}) 
+}); 

@@ -1,12 +1,13 @@
-import { BaseAgent, AgentContext, AgentMessage } from './base-agent';
-import { supabase } from '@/lib/supabase/client';
+import { BaseAgent } from '../base-agent.ts';
+import type { AgentContext, AgentResponse } from '../types.ts';
+import { agentUtils } from '../utils.ts';
 
 export class DocsAgent extends BaseAgent {
   constructor() {
-    super(
-      'docs',
-      'docs',
-      `You are Swift Ship's documentation assistant. Your role is to provide accurate information about Swift Ship's services, policies, and procedures.
+    super({
+      agentId: 'docs',
+      agentType: 'docs',
+      systemMessage: `You are Swift Ship's documentation assistant. Your role is to provide accurate information about Swift Ship's services, policies, and procedures.
 
 IMPORTANT RULES:
 1. ALWAYS refer to our company as "Swift Ship"
@@ -29,23 +30,14 @@ AVAILABLE TOPICS:
 - Contact Information
 
 Remember: Provide accurate, documented information and maintain Swift Ship's brand voice.`
-    );
+    });
   }
 
   private async searchDocs(query: string): Promise<string[]> {
     try {
-      const { data: documents, error } = await supabase.rpc('match_documents', {
-        query_embedding: await this.getEmbedding(query),
-        match_threshold: 0.7,
-        match_count: 5
-      });
-
-      if (error) {
-        console.error('Error searching documents:', error);
-        return [];
-      }
-
-      return documents.map(doc => doc.content);
+      const embedding = await this.generateEmbedding(query);
+      const matches = await this.searchSimilarContent(embedding, 0.7, 5);
+      return matches.map(doc => doc.content);
     } catch (error) {
       console.error('Error in vector search:', error);
       return [];
@@ -71,18 +63,20 @@ Remember: Provide accurate, documented information and maintain Swift Ship's bra
     return formattedDocs.join('\n\n---\n\n');
   }
 
-  public async process(context: AgentContext): Promise<AgentMessage> {
-    const lastMessage = context.messages[context.messages.length - 1];
-    
-    if (!lastMessage?.content) {
-      return this.createMessage(
-        "Hello! I can help you find information about Swift Ship's services and policies. What would you like to know?"
-      );
-    }
-
+  public async process(context: AgentContext): Promise<AgentResponse> {
     try {
-      const query = lastMessage.content;
+      const lastMessage = agentUtils.getLastUserMessage(context);
       
+      if (!lastMessage) {
+        return {
+          content: "Hello! I can help you find information about Swift Ship's services and policies. What would you like to know?",
+          metadata: {
+            agentId: this.config.agentId,
+            timestamp: Date.now()
+          }
+        };
+      }
+
       // Analyze the query to determine the topic
       const topic = await this.getCompletion([
         {
@@ -91,15 +85,15 @@ Remember: Provide accurate, documented information and maintain Swift Ship's bra
         },
         {
           role: 'user',
-          content: query
+          content: lastMessage
         }
       ], 0);
 
       // Search documentation based on the topic and query
-      const docs = await this.searchDocs(query);
+      const docs = await this.searchDocs(lastMessage);
 
       // Format response based on available documentation
-      let response = this.formatResponse(docs, query);
+      let response = this.formatResponse(docs, lastMessage);
 
       // For service-related queries, always include contact information
       if (topic.trim() === 'SERVICES') {
@@ -111,12 +105,21 @@ Remember: Provide accurate, documented information and maintain Swift Ship's bra
         response += "\n\nFor accurate pricing based on your specific needs, please use our quote creation service or contact our sales team.";
       }
 
-      return this.createMessage(response);
+      return {
+        content: response,
+        metadata: {
+          agentId: this.config.agentId,
+          timestamp: Date.now(),
+          topic: topic.trim()
+        }
+      };
     } catch (error) {
       console.error('Error processing documentation request:', error);
-      return this.createMessage(
-        "I encountered an error while searching our documentation. Please try again or contact our support team for assistance."
-      );
+      const errorMessage = agentUtils.createErrorMessage(error as Error, this.config.agentId);
+      return {
+        content: errorMessage.content,
+        metadata: errorMessage.metadata
+      };
     }
   }
 } 
