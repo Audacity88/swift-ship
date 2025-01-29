@@ -173,6 +173,7 @@
         "npm:node-fetch@^2.7.0",
         "npm:node-mocks-http@^1.16.2",
         "npm:openai@^4.80.1",
+        "npm:path@~0.12.7",
         "npm:picomatch@^4.0.2",
         "npm:postcss@8",
         "npm:radar-sdk-js@^4.4.10",

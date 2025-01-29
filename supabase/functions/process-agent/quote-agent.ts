@@ -27,13 +27,22 @@ interface AgentResponse {
   metadata?: Record<string, any>;
 }
 
+interface AddressDetails {
+  pickup: {
+    address: string;
+    city?: string;
+    state?: string;
+  };
+  delivery: {
+    address: string;
+    city?: string;
+    state?: string;
+  };
+  pickupDateTime?: string;
+}
+
 interface QuoteState {
   step: 'initial' | 'package_details' | 'addresses' | 'service_selection' | 'confirmation';
-  customer?: {
-    id: string;
-    name: string;
-    email: string;
-  };
   packageDetails?: {
     type: 'full_truckload' | 'less_than_truckload' | 'sea_container' | 'bulk_freight';
     weight: string;
@@ -43,19 +52,7 @@ interface QuoteState {
     containerSize?: '20ft' | '40ft' | '40ft_hc';
     palletCount?: string;
   };
-  addressDetails?: {
-    pickup: {
-      address: string;
-      city?: string;
-      state?: string;
-    };
-    delivery: {
-      address: string;
-      city?: string;
-      state?: string;
-    };
-    pickupDateTime?: string;
-  };
+  addressDetails?: AddressDetails;
   serviceDetails?: {
     type: 'express_freight' | 'standard_freight' | 'eco_freight';
     price: number;
@@ -102,6 +99,11 @@ const QUOTE_MESSAGES = {
 
 export class QuoteAgent {
   private debugLogs: string[] = [];
+  private baseUrl: string;
+
+  constructor(baseUrl: string = 'https://dkrhdxqqkgutrnvsfhxi.supabase.co') {
+    this.baseUrl = baseUrl;
+  }
 
   private log(message: string, ...args: any[]) {
     const logMessage = `${message} ${args.map(arg => JSON.stringify(arg)).join(' ')}`;
@@ -109,7 +111,166 @@ export class QuoteAgent {
     console.log(logMessage);
   }
 
-  constructor() {}
+  private async collectQuoteDetails(messages: AgentMessage[]): Promise<{
+    packageDetails: QuoteState['packageDetails'];
+    addressDetails: QuoteState['addressDetails'];
+    serviceDetails: QuoteState['serviceDetails'];
+  } | null> {
+    try {
+      const packageDetails = this.findLastPackageDetails(messages);
+      const addressDetails = this.findLastAddressDetails(messages);
+      const serviceDetails = this.findLastServiceSelection(messages);
+
+      if (!packageDetails || !addressDetails || !serviceDetails) {
+        this.log('Missing required details for quote:', {
+          hasPackage: !!packageDetails,
+          hasAddress: !!addressDetails,
+          hasService: !!serviceDetails
+        });
+        return null;
+      }
+
+      return {
+        packageDetails,
+        addressDetails,
+        serviceDetails
+      };
+    } catch (error) {
+      this.log('Error collecting quote details:', error);
+      return null;
+    }
+  }
+
+  public async createTicketDirect(
+    quoteDetails: {
+      packageDetails: QuoteState['packageDetails'];
+      addressDetails: QuoteState['addressDetails'];
+      serviceDetails: QuoteState['serviceDetails'];
+    },
+    metadata: {
+      customer?: { id: string; name: string; email: string };
+      token?: string;
+    }
+  ): Promise<{ success: boolean; error?: string; ticket?: any }> {
+    try {
+      const { packageDetails, addressDetails, serviceDetails } = quoteDetails;
+
+      // Format the ticket data according to the API schema
+      const ticketData = {
+        title: `Shipping Quote - ${serviceDetails.type.replace(/_/g, ' ')}`,
+        description: `
+Package Details:
+- Type: ${packageDetails.type.replace(/_/g, ' ')}
+- Weight: ${packageDetails.weight} tons
+- Volume: ${packageDetails.volume} cubic meters
+- Hazardous: ${packageDetails.hazardous ? 'Yes' : 'No'}
+${packageDetails.containerSize ? `- Container Size: ${packageDetails.containerSize}` : ''}
+${packageDetails.palletCount ? `- Pallet Count: ${packageDetails.palletCount}` : ''}
+
+Pickup Address:
+${addressDetails.pickup.address}
+${addressDetails.pickup.city}${addressDetails.pickup.state ? `, ${addressDetails.pickup.state}` : ''}
+Pickup Time: ${addressDetails.pickupDateTime || 'Not specified'}
+
+Delivery Address:
+${addressDetails.delivery.address}
+${addressDetails.delivery.city}${addressDetails.delivery.state ? `, ${addressDetails.delivery.state}` : ''}
+
+Service Details:
+- Service Type: ${serviceDetails.type.replace(/_/g, ' ')}
+- Price: $${serviceDetails.price}
+- Estimated Duration: ${serviceDetails.duration}
+        `.trim(),
+        priority: 'medium',
+        customer_id: metadata.customer?.id,
+        status: 'open',
+        type: 'task',
+        source: 'web',
+        metadata: {
+          quoteDetails: {
+            package: packageDetails,
+            addresses: addressDetails,
+            service: serviceDetails
+          }
+        }
+      };
+
+      this.log('Creating ticket with data:', ticketData);
+
+      // Make the API call to create the ticket
+      const response = await fetch(`${this.baseUrl}/rest/v1/tickets`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': metadata.token || '',
+          'Authorization': `Bearer ${metadata.token || ''}`,
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify(ticketData)
+      });
+
+      this.log('Request headers:', {
+        'apikey': metadata.token ? `${metadata.token.substring(0, 10)}...` : 'none',
+        'Authorization': metadata.token ? `Bearer ${metadata.token.substring(0, 10)}...` : 'none'
+      });
+
+      const responseText = await response.text();
+      this.log('Response status:', response.status);
+      this.log('Response text:', responseText);
+      this.log('Request URL:', `${this.baseUrl}/rest/v1/tickets`);
+
+      if (!response.ok) {
+        return { 
+          success: false, 
+          error: `Failed to create ticket: ${responseText}` 
+        };
+      }
+
+      let responseData;
+      try {
+        responseData = responseText ? JSON.parse(responseText) : { id: 'created' };
+      } catch (parseError) {
+        this.log('Error parsing response:', parseError);
+        // If we got a 201 but can't parse the response, consider it a success
+        if (response.status === 201) {
+          responseData = { id: 'created' };
+        } else {
+          return {
+            success: false,
+            error: `Failed to parse response: ${parseError.message}`
+          };
+        }
+      }
+
+      this.log('Successfully created ticket:', responseData);
+      return { 
+        success: true, 
+        ticket: responseData 
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      this.log('Error in createTicketDirect:', errorMessage);
+      return { 
+        success: false, 
+        error: errorMessage 
+      };
+    }
+  }
+
+  private async createTicket(messages: AgentMessage[], metadata: any): Promise<boolean> {
+    try {
+      const quoteDetails = await this.collectQuoteDetails(messages);
+      if (!quoteDetails) {
+        return false;
+      }
+
+      const result = await this.createTicketDirect(quoteDetails, metadata);
+      return result.success;
+    } catch (error) {
+      this.log('Error in createTicket:', error);
+      return false;
+    }
+  }
 
   private async determineStep(messages: AgentMessage[]): Promise<'initial' | 'package_details' | 'addresses' | 'service_selection' | 'confirmation'> {
     if (messages.length === 0) return 'initial';
@@ -125,82 +286,41 @@ export class QuoteAgent {
       lastAssistantMessage
     });
 
-    // Create a system message to help determine the step
-    const systemMessage = `You are a shipping quote assistant. Based on the conversation history, analyze where we are in the quote creation process.
-
-First, write a brief natural response about what information we have or need next.
-Then on a new line, write exactly one of these step identifiers: STEP:initial, STEP:package_details, STEP:addresses, STEP:service_selection, or STEP:confirmation
-
-Example responses:
-"We need to collect the initial shipping details.
-STEP:initial"
-
-"Great! They've provided all the package details, now we need addresses.
-STEP:addresses"
-
-"We have the addresses, let's show them service options.
-STEP:service_selection"
-
-"They've selected a service, let's confirm the quote.
-STEP:confirmation"`;
-
-    // Create the conversation context
-    const context = messages.map(m => ({
-      role: m.role,
-      content: m.content
-    }));
-
-    // Add the system message
-    context.unshift({
-      role: 'system',
-      content: systemMessage
-    });
-
-    try {
-      const openai = new OpenAI({
-        apiKey: Deno.env.get('OPENAI_API_KEY')
-      });
-
-      const completion = await openai.chat.completions.create({
-        model: 'gpt-3.5-turbo',
-        messages: context,
-        temperature: 0,
-        max_tokens: 50
-      });
-
-      const response = completion.choices[0].message.content.trim();
-      this.log('OpenAI response:', response);
-      
-      // Extract the step from the response
-      const stepMatch = response.match(/STEP:(\w+)/);
-      if (stepMatch) {
-        const step = stepMatch[1] as 'initial' | 'package_details' | 'addresses' | 'service_selection' | 'confirmation';
-        this.log('Extracted step:', step);
-        return step;
-      }
-
-      // If we can't find a step identifier, use the fallback logic
-      this.log('No step identifier found in response, using fallback logic');
-      if (userMessages.length === 1 && lastUserMessage.toLowerCase().includes('create')) {
-        return 'initial';
-      }
-      if (lastAssistantMessage.includes('type of shipment')) {
-        return 'package_details';
-      }
-      if (lastAssistantMessage.includes('pickup address')) {
-        return 'addresses';
-      }
-      if (lastAssistantMessage.includes('service option')) {
-        return 'service_selection';
-      }
-      if (lastAssistantMessage.includes('create this shipping quote')) {
-        return 'confirmation';
-      }
-      return 'initial';
-    } catch (error) {
-      this.log('Error determining step with OpenAI:', error);
-      return 'initial';
+    // If the last assistant message asked for confirmation and user said yes/no
+    if (lastAssistantMessage.includes('create this shipping quote') && 
+        (lastUserMessage.toLowerCase().includes('yes') || lastUserMessage.toLowerCase().includes('no'))) {
+      return 'confirmation';
     }
+
+    // If the last assistant message showed service options
+    if (lastAssistantMessage.includes('service option') || lastAssistantMessage.includes('Express Freight')) {
+      return 'service_selection';
+    }
+
+    // If we have package details but no addresses
+    const packageDetails = this.findLastPackageDetails(messages);
+    const addressDetails = this.findLastAddressDetails(messages);
+    if (packageDetails && !addressDetails) {
+      return 'addresses';
+    }
+
+    // If we have addresses but no service selection
+    const serviceDetails = this.findLastServiceSelection(messages);
+    if (addressDetails && !serviceDetails) {
+      return 'service_selection';
+    }
+
+    // If we have all details, move to confirmation
+    if (packageDetails && addressDetails && serviceDetails) {
+      return 'confirmation';
+    }
+
+    // If we're just starting or need package details
+    if (!packageDetails) {
+      return 'package_details';
+    }
+
+    return 'initial';
   }
 
   private extractPackageDetails(content: string): QuoteState['packageDetails'] | null {
@@ -208,87 +328,45 @@ STEP:confirmation"`;
       this.log('Extracting package details from:', content);
       const contentLower = content.toLowerCase();
       
-      // Extract type with more variations
       let type: 'full_truckload' | 'less_than_truckload' | 'sea_container' | 'bulk_freight' | null = null;
       
-      // Log what we're matching against
-      this.log('Checking type matches in:', contentLower);
-      
-      // Check for full truckload variations
       if (contentLower.match(/\b(full.*truck|ftl|full.*load)\b/)) {
-        this.log('Matched full truckload pattern');
         type = 'full_truckload';
-      } 
-      // Check for LTL variations
-      else if (contentLower.match(/\b(less.*truck|ltl|less.*load)\b/)) {
-        this.log('Matched LTL pattern');
+      } else if (contentLower.match(/\b(less.*truck|ltl|less.*load)\b/)) {
         type = 'less_than_truckload';
-      } 
-      // Check for container variations
-      else if (contentLower.match(/\b(container|sea.*freight)\b/)) {
-        this.log('Matched container pattern');
+      } else if (contentLower.match(/\b(container|sea.*freight)\b/)) {
         type = 'sea_container';
-      } 
-      // Check for bulk variations
-      else if (contentLower.match(/\b(bulk)\b/)) {
-        this.log('Matched bulk pattern');
+      } else if (contentLower.match(/\b(bulk)\b/)) {
         type = 'bulk_freight';
       }
 
-      this.log('Extracted type:', type);
       if (!type) {
-        this.log('No type match found in content');
         return null;
       }
 
-      // Extract weight (in tons) with more variations
       const weightMatch = contentLower.match(/(\d+(?:\.\d+)?)\s*(?:ton|tons|t\b|tonnes)/);
-      this.log('Weight match:', weightMatch);
       if (!weightMatch) {
-        this.log('No weight match found');
         return null;
       }
       const weight = weightMatch[1];
 
-      // Extract volume (in cubic meters) with more variations
       const volumeMatch = contentLower.match(/(\d+(?:\.\d+)?)\s*(?:cubic\s*meter|cubic\s*meters|m3|m³|cbm)/);
-      this.log('Volume match:', volumeMatch);
       if (!volumeMatch) {
-        this.log('No volume match found');
         return null;
       }
       const volume = volumeMatch[1];
 
-      // Check for hazardous materials with more variations
       const hasHazardousWord = contentLower.includes('hazardous') || contentLower.includes('dangerous');
       const hasNegation = contentLower.includes('no') || contentLower.includes('non') || contentLower.includes('not');
       const hazardous = hasHazardousWord && !hasNegation;
 
-      // Determine container size based on volume for sea containers
-      let containerSize: '20ft' | '40ft' | '40ft_hc' | undefined;
-      if (type === 'sea_container') {
-        const volumeNum = parseFloat(volume);
-        if (volumeNum <= 33) {
-          containerSize = '20ft';
-        } else if (volumeNum <= 67) {
-          containerSize = '40ft';
-        } else {
-          containerSize = '40ft_hc';
-        }
-      }
-
-      const details = {
+      return {
         type,
         weight,
         volume,
         hazardous,
-        specialRequirements: '',
-        containerSize,
-        palletCount: undefined
+        specialRequirements: ''
       };
-
-      this.log('Successfully extracted package details:', details);
-      return details;
     } catch (error) {
       this.log('Error extracting package details:', error);
       return null;
@@ -340,11 +418,32 @@ STEP:confirmation"`;
   }
 
   private findLastPackageDetails(messages: AgentMessage[]): QuoteState['packageDetails'] | null {
-    // Look through messages in reverse to find the last message with package details
     for (let i = messages.length - 1; i >= 0; i--) {
       const message = messages[i];
       if (message.role === 'user') {
         const details = this.extractPackageDetails(message.content);
+        if (details) return details;
+      }
+    }
+    return null;
+  }
+
+  private findLastAddressDetails(messages: AgentMessage[]): QuoteState['addressDetails'] | null {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const message = messages[i];
+      if (message.role === 'user') {
+        const details = this.extractAddressDetails(message.content);
+        if (details) return details;
+      }
+    }
+    return null;
+  }
+
+  private findLastServiceSelection(messages: AgentMessage[]): QuoteState['serviceDetails'] | null {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const message = messages[i];
+      if (message.role === 'user') {
+        const details = this.extractServiceSelection(message.content);
         if (details) return details;
       }
     }
@@ -429,6 +528,30 @@ STEP:confirmation"`;
       metadata: context.metadata,
       messageCount: context.messages.length
     });
+
+    // Validate user authentication at the start
+    if (!context.metadata?.session?.user?.id) {
+      return {
+        content: "I apologize, but you need to be logged in to create a shipping quote. Please log in and try again.",
+        metadata: {
+          agentId: 'quote',
+          timestamp: Date.now(),
+          error: 'Authentication required'
+        }
+      };
+    }
+
+    // Store customer information for the session
+    const customer = {
+      id: context.metadata.session.user.id,
+      name: context.metadata.session.user.user_metadata?.full_name || 
+            context.metadata.session.user.email?.split('@')[0] || 
+            'Anonymous',
+      email: context.metadata.session.user.email || 'anonymous@example.com'
+    };
+
+    // Log customer information for debugging
+    this.log('Customer information:', customer);
 
     // Get the last user message from the context
     const lastUserMessage = context.messages
@@ -536,7 +659,7 @@ STEP:confirmation"`;
           "Would you like me to create this shipping quote for you? (yes/no)";
       }
     }
-    // If we're waiting for confirmation
+    // If we're in confirmation
     else if (step === 'confirmation') {
       const confirmation = lastUserMessage.toLowerCase();
       
@@ -563,8 +686,30 @@ STEP:confirmation"`;
             "3. Eco Freight";
         }
       } else if (confirmation.includes('yes') || confirmation.includes('yeah') || confirmation.includes('sure')) {
-        response = "Great! I'm creating your shipping quote now. You'll receive a confirmation email shortly with all the details.\n\n" +
-          "Is there anything else I can help you with?";
+        // Get token from metadata or use service role key
+        const token = context.metadata?.token || context.metadata?.supabaseToken || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+        if (!token) {
+          this.log('No token found in metadata:', context.metadata);
+          response = "I apologize, but I need authorization to create the quote. Please try again with proper authentication.";
+        } else {
+          // Get the logged-in user's information from the auth context
+          const authUser = context.metadata?.session?.user;
+          if (!authUser?.id) {
+            this.log('No authenticated user found:', context.metadata);
+            response = "I apologize, but you need to be logged in to create a quote. Please log in and try again.";
+          } else {
+            const success = await this.createTicket(context.messages, {
+              token,
+              customer
+            });
+            if (success) {
+              response = "Great! I've created your shipping quote. You'll receive a confirmation email shortly with all the details.\n\n" +
+                "Is there anything else I can help you with?";
+            } else {
+              response = "I apologize, but I encountered an error while creating your quote. Would you like to try again?";
+            }
+          }
+        }
       } else if (confirmation.includes('no') || confirmation.includes('nope') || confirmation.includes('cancel')) {
         response = "No problem! Let me know if you'd like to create a different quote or if there's anything else I can help you with.";
       } else {

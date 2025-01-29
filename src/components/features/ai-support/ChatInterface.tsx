@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/lib/hooks/useAuth';
+import { createBrowserClient } from '@supabase/ssr';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -41,10 +43,18 @@ export function ChatInterface() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const { user } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
+
+    const supabase = createBrowserClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
+
+    const { data: { session } } = await supabase.auth.getSession();
 
     const userMessage: Message = {
       role: 'user',
@@ -87,12 +97,14 @@ export function ChatInterface() {
           conversationHistory: [...messages, userMessage],
           agentType: "quote",
           metadata: {
-            userId: "user",
+            userId: user?.id,
             customer: {
-              id: "customer",
-              name: "Customer",
-              email: "customer@example.com"
-            }
+              id: user?.id,
+              name: user?.name || 'Anonymous',
+              email: user?.email
+            },
+            token: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+            session: session
           }
         }),
       });

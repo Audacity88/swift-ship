@@ -1,8 +1,8 @@
-import { QuoteAgent } from './quote-agent.ts';
+import { QuoteAgent } from '../supabase/functions/process-agent/sample-quote-agent.ts';
 import { load } from 'https://deno.land/std/dotenv/mod.ts';
 
 // Load environment variables from .env.local
-const env = await load({ envPath: '../../../../.env.local' });
+const env = await load({ envPath: '.env.local' });
 
 async function testCreateTicket() {
   const baseUrl = env.NEXT_PUBLIC_SUPABASE_URL;
