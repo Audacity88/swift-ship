@@ -101,6 +101,14 @@ const QUOTE_MESSAGES = {
 };
 
 export class QuoteAgent {
+  private debugLogs: string[] = [];
+
+  private log(message: string, ...args: any[]) {
+    const logMessage = `${message} ${args.map(arg => JSON.stringify(arg)).join(' ')}`;
+    this.debugLogs.push(logMessage);
+    console.log(logMessage);
+  }
+
   constructor() {}
 
   private determineStep(messages: AgentMessage[]): 'initial' | 'package_details' | 'addresses' | 'service_selection' | 'confirmation' {
@@ -111,20 +119,29 @@ export class QuoteAgent {
     const lastUserMessage = userMessages[userMessages.length - 1]?.content || '';
     const lastAssistantMessage = assistantMessages[assistantMessages.length - 1]?.content || '';
     
+    this.log('Determining step from messages:', {
+      messageCount: messages.length,
+      lastUserMessage,
+      lastAssistantMessage
+    });
+
     // If this is the first message and it's asking about creating a quote
     if (userMessages.length === 1 && lastUserMessage.toLowerCase().includes('create') && lastUserMessage.toLowerCase().includes('quote')) {
+      this.log('First message detected, returning initial step');
       return 'initial';
     }
 
-    // If we have a previous message asking for package details
-    if (lastAssistantMessage.includes('type of shipment')) {
-      return 'package_details';
+    // First check if we have package details in any user message
+    const packageDetails = this.findLastPackageDetails(messages);
+    if (packageDetails) {
+      this.log('Found package details, moving to addresses step');
+      return 'addresses';
     }
 
-    // If we have package details in the last user message
-    const packageDetails = this.extractPackageDetails(lastUserMessage);
-    if (packageDetails) {
-      return 'addresses';
+    // If no package details found, check if we're in the package details collection step
+    if (lastAssistantMessage.includes('type of shipment')) {
+      this.log('Last assistant message asking for shipment type, in package_details step');
+      return 'package_details';
     }
 
     // If we have a previous message asking for address details
@@ -154,43 +171,70 @@ export class QuoteAgent {
       return 'confirmation';
     }
 
+    this.log('No specific step determined, returning initial');
     return 'initial';
   }
 
   private extractPackageDetails(content: string): QuoteState['packageDetails'] | null {
     try {
-      console.log('Extracting package details from:', content);
+      this.log('Extracting package details from:', content);
       const contentLower = content.toLowerCase();
       
-      // Extract type
+      // Extract type with more variations
       let type: 'full_truckload' | 'less_than_truckload' | 'sea_container' | 'bulk_freight' | null = null;
-      if (contentLower.includes('full truckload') || contentLower.includes('ftl')) {
+      
+      // Log what we're matching against
+      this.log('Checking type matches in:', contentLower);
+      
+      // Check for full truckload variations
+      if (contentLower.match(/\b(full.*truck|ftl|full.*load)\b/)) {
+        this.log('Matched full truckload pattern');
         type = 'full_truckload';
-      } else if (contentLower.includes('less than truckload') || contentLower.includes('ltl')) {
+      } 
+      // Check for LTL variations
+      else if (contentLower.match(/\b(less.*truck|ltl|less.*load)\b/)) {
+        this.log('Matched LTL pattern');
         type = 'less_than_truckload';
-      } else if (contentLower.includes('container')) {
+      } 
+      // Check for container variations
+      else if (contentLower.match(/\b(container|sea.*freight)\b/)) {
+        this.log('Matched container pattern');
         type = 'sea_container';
-      } else if (contentLower.includes('bulk')) {
+      } 
+      // Check for bulk variations
+      else if (contentLower.match(/\b(bulk)\b/)) {
+        this.log('Matched bulk pattern');
         type = 'bulk_freight';
       }
 
-      console.log('Extracted type:', type);
-      if (!type) return null;
+      this.log('Extracted type:', type);
+      if (!type) {
+        this.log('No type match found in content');
+        return null;
+      }
 
-      // Extract weight (in tons)
-      const weightMatch = contentLower.match(/(\d+(?:\.\d+)?)\s*(?:ton|tons|t)/);
-      console.log('Weight match:', weightMatch);
-      if (!weightMatch) return null;
+      // Extract weight (in tons) with more variations
+      const weightMatch = contentLower.match(/(\d+(?:\.\d+)?)\s*(?:ton|tons|t\b|tonnes)/);
+      this.log('Weight match:', weightMatch);
+      if (!weightMatch) {
+        this.log('No weight match found');
+        return null;
+      }
       const weight = weightMatch[1];
 
-      // Extract volume (in cubic meters)
-      const volumeMatch = contentLower.match(/(\d+(?:\.\d+)?)\s*(?:cubic meter|cubic meters|m3|m³)/);
-      console.log('Volume match:', volumeMatch);
-      if (!volumeMatch) return null;
+      // Extract volume (in cubic meters) with more variations
+      const volumeMatch = contentLower.match(/(\d+(?:\.\d+)?)\s*(?:cubic\s*meter|cubic\s*meters|m3|m³|cbm)/);
+      this.log('Volume match:', volumeMatch);
+      if (!volumeMatch) {
+        this.log('No volume match found');
+        return null;
+      }
       const volume = volumeMatch[1];
 
-      // Check for hazardous materials
-      const hazardous = contentLower.includes('hazardous') && !contentLower.includes('no hazardous');
+      // Check for hazardous materials with more variations
+      const hasHazardousWord = contentLower.includes('hazardous') || contentLower.includes('dangerous');
+      const hasNegation = contentLower.includes('no') || contentLower.includes('non') || contentLower.includes('not');
+      const hazardous = hasHazardousWord && !hasNegation;
 
       // Determine container size based on volume for sea containers
       let containerSize: '20ft' | '40ft' | '40ft_hc' | undefined;
@@ -215,17 +259,17 @@ export class QuoteAgent {
         palletCount: undefined
       };
 
-      console.log('Extracted package details:', details);
+      this.log('Successfully extracted package details:', details);
       return details;
     } catch (error) {
-      console.error('Error extracting package details:', error);
+      this.log('Error extracting package details:', error);
       return null;
     }
   }
 
   private extractAddressDetails(content: string): QuoteState['addressDetails'] | null {
     try {
-      console.log('Extracting address details from:', content);
+      this.log('Extracting address details from:', content);
       const contentLower = content.toLowerCase();
 
       // Extract pickup address
@@ -259,10 +303,10 @@ export class QuoteAgent {
         pickupDateTime: dateTimeMatch ? `${dateTimeMatch[1]} ${dateTimeMatch[2]}` : undefined
       };
 
-      console.log('Extracted address details:', addressDetails);
+      this.log('Extracted address details:', addressDetails);
       return addressDetails;
     } catch (error) {
-      console.error('Error extracting address details:', error);
+      this.log('Error extracting address details:', error);
       return null;
     }
   }
@@ -281,7 +325,7 @@ export class QuoteAgent {
 
   private extractServiceSelection(content: string): QuoteState['serviceDetails'] | null {
     try {
-      console.log('Extracting service selection from:', content);
+      this.log('Extracting service selection from:', content);
       const contentLower = content.toLowerCase();
 
       let type: 'express_freight' | 'standard_freight' | 'eco_freight' | null = null;
@@ -310,10 +354,10 @@ export class QuoteAgent {
         duration
       };
 
-      console.log('Extracted service details:', serviceDetails);
+      this.log('Extracted service details:', serviceDetails);
       return serviceDetails;
     } catch (error) {
-      console.error('Error extracting service details:', error);
+      this.log('Error extracting service details:', error);
       return null;
     }
   }
@@ -348,9 +392,10 @@ export class QuoteAgent {
   }
 
   public async process(context: AgentContext): Promise<AgentResponse> {
-    console.log('QuoteAgent: Starting process with context:', {
+    this.debugLogs = []; // Reset debug logs at the start of processing
+    this.log('QuoteAgent: Starting process with context:', {
       metadata: context.metadata,
-      messages: context.messages
+      messageCount: context.messages.length
     });
 
     // Get the last user message from the context
@@ -358,14 +403,14 @@ export class QuoteAgent {
       .filter(m => m.role === 'user')
       .pop()?.content || '';
 
-    console.log('Processing user message:', lastUserMessage);
+    this.log('Processing user message:', lastUserMessage);
 
     // Include the current message in the history when determining the step
     const allMessages = context.messages;
     
     // Determine current step from conversation history
     const step = this.determineStep(allMessages);
-    console.log('Determined step:', step);
+    this.log('Determined step:', step);
 
     let response: string;
 
@@ -376,7 +421,7 @@ export class QuoteAgent {
     // If we're waiting for package details, try to extract them
     else if (step === 'package_details') {
       const packageDetails = this.extractPackageDetails(lastUserMessage);
-      console.log('Extracted package details:', packageDetails);
+      this.log('Extracted package details:', packageDetails);
       
       if (packageDetails) {
         response = "Great! I've got your package details:\n\n" +
@@ -458,7 +503,7 @@ export class QuoteAgent {
       response = QUOTE_MESSAGES.START_QUOTE;
     }
 
-    console.log('QuoteAgent: Sending response:', response);
+    this.log('QuoteAgent: Sending response:', response);
 
     return {
       content: response,
@@ -467,7 +512,8 @@ export class QuoteAgent {
         timestamp: Date.now(),
         userId: context.metadata?.userId,
         token: context.metadata?.token,
-        customer: context.metadata?.customer
+        customer: context.metadata?.customer,
+        debugLogs: this.debugLogs // Include debug logs in the response
       }
     };
   }
