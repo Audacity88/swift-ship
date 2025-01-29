@@ -90,4 +90,10 @@ make_request "Its a full truckload shipment, weighing 20 tons with a volume of 4
 # Test 3: Provide addresses and pickup time
 make_request "Pickup from 123 Main St, Los Angeles, CA to 456 Park Ave, New York, NY. Pickup next Monday at 9am"
 
+# Test 4: Select service option
+make_request "I'll take the standard freight option"
+
+# Test 5: Confirm quote creation
+make_request "Yes, please create the quote"
+
 echo -e "${GREEN}Quote Agent Test Complete!${NC}" 

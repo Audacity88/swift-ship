@@ -56,6 +56,11 @@ interface QuoteState {
     };
     pickupDateTime?: string;
   };
+  serviceDetails?: {
+    type: 'express_freight' | 'standard_freight' | 'eco_freight';
+    price: number;
+    duration: string;
+  };
 }
 
 const QUOTE_MESSAGES = {
@@ -74,7 +79,25 @@ const QUOTE_MESSAGES = {
     "1. What's the complete pickup address? (including city and state)\n" +
     "2. What's the complete delivery address? (including city and state)\n" +
     "3. When would you like the pickup to be scheduled? (date and time)\n\n" +
-    "Please provide all these details in your response."
+    "Please provide all these details in your response.",
+
+  SERVICE_OPTIONS: (distance: number) => {
+    const expressPrice = Math.ceil((distance * 2.5 + 1000) / 100) * 100;
+    const standardPrice = Math.ceil((distance * 1.5 + 500) / 100) * 100;
+    const ecoPrice = Math.ceil((distance * 1.0 + 300) / 100) * 100;
+
+    return "Based on your shipment details, here are the available service options:\n\n" +
+      "1. Express Freight - $" + expressPrice + "\n" +
+      "   - Priority handling and expedited transport\n" +
+      "   - Estimated delivery: 2-3 business days\n\n" +
+      "2. Standard Freight - $" + standardPrice + "\n" +
+      "   - Regular service with standard handling\n" +
+      "   - Estimated delivery: 4-5 business days\n\n" +
+      "3. Eco Freight - $" + ecoPrice + "\n" +
+      "   - Cost-effective with consolidated handling\n" +
+      "   - Estimated delivery: 6-7 business days\n\n" +
+      "Please select your preferred service option (1, 2, or 3):"
+  }
 };
 
 export class QuoteAgent {
@@ -113,6 +136,22 @@ export class QuoteAgent {
     const addressDetails = this.extractAddressDetails(lastUserMessage);
     if (addressDetails) {
       return 'service_selection';
+    }
+
+    // If we have a previous message asking for service selection
+    if (lastAssistantMessage.includes('service option')) {
+      return 'service_selection';
+    }
+
+    // If we have service selection in the last user message
+    const serviceDetails = this.extractServiceSelection(lastUserMessage);
+    if (serviceDetails) {
+      return 'confirmation';
+    }
+
+    // If we have a previous message asking for confirmation
+    if (lastAssistantMessage.includes('create this shipping quote')) {
+      return 'confirmation';
     }
 
     return 'initial';
@@ -240,6 +279,74 @@ export class QuoteAgent {
     return null;
   }
 
+  private extractServiceSelection(content: string): QuoteState['serviceDetails'] | null {
+    try {
+      console.log('Extracting service selection from:', content);
+      const contentLower = content.toLowerCase();
+
+      let type: 'express_freight' | 'standard_freight' | 'eco_freight' | null = null;
+      let price = 0;
+      let duration = '';
+
+      if (contentLower.includes('1') || contentLower.includes('express')) {
+        type = 'express_freight';
+        price = 2500;
+        duration = '2-3 business days';
+      } else if (contentLower.includes('2') || contentLower.includes('standard')) {
+        type = 'standard_freight';
+        price = 1500;
+        duration = '4-5 business days';
+      } else if (contentLower.includes('3') || contentLower.includes('eco')) {
+        type = 'eco_freight';
+        price = 1000;
+        duration = '6-7 business days';
+      }
+
+      if (!type) return null;
+
+      const serviceDetails = {
+        type,
+        price,
+        duration
+      };
+
+      console.log('Extracted service details:', serviceDetails);
+      return serviceDetails;
+    } catch (error) {
+      console.error('Error extracting service details:', error);
+      return null;
+    }
+  }
+
+  private calculateDistance(from: { city: string; state: string }, to: { city: string; state: string }): number {
+    // This is a simplified distance calculation
+    // In a real application, you would use a geocoding service
+    const distances: Record<string, Record<string, number>> = {
+      'Los Angeles': {
+        'New York': 2789,
+        'Chicago': 2004,
+        'Houston': 1377
+      },
+      'New York': {
+        'Los Angeles': 2789,
+        'Chicago': 787,
+        'Houston': 1417
+      },
+      'Chicago': {
+        'Los Angeles': 2004,
+        'New York': 787,
+        'Houston': 940
+      },
+      'Houston': {
+        'Los Angeles': 1377,
+        'New York': 1417,
+        'Chicago': 940
+      }
+    };
+
+    return distances[from.city]?.[to.city] || 1000; // Default to 1000 miles if not found
+  }
+
   public async process(context: AgentContext): Promise<AgentResponse> {
     console.log('QuoteAgent: Starting process with context:', {
       metadata: context.metadata,
@@ -292,6 +399,12 @@ export class QuoteAgent {
       const packageDetails = this.findLastPackageDetails(allMessages);
       
       if (addressDetails) {
+        // Calculate distance and show service options
+        const distance = this.calculateDistance(
+          { city: addressDetails.pickup.city || '', state: addressDetails.pickup.state || '' },
+          { city: addressDetails.delivery.city || '', state: addressDetails.delivery.state || '' }
+        );
+
         response = "Great! I've got your shipping details:\n\n" +
           "Pickup Address:\n" +
           `${addressDetails.pickup.address}, ${addressDetails.pickup.city}` +
@@ -300,7 +413,7 @@ export class QuoteAgent {
           `${addressDetails.delivery.address}, ${addressDetails.delivery.city}` +
           (addressDetails.delivery.state ? `, ${addressDetails.delivery.state}` : '') + "\n\n" +
           (addressDetails.pickupDateTime ? `Pickup Time: ${addressDetails.pickupDateTime}\n\n` : '') +
-          "Let me calculate the available shipping options for you...";
+          QUOTE_MESSAGES.SERVICE_OPTIONS(distance);
       } else if (packageDetails) {
         response = "I'll need the following information to proceed:\n\n" +
           "1. Complete pickup address (including city and state)\n" +
@@ -309,6 +422,35 @@ export class QuoteAgent {
           "Please provide all these details in your response.";
       } else {
         response = QUOTE_MESSAGES.START_QUOTE;
+      }
+    }
+    // If we're waiting for service selection
+    else if (step === 'service_selection') {
+      const serviceDetails = this.extractServiceSelection(lastUserMessage);
+      
+      if (serviceDetails) {
+        response = "Perfect! I've got your service selection:\n\n" +
+          `Service: ${serviceDetails.type.replace(/_/g, ' ')}\n` +
+          `Price: $${serviceDetails.price}\n` +
+          `Estimated Delivery: ${serviceDetails.duration}\n\n` +
+          "Would you like me to create this shipping quote for you? (yes/no)";
+      } else {
+        response = "I couldn't understand your service selection. Please choose one of the following options:\n\n" +
+          "1. Express Freight\n" +
+          "2. Standard Freight\n" +
+          "3. Eco Freight";
+      }
+    }
+    // If we're waiting for confirmation
+    else if (step === 'confirmation') {
+      const confirmation = lastUserMessage.toLowerCase();
+      if (confirmation.includes('yes') || confirmation.includes('yeah') || confirmation.includes('sure')) {
+        response = "Great! I'm creating your shipping quote now. You'll receive a confirmation email shortly with all the details.\n\n" +
+          "Is there anything else I can help you with?";
+      } else if (confirmation.includes('no') || confirmation.includes('nope') || confirmation.includes('cancel')) {
+        response = "No problem! Let me know if you'd like to create a different quote or if there's anything else I can help you with.";
+      } else {
+        response = "I didn't catch that. Would you like me to create this shipping quote for you? Please answer with yes or no.";
       }
     }
     // Default to starting over
