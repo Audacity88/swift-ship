@@ -6,6 +6,10 @@ RED='\033[0;31m'
 NC='\033[0m' # No Color
 BLUE='\033[0;34m'
 
+# Supabase configuration
+SUPABASE_URL="https://dkrhdxqqkgutrnvsfhxi.supabase.co"
+SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRrcmhkeHFxa2d1dHJudnNmaHhpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzczMDc1OTYsImV4cCI6MjA1Mjg4MzU5Nn0.RsoPDd9483Fotgzw0TXYIjVjuHB1_LGeRUe4c0WCvbo"
+
 # Initialize conversation history array
 conversation=()
 
@@ -25,23 +29,51 @@ make_request() {
     done
     history_json+="]"
     
-    # Make the API call and collect all chunks
-    response=$(curl -s -X POST http://localhost:3000/api/ai-support \
+    # Show the request payload
+    echo "Request payload:"
+    echo "{
+      \"message\": \"$message\",
+      \"conversationHistory\": $history_json,
+      \"agentType\": \"quote\",
+      \"metadata\": {
+        \"agentType\": \"quote\",
+        \"userId\": \"123\",
+        \"customer\": {
+          \"name\": \"John Doe\",
+          \"email\": \"john@example.com\"
+        }
+      }
+    }" | jq '.'
+    
+    # Make the API call and show the parsed response
+    echo -e "${BLUE}Response:${NC}"
+    response=$(curl -s -X POST "${SUPABASE_URL}/functions/v1/process-agent" \
         -H "Content-Type: application/json" \
-        -d "{\"message\": \"$message\", \"conversationHistory\": $history_json}" | 
-        grep -o 'data: {"type":"chunk","content":"[^"]*"' | 
-        sed 's/data: {"type":"chunk","content":"//g' | 
-        sed 's/"$//g' | 
-        tr -d '\n')
+        -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+        -d "{
+          \"message\": \"$message\",
+          \"conversationHistory\": $history_json,
+          \"agentType\": \"quote\",
+          \"metadata\": {
+            \"agentType\": \"quote\",
+            \"userId\": \"123\",
+            \"customer\": {
+              \"name\": \"John Doe\",
+              \"email\": \"john@example.com\"
+            }
+          }
+        }")
+    
+    # Extract and display the content from the SSE response
+    content=$(echo "$response" | grep -o 'data: {"type":"chunk","content":"[^"]*"' | sed 's/data: {"type":"chunk","content":"//g' | sed 's/"$//g')
+    echo -e "${GREEN}Content:${NC} $content"
     
     # Add messages to conversation history
     user_message="{\"role\": \"user\", \"content\": \"$message\"}"
-    assistant_message="{\"role\": \"assistant\", \"content\": \"$response\"}"
-    
+    assistant_message="{\"role\": \"assistant\", \"content\": \"$content\"}"
     conversation+=("$user_message")
     conversation+=("$assistant_message")
     
-    echo -e "${GREEN}Response:${NC} $response"
     echo "----------------------------------------"
     sleep 2 # Wait between requests
 }
@@ -57,11 +89,5 @@ make_request "Its a full truckload shipment, weighing 20 tons with a volume of 4
 
 # Test 3: Provide addresses and pickup time
 make_request "Pickup from 123 Main St, Los Angeles, CA to 456 Park Ave, New York, NY. Pickup next Monday at 9am"
-
-# Test 4: Select service level
-make_request "I'd like to go with the standard freight option"
-
-# Test 5: Confirm quote
-make_request "Yes, please create the quote"
 
 echo -e "${GREEN}Quote Agent Test Complete!${NC}" 

@@ -35,7 +35,7 @@ interface QuoteState {
     volume: string;
     hazardous: boolean;
     specialRequirements: string;
-    containerSize?: string;
+    containerSize?: '20ft' | '40ft' | '40ft_hc';
     palletCount?: string;
   };
   destination?: {
@@ -106,17 +106,6 @@ const QUOTE_MESSAGES = {
     "4. Are there any hazardous materials?\n\n" +
     "Please provide all these details in your response.",
   
-  PACKAGE_DETAILS: "Great! Let's create your shipping quote. I need some details about your shipment:\n\n" +
-    "1. What type of shipment is this?\n" +
-    "   - Full Truckload (FTL)\n" +
-    "   - Less than Truckload (LTL)\n" +
-    "   - Sea Container\n" +
-    "   - Bulk Freight\n\n" +
-    "2. What's the total weight in metric tons?\n" +
-    "3. What's the total volume in cubic meters?\n" +
-    "4. Are there any hazardous materials?\n\n" +
-    "Please provide all these details in your response.",
-
   ADDRESS_DETAILS: "Thanks! Now I need the pickup and delivery information:\n\n" +
     "1. What's the complete pickup address? (including city and state)\n" +
     "2. What's the complete delivery address? (including city and state)\n" +
@@ -163,12 +152,65 @@ export class QuoteAgent extends BaseAgent {
     super(
       'quote',
       'quote',
-      '' // Empty system message since it's handled in the edge function
+      `You are a shipping quote agent that MUST use these EXACT message templates without any modification:
+
+      START_QUOTE = "${QUOTE_MESSAGES.START_QUOTE}"
+
+      ADDRESS_DETAILS = "${QUOTE_MESSAGES.ADDRESS_DETAILS}"
+
+      SERVICE_OPTIONS template (fill in the variables):
+      Based on your shipment details:
+
+      📦 [TYPE]
+      ⚖️ Weight: [WEIGHT] tons
+      📐 Volume: [VOLUME] m³
+      🚚 Distance: [DISTANCE] km
+
+      Available service options:
+
+      1. Express Freight (1-2 Business Days)
+         Price: $[EXPRESS_PRICE]
+
+      2. Standard Freight (3-5 Business Days)
+         Price: $[STANDARD_PRICE]
+
+      3. Eco Freight (5-7 Business Days)
+         Price: $[ECO_PRICE]
+
+      Which service level would you like to select? Please type 'express', 'standard', or 'eco' to choose your preferred service.
+
+      QUOTE_SUMMARY template (fill in the variables):
+      Great choice! Here's a summary of your quote:
+
+      📦 Shipment Type: [TYPE]
+      ⚖️ Weight: [WEIGHT] tons
+      📐 Volume: [VOLUME] m³
+      🚚 Distance: [DISTANCE] km
+
+      📍 Pickup: [FROM]
+      📅 Date: [PICKUP_DATE]
+
+      📍 Delivery: [TO]
+
+      🚛 Service: [SERVICE] Freight
+      💰 Price: $[PRICE]
+
+      Would you like me to create this quote? (Yes/No)
+
+      QUOTE_CREATED = "✅ Quote created successfully! Quote ID: [ID]. Our team will review your quote and you'll receive a confirmation email shortly."
+
+      QUOTE_CANCELLED = "${QUOTE_MESSAGES.QUOTE_CANCELLED}"
+
+      YOU MUST USE THESE EXACT TEMPLATES. DO NOT MODIFY THEM OR ADD YOUR OWN TEXT.
+      DO NOT USE MARKDOWN OR ANY OTHER FORMATTING UNLESS IT'S IN THE TEMPLATE.
+      MAINTAIN ALL EMOJIS AND FORMATTING EXACTLY AS SHOWN.`
     );
     this.quoteStates = new Map();
   }
 
   protected async processMessage(message: AgentMessage, context: AgentContext): Promise<string> {
+    console.log('QuoteAgent: Processing message:', { content: message.content, step: this.getQuoteState(context.metadata?.userId || 'default').step });
+    
     const userId = context.metadata?.userId || 'default';
     const state = this.getQuoteState(userId);
     const content = message.content.toLowerCase();
@@ -182,10 +224,8 @@ export class QuoteAgent extends BaseAgent {
     // Handle state transitions
     switch (state.step) {
       case 'initial':
-        if (content.includes('quote') || content.includes('ship')) {
-          state.step = 'package_details';
-          return QUOTE_MESSAGES.PACKAGE_DETAILS;
-        }
+        console.log('QuoteAgent: Initial step, returning START_QUOTE message');
+        state.step = 'package_details';
         return QUOTE_MESSAGES.START_QUOTE;
 
       case 'package_details':
@@ -195,7 +235,7 @@ export class QuoteAgent extends BaseAgent {
           state.step = 'addresses';
           return QUOTE_MESSAGES.ADDRESS_DETAILS;
         }
-        return "I need more details about your shipment. Please provide:\n1. Type (full truckload, less than truckload, etc.)\n2. Weight in tons\n3. Volume in cubic meters\n4. Whether it contains hazardous materials";
+        return QUOTE_MESSAGES.START_QUOTE;
 
       case 'addresses':
         const addressInfo = this.extractAddressDetails(content);
@@ -203,19 +243,28 @@ export class QuoteAgent extends BaseAgent {
           state.destination = addressInfo;
           const prices = this.calculatePrices(state);
           state.step = 'service_selection';
-          return QUOTE_MESSAGES.SERVICE_OPTIONS(
-            state.packageDetails!.type,
-            parseFloat(state.packageDetails!.weight),
-            parseFloat(state.packageDetails!.volume),
-            this.calculateDistance(state.destination.pickup.address, state.destination.delivery.address),
-            {
-              express: prices.express_freight,
-              standard: prices.standard_freight,
-              eco: prices.eco_freight
-            }
-          );
+          const distance = this.calculateDistance(addressInfo.pickup.address, addressInfo.delivery.address);
+          return `Based on your shipment details:
+
+📦 ${state.packageDetails!.type.replace(/_/g, ' ').toUpperCase()}
+⚖️ Weight: ${state.packageDetails!.weight} tons
+📐 Volume: ${state.packageDetails!.volume} m³
+🚚 Distance: ${Math.round(distance)} km
+
+Available service options:
+
+1. Express Freight (1-2 Business Days)
+   Price: $${prices.express_freight.toLocaleString()}
+
+2. Standard Freight (3-5 Business Days)
+   Price: $${prices.standard_freight.toLocaleString()}
+
+3. Eco Freight (5-7 Business Days)
+   Price: $${prices.eco_freight.toLocaleString()}
+
+Which service level would you like to select? Please type 'express', 'standard', or 'eco' to choose your preferred service.`;
         }
-        return "Please provide both pickup and delivery addresses, along with the desired pickup time.";
+        return QUOTE_MESSAGES.ADDRESS_DETAILS;
 
       case 'service_selection':
         const service = this.extractServiceLevel(content);
@@ -224,17 +273,23 @@ export class QuoteAgent extends BaseAgent {
           const prices = this.calculatePrices(state);
           state.price = prices[service];
           state.step = 'confirmation';
-          return QUOTE_MESSAGES.QUOTE_SUMMARY(
-            state.packageDetails!.type,
-            parseFloat(state.packageDetails!.weight),
-            parseFloat(state.packageDetails!.volume),
-            this.calculateDistance(state.destination!.pickup.address, state.destination!.delivery.address),
-            state.destination!.pickup.address,
-            state.destination!.delivery.address,
-            state.destination!.pickup.scheduledTime || 'Not specified',
-            service.replace('_freight', ''),
-            prices[service]
-          );
+          const distance = this.calculateDistance(state.destination!.pickup.address, state.destination!.delivery.address);
+          return `Great choice! Here's a summary of your quote:
+
+📦 Shipment Type: ${state.packageDetails!.type.replace(/_/g, ' ').toUpperCase()}
+⚖️ Weight: ${state.packageDetails!.weight} tons
+📐 Volume: ${state.packageDetails!.volume} m³
+🚚 Distance: ${Math.round(distance)} km
+
+📍 Pickup: ${state.destination!.pickup.address}
+📅 Date: ${state.destination!.pickup.scheduledTime || 'Not specified'}
+
+📍 Delivery: ${state.destination!.delivery.address}
+
+🚛 Service: ${service.replace('_freight', '')} Freight
+💰 Price: $${prices[service].toLocaleString()}
+
+Would you like me to create this quote? (Yes/No)`;
         }
         return "Please select a service level: 'express', 'standard', or 'eco'.";
 
@@ -247,15 +302,29 @@ export class QuoteAgent extends BaseAgent {
           const quoteDetails = {
             customer: state.customer,
             packageDetails: state.packageDetails!,
-            destination: state.destination!,
+            destination: {
+              from: {
+                address: state.destination!.pickup.address,
+                coordinates: { latitude: 0, longitude: 0 },
+              },
+              to: {
+                address: state.destination!.delivery.address,
+                coordinates: { latitude: 0, longitude: 0 },
+              },
+              pickupDate: state.destination!.pickup.scheduledTime || new Date().toISOString(),
+              pickupTimeSlot: state.destination!.pickup.scheduledTime || ''
+            },
             selectedService: state.selectedService
           };
 
           const quote = await this.createQuote(quoteDetails, context.metadata?.token || '');
           if (quote) {
-            // Reset state after successful creation
             this.quoteStates.delete(userId);
-            return QUOTE_MESSAGES.QUOTE_CREATED(quote.id);
+            return `✅ Quote created successfully!
+
+Quote ID: ${quote.id}
+
+Our team will review your quote and you'll receive a confirmation email shortly. You can also track the status of your quote in your account dashboard.`;
           }
           return "I encountered an error while creating your quote. Please try again or contact our support team.";
         } else if (content.includes('no')) {
@@ -270,11 +339,47 @@ export class QuoteAgent extends BaseAgent {
   }
 
   public async process(context: AgentContext): Promise<AgentMessage> {
+    console.log('QuoteAgent: Starting process with metadata:', {
+      userId: context.metadata?.userId,
+      agentType: context.metadata?.agentType,
+      messageCount: context.messages.length
+    });
+
     const lastMessage = context.messages[context.messages.length - 1];
-    const response = await this.processMessage(lastMessage as AgentMessage, context);
+    
+    // For the initial message, bypass the LLM and return our template directly
+    const userId = context.metadata?.userId || 'default';
+    const state = this.getQuoteState(userId);
+    
+    console.log('QuoteAgent: Current state:', { 
+      step: state.step,
+      hasCustomer: !!state.customer,
+      hasPackageDetails: !!state.packageDetails,
+      hasDestination: !!state.destination,
+      selectedService: state.selectedService
+    });
+
+    let response: string;
+    if (state.step === 'initial') {
+      console.log('QuoteAgent: Initial step - returning START_QUOTE template');
+      state.step = 'package_details';
+      response = QUOTE_MESSAGES.START_QUOTE;
+    } else {
+      response = await this.processMessage(lastMessage as AgentMessage, context);
+    }
+
+    console.log('QuoteAgent: Sending response:', { response: response.slice(0, 100) + '...' });
+
     return {
       role: 'assistant',
-      content: response
+      content: response,
+      metadata: {
+        agentId: 'quote',
+        timestamp: Date.now(),
+        userId: context.metadata?.userId,
+        token: context.metadata?.token,
+        customer: context.metadata?.customer
+      }
     };
   }
 
@@ -408,13 +513,21 @@ export class QuoteAgent extends BaseAgent {
       if (!volumeMatch) return null;
       const volume = volumeMatch[1];
 
+      // Extract container size if sea container
+      let containerSize: '20ft' | '40ft' | '40ft_hc' | undefined;
+      if (type === 'sea_container') {
+        if (content.includes('20ft')) containerSize = '20ft';
+        else if (content.includes('40ft high cube') || content.includes('40ft hc')) containerSize = '40ft_hc';
+        else if (content.includes('40ft')) containerSize = '40ft';
+      }
+
       return {
         type,
         weight,
         volume,
         hazardous: content.toLowerCase().includes('hazardous'),
         specialRequirements: '',
-        containerSize: undefined,
+        containerSize,
         palletCount: undefined
       };
     } catch (error) {

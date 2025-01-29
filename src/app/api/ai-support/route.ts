@@ -22,8 +22,8 @@ const supabase = createClient(
 
 export async function POST(req: NextRequest) {
   try {
-    const { message, conversationHistory } = await req.json();
-    console.log('Received request:', { message, conversationHistory });
+    const { message, conversationHistory, agentType = 'quote', metadata } = await req.json();
+    console.log('Received request:', { message, conversationHistory, agentType, metadata });
 
     if (!message) {
       return NextResponse.json(
@@ -49,11 +49,12 @@ export async function POST(req: NextRequest) {
           'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
         },
         body: JSON.stringify({
-          messages: [
-            ...(conversationHistory || []),
-            { role: 'user', content: message }
-          ],
-          agent: 'quote'
+          messages: conversationHistory ? [...conversationHistory, { role: 'user', content: message }] : [{ role: 'user', content: message }],
+          agent: agentType,
+          metadata: {
+            ...metadata,
+            agentType
+          }
         })
       }
     );
