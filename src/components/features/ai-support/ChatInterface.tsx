@@ -8,6 +8,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { createBrowserClient } from '@supabase/ssr';
+import { radarService } from '@/lib/services/radar-service';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -23,6 +24,73 @@ interface Message {
   };
 }
 
+interface QuoteMetadata {
+  isQuote: boolean;
+  destination?: {
+    from: {
+      address: string;
+      coordinates: {
+        latitude: number;
+        longitude: number;
+      };
+      placeDetails: {
+        city: string;
+        state: string;
+        country: string;
+        latitude: number;
+        longitude: number;
+        stateCode: string;
+        postalCode: string;
+        coordinates: {
+          latitude: number;
+          longitude: number;
+        };
+        countryCode: string;
+        countryFlag: string;
+        formattedAddress: string;
+      };
+      formattedAddress: string;
+    };
+    to: {
+      address: string;
+      coordinates: {
+        latitude: number;
+        longitude: number;
+      };
+      placeDetails: {
+        city: string;
+        state: string;
+        country: string;
+        latitude: number;
+        longitude: number;
+        stateCode: string;
+        postalCode: string;
+        coordinates: {
+          latitude: number;
+          longitude: number;
+        };
+        countryCode: string;
+        countryFlag: string;
+        formattedAddress: string;
+      };
+      formattedAddress: string;
+    };
+    pickupDate?: string;
+    pickupTimeSlot?: string;
+  };
+  packageDetails?: {
+    type: 'full_truckload' | 'less_than_truckload' | 'sea_container' | 'bulk_freight';
+    volume: string;
+    weight: string;
+    hazardous: boolean;
+    palletCount?: string;
+    specialRequirements: string;
+  };
+  selectedService?: 'express_freight' | 'standard_freight' | 'eco_freight';
+  estimatedPrice?: number;
+  estimatedDelivery?: string;
+}
+
 interface RequestMetadata {
   userId: string;
   customer: {
@@ -30,6 +98,9 @@ interface RequestMetadata {
     name: string;
     email: string;
   };
+  token?: string;
+  session?: any;
+  quote?: QuoteMetadata;
 }
 
 interface AIRequestPayload {
@@ -44,6 +115,189 @@ export function ChatInterface() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { user } = useAuth();
+
+  const validateAddresses = async (content: string) => {
+    // Add a message indicating we're checking addresses
+    const checkingMessage: Message = {
+      role: 'assistant',
+      content: 'Checking available options, one minute...',
+      metadata: { timestamp: Date.now() }
+    };
+    setMessages(prev => [...prev, checkingMessage]);
+
+    // Try to extract addresses from the message
+    const fromMatch = content.match(/(?:from|pickup).*?([^,]+,[^,]+,[^,]+)/i);
+    const toMatch = content.match(/(?:to|delivery).*?([^,]+,[^,]+,[^,]+)/i);
+
+    if (!fromMatch || !toMatch) {
+      return {
+        isValid: false,
+        error: 'Could not find both pickup and delivery addresses in your message. Please provide complete addresses.'
+      };
+    }
+
+    const fromAddress = fromMatch[1].trim();
+    const toAddress = toMatch[1].trim();
+
+    // Geocode both addresses
+    const [fromGeocode, toGeocode] = await Promise.all([
+      radarService.geocodeAddress(fromAddress),
+      radarService.geocodeAddress(toAddress)
+    ]);
+
+    if (!fromGeocode || !toGeocode) {
+      return {
+        isValid: false,
+        error: 'One or both addresses could not be found. Please check the addresses and try again.'
+      };
+    }
+
+    // Calculate route
+    const route = await radarService.calculateRoute(
+      { latitude: fromGeocode.latitude, longitude: fromGeocode.longitude },
+      { latitude: toGeocode.latitude, longitude: toGeocode.longitude }
+    );
+
+    if (!route) {
+      return {
+        isValid: false,
+        error: 'Could not calculate a route between these addresses. Please try different addresses.'
+      };
+    }
+
+    // Calculate delivery times based on distance
+    const { distance, duration } = route;
+    let expressDeliveryDays = 1;  // Default to same-day/next-day for short distances
+    let standardDeliveryDays = 2;
+    let ecoDeliveryDays = 3;
+
+    if (distance.miles > 50) {  // For longer distances
+      expressDeliveryDays = 2;
+      standardDeliveryDays = 3;
+      ecoDeliveryDays = 4;
+    }
+    if (distance.miles > 200) {  // For very long distances
+      expressDeliveryDays = 3;
+      standardDeliveryDays = 5;
+      ecoDeliveryDays = 7;
+    }
+
+    // Calculate prices based on distance with minimum amounts
+    const basePrice = 1000;
+    const pricePerMile = 2;
+    const distancePrice = Math.round(basePrice + (distance.miles * pricePerMile));
+    
+    const expressPrice = Math.max(1500, Math.round(distancePrice * 1.5));
+    const standardPrice = Math.max(1000, distancePrice);
+    const ecoPrice = Math.max(800, Math.round(distancePrice * 0.8));
+
+    // Parse pickup date from the message
+    let pickupDate = new Date();
+    const dateMatch = content.match(/next\s+(\w+)\s+at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+    
+    if (dateMatch) {
+      const [_, day, hour, minute, ampm] = dateMatch;
+      const today = new Date();
+      const daysOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+      const targetDay = daysOfWeek.findIndex(d => d.startsWith(day.toLowerCase()));
+      
+      if (targetDay !== -1) {
+        let daysToAdd = targetDay - today.getDay();
+        if (daysToAdd <= 0) daysToAdd += 7; // If the day has passed, go to next week
+        
+        pickupDate = new Date(today);
+        pickupDate.setDate(today.getDate() + daysToAdd);
+        
+        // Set the time if provided
+        if (hour) {
+          let hourNum = parseInt(hour);
+          if (ampm && ampm.toLowerCase() === 'pm' && hourNum < 12) hourNum += 12;
+          if (ampm && ampm.toLowerCase() === 'am' && hourNum === 12) hourNum = 0;
+          pickupDate.setHours(hourNum, minute ? parseInt(minute) : 0, 0, 0);
+        }
+      }
+    } else {
+      // If no specific date/time found, default to tomorrow at 9am
+      pickupDate.setDate(pickupDate.getDate() + 1);
+      pickupDate.setHours(9, 0, 0, 0);
+    }
+
+    const getDeliveryDate = (days: number) => {
+      const date = new Date(pickupDate);
+      let addedDays = 0;
+      while (addedDays < days) {
+        date.setDate(date.getDate() + 1);
+        // Skip weekends
+        if (date.getDay() !== 0 && date.getDay() !== 6) {
+          addedDays++;
+        }
+      }
+      return date.toISOString().split('T')[0];
+    };
+
+    // Get pickup time slot based on the hour
+    const hour = pickupDate.getHours();
+    let pickupTimeSlot = 'morning_2'; // Default to morning
+    if (hour >= 12 && hour < 17) {
+      pickupTimeSlot = 'afternoon_2';
+    } else if (hour >= 17) {
+      pickupTimeSlot = 'evening_2';
+    }
+
+    // Create service options message
+    const serviceOptionsMessage: Message = {
+      role: 'assistant',
+      content: `Based on your shipment details, here are the available service options:
+
+1. Express Freight - $${expressPrice}
+   - Priority handling and expedited transport
+   - Estimated delivery: ${expressDeliveryDays} business day${expressDeliveryDays > 1 ? 's' : ''}
+
+2. Standard Freight - $${standardPrice}
+   - Regular service with standard handling
+   - Estimated delivery: ${standardDeliveryDays} business days
+
+3. Eco Freight - $${ecoPrice}
+   - Cost-effective with consolidated handling
+   - Estimated delivery: ${ecoDeliveryDays} business days
+
+Please select your preferred service option (1, 2, or 3):`,
+      metadata: { timestamp: Date.now() }
+    };
+
+    setMessages(prev => [...prev, serviceOptionsMessage]);
+
+    return {
+      isValid: true,
+      quoteMetadata: {
+        isQuote: true,
+        destination: {
+          from: {
+            address: fromAddress,
+            coordinates: {
+              latitude: fromGeocode.latitude,
+              longitude: fromGeocode.longitude
+            },
+            placeDetails: fromGeocode,
+            formattedAddress: fromGeocode.formattedAddress
+          },
+          to: {
+            address: toAddress,
+            coordinates: {
+              latitude: toGeocode.latitude,
+              longitude: toGeocode.longitude
+            },
+            placeDetails: toGeocode,
+            formattedAddress: toGeocode.formattedAddress
+          },
+          pickupDate: pickupDate.toISOString().split('T')[0],
+          pickupTimeSlot: pickupTimeSlot
+        },
+        estimatedPrice: expressPrice,
+        estimatedDelivery: getDeliveryDate(expressDeliveryDays)
+      }
+    };
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,23 +324,30 @@ export function ChatInterface() {
     setIsLoading(true);
 
     try {
-      // Ensure we have valid messages before making the request
-      if (!userMessage.content) {
-        throw new Error('Message content is required');
+      // Only validate addresses if we're at the address collection step
+      // and the message contains address information
+      let quoteMetadata: QuoteMetadata | undefined;
+      const lastAssistantMessage = messages
+        .filter(m => m.role === 'assistant')
+        .pop()?.content || '';
+
+      const isAddressStep = lastAssistantMessage.includes('pickup address') || 
+                           lastAssistantMessage.includes('delivery address');
+      
+      if (isAddressStep && (input.toLowerCase().includes('from') || input.toLowerCase().includes('to'))) {
+        const validation = await validateAddresses(input);
+        if (!validation.isValid) {
+          setMessages(prev => [...prev, {
+            role: 'assistant',
+            content: validation.error,
+            metadata: { timestamp: Date.now() }
+          }]);
+          setIsLoading(false);
+          return;
+        }
+        quoteMetadata = validation.quoteMetadata;
       }
 
-      // Create the updated messages array with the new user message
-      const updatedMessages = [...messages, userMessage];
-
-      // Log the conversation state for debugging
-      console.log('Sending request with:', {
-        currentMessage: userMessage.content,
-        historyLength: updatedMessages.length,
-        history: updatedMessages
-      });
-      
-      console.log('User message before request:', userMessage); // Debug log 2
-      
       const response = await fetch('/api/ai-support', {
         method: 'POST',
         headers: {
@@ -104,7 +365,8 @@ export function ChatInterface() {
               email: user?.email
             },
             token: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-            session: session
+            session: session,
+            quote: quoteMetadata
           }
         }),
       });
