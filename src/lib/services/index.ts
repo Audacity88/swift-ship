@@ -18,6 +18,7 @@ export { conversationService } from './conversation-service'
 export { userService } from './user-service'
 export { customerService } from './customer-service'
 export { quoteCalculationService, type ServiceType, type ServiceOption } from './quote-calculation-service'
+export { quoteMetadataService } from './quote-metadata-service'
 
 // Individual Functions - Ticket Service
 export {

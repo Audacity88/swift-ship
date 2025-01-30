@@ -1,6 +1,6 @@
 'use client'
 
-import { ChatInterface } from '@/components/features/ai-support/ChatInterface'
+import { AISupportChat } from '@/components/features/ai-support/AISupportChat'
 import { MessageSquare } from 'lucide-react'
 
 export default function ContactSupportPage() {
@@ -9,12 +9,12 @@ export default function ContactSupportPage() {
       <div className="flex items-center justify-between px-6 py-4 border-b">
         <div className="flex items-center gap-2">
           <MessageSquare className="w-5 h-5 text-primary" />
-          <h1 className="text-xl font-semibold">AI Support Chat</h1>
+          <h1 className="text-xl font-semibold">AI Quote Creator</h1>
         </div>
       </div>
 
       <div className="flex-1 p-6">
-        <ChatInterface />
+        <AISupportChat />
       </div>
     </div>
   )

@@ -121,7 +121,7 @@ interface AIRequestPayload {
   metadata: RequestMetadata;
 }
 
-export function ChatInterface() {
+export function QuoteCreator() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
