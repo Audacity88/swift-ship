@@ -90,7 +90,24 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
       if (agentType === 'shipments' && user?.id) {
         try {
           const shipments = await shipmentService.getCustomerShipments(undefined, user.id);
-          setCustomerShipments(shipments);
+          // Only keep the last 5 shipments and map to expected format
+          const optimizedShipments = shipments.slice(-5).map(shipment => ({
+            id: shipment.id,
+            status: shipment.status,
+            type: shipment.package_type || 'standard',
+            origin: shipment.from_address?.formatted_address || '',
+            destination: shipment.to_address?.formatted_address || '',
+            tracking_number: shipment.tracking_number,
+            scheduled_pickup: shipment.pickup_date,
+            estimated_delivery: shipment.estimated_delivery,
+            actual_delivery: shipment.delivered_at,
+            metadata: {
+              service_level: shipment.service_level,
+              weight: shipment.package_details?.weight,
+              volume: shipment.package_details?.volume
+            }
+          }));
+          setCustomerShipments(optimizedShipments);
         } catch (error) {
           console.error('Error fetching customer shipments:', error);
         }
@@ -178,24 +195,47 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
     setIsLoading(true);
 
     try {
-      // Handle quote-specific metadata if this is the quote agent
       let metadata: RequestMetadata = {
         userId: user?.id || '',
         customer: {
           id: user?.id || '',
-          name: user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Anonymous',
+          name: user?.email?.split('@')[0] || 'Anonymous',
           email: user?.email || 'anonymous@example.com'
         },
         token: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-        session
+        session: session ? {
+          ...session,
+          user: {
+            id: user?.id,
+            email: user?.email,
+            user_metadata: user?.user_metadata,
+            app_metadata: user?.app_metadata,
+            aud: user?.aud,
+            created_at: user?.created_at
+          }
+        } : undefined
       };
 
       // Add shipments to metadata if using shipments agent
-      if (agentType === 'shipments') {
+      if (agentType === 'shipments' && customerShipments.length > 0) {
         metadata.shipments = customerShipments;
       }
 
       if (agentType === 'quote') {
+        // Check if user is logged in
+        if (!user?.id) {
+          setMessages(prev => [...prev, {
+            role: 'assistant',
+            content: 'You need to be logged in to create a shipping quote. Please log in and try again.',
+            metadata: {
+              timestamp: Date.now(),
+              agent: agentType
+            }
+          }]);
+          setIsLoading(false);
+          return;
+        }
+
         // Always include the current quote metadata in the request
         metadata.quote = quoteMetadataState;
 
@@ -416,7 +456,7 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
       // Default API call for non-quote agents or when not in validation step
       const requestBody: AIRequestPayload = {
         message: userMessage.content,
-        conversationHistory: [...messages, userMessage],
+        conversationHistory: [...messages, userMessage].slice(-10), // Only send last 10 messages
         agentType,
         metadata
       };
@@ -430,6 +470,9 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
       });
 
       if (!response.ok) {
+        if (response.status === 503) {
+          throw new Error('The service is temporarily unavailable. Please try again in a few moments.');
+        }
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to get response');
       }
@@ -509,7 +552,14 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
                   ...lastMessage,
                   metadata: {
                     ...lastMessage.metadata,
-                    ...data.metadata
+                    ...data.metadata,
+                    // Map matched docs to context format for consistent display
+                    context: data.metadata?.matchedDocs?.map((doc: any) => ({
+                      title: doc.title,
+                      url: doc.url,
+                      score: doc.score,
+                      preview: doc.preview
+                    }))
                   }
                 };
                 return newMessages;
@@ -563,12 +613,12 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
             >
               <div className="space-y-2 w-full">
                 <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>
-                {message.metadata?.context && (
+                {message.metadata?.context && message.metadata.context.length > 0 && (
                   <div className="mt-2 text-sm">
                     <p className="text-muted-foreground mb-1">Sources:</p>
-                    <ul className="list-disc pl-4 space-y-1 text-blue-500 mb-1">
+                    <ul className="list-disc pl-4 space-y-1">
                       {message.metadata.context.map((source, index) => (
-                        <li key={index}>
+                        <li key={index} className="text-muted-foreground">
                           <a 
                             href={source.url} 
                             className="text-blue-500 hover:text-blue-600 hover:underline"
@@ -580,9 +630,6 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
                         </li>
                       ))}
                     </ul>
-                    <div className="mt-2 text-xs">
-                      <p>Need more help? <a href="/portal/tickets/new" className="text-blue-500 hover:text-blue-600 hover:underline">Contact Support</a></p>
-                    </div>
                   </div>
                 )}
               </div>

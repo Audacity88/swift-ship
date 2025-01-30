@@ -40,7 +40,15 @@ export class ShipmentsAgent {
   private debugLogs: string[] = [];
 
   constructor(private apiKey: string) {
-    this.openai = new OpenAI(new Configuration({ apiKey: this.apiKey }));
+    if (!apiKey) {
+      throw new Error('OpenAI API key is required');
+    }
+    try {
+      this.openai = new OpenAI(new Configuration({ apiKey: this.apiKey }));
+    } catch (error) {
+      this.log('Error initializing OpenAI:', error);
+      throw new Error('Failed to initialize OpenAI client');
+    }
   }
 
   private log(message: string, ...args: any[]) {
@@ -67,6 +75,16 @@ Remember: Every response must maintain Swift Ship's brand voice and explicitly r
 `;
 
   public async process(context: AgentContext): Promise<AgentResponse> {
+    if (!this.openai) {
+      return {
+        content: "I apologize, but I'm currently unable to process requests. Please try again later.",
+        metadata: { 
+          error: 'OpenAI client not initialized',
+          debugLogs: this.debugLogs 
+        }
+      };
+    }
+
     // Collect the last user message
     const lastMessage = context.messages[context.messages.length - 1];
     if (!lastMessage) {
@@ -93,12 +111,17 @@ Remember: Every response must maintain Swift Ship's brand voice and explicitly r
     // Send to OpenAI for a completion
     try {
       const completion = await this.openai.createChatCompletion({
-        model: 'gpt-4-turbo-preview',
+        model: 'gpt-4', // Use stable model
         messages: conversation,
         temperature: 0.7,
         max_tokens: 500
       });
-      const content = completion.data.choices[0].message?.content || '';
+      
+      if (!completion.data.choices[0]?.message?.content) {
+        throw new Error('No response from OpenAI');
+      }
+
+      const content = completion.data.choices[0].message.content;
 
       return {
         content,
@@ -108,9 +131,32 @@ Remember: Every response must maintain Swift Ship's brand voice and explicitly r
       };
     } catch (error) {
       this.log('Error calling OpenAI:', error);
+      
+      // Check for specific error types
+      if (error.response?.status === 401) {
+        return {
+          content: "I'm sorry, but I'm having trouble accessing my knowledge base. Please try again later.",
+          metadata: {
+            error: 'OpenAI authentication error',
+            debugLogs: this.debugLogs
+          }
+        };
+      }
+      
+      if (error.response?.status === 429) {
+        return {
+          content: "I'm currently experiencing high demand. Please try again in a moment.",
+          metadata: {
+            error: 'OpenAI rate limit exceeded',
+            debugLogs: this.debugLogs
+          }
+        };
+      }
+
       return {
-        content: "I'm sorry, but I encountered an error. Please try again later.",
+        content: "I'm sorry, but I encountered an error processing your request. Please try again later.",
         metadata: {
+          error: error.message || 'Unknown error',
           debugLogs: this.debugLogs
         }
       };

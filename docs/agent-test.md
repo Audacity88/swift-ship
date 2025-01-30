@@ -10,3 +10,6 @@ yes
 
 
 all shipments
+
+
+What are the packaging requirements for fragile items?
