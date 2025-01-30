@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { createBrowserClient } from '@supabase/ssr';
 import { radarService } from '@/lib/services/radar-service';
+import { quoteCalculationService } from '@/lib/services/quote-calculation-service'
 
 interface Message {
   role: 'user' | 'assistant';
@@ -89,6 +90,16 @@ interface QuoteMetadata {
   selectedService?: 'express_freight' | 'standard_freight' | 'eco_freight';
   estimatedPrice?: number;
   estimatedDelivery?: string;
+  route?: {
+    distance: {
+      kilometers: number;
+      miles: number;
+    };
+    duration: {
+      minutes: number;
+      hours: number;
+    };
+  };
 }
 
 interface RequestMetadata {
@@ -154,8 +165,8 @@ export function ChatInterface() {
       };
     }
 
-    // Calculate route
-    const route = await radarService.calculateRoute(
+    // Calculate route using the new service
+    const route = await quoteCalculationService.calculateRoute(
       { latitude: fromGeocode.latitude, longitude: fromGeocode.longitude },
       { latitude: toGeocode.latitude, longitude: toGeocode.longitude }
     );
@@ -177,19 +188,19 @@ export function ChatInterface() {
       const [_, day, hour, minute, ampm] = dateMatch;
       const today = new Date();
       const daysOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-      const targetDay = daysOfWeek.findIndex(d => d.startsWith(day.toLowerCase()));
+      const targetDay = daysOfWeek.findIndex(d => d.toLowerCase().startsWith(day.toLowerCase()));
       
       if (targetDay !== -1) {
         let daysToAdd = targetDay - today.getDay();
-        if (daysToAdd <= 0) daysToAdd += 7;
+        if (daysToAdd <= 0) daysToAdd += 7; // If the target day is today or earlier, go to next week
         pickupDate = new Date(today);
         pickupDate.setDate(today.getDate() + daysToAdd);
-        if (hour) {
-          let hourNum = parseInt(hour);
-          if (ampm && ampm.toLowerCase() === 'pm' && hourNum < 12) hourNum += 12;
-          if (ampm && ampm.toLowerCase() === 'am' && hourNum === 12) hourNum = 0;
-          pickupDate.setHours(hourNum, minute ? parseInt(minute) : 0, 0, 0);
-        }
+        
+        // Parse hour and adjust for AM/PM
+        let hourNum = parseInt(hour);
+        if (ampm?.toLowerCase() === 'pm' && hourNum < 12) hourNum += 12;
+        if (ampm?.toLowerCase() === 'am' && hourNum === 12) hourNum = 0;
+        pickupDate.setHours(hourNum, minute ? parseInt(minute) : 0, 0, 0);
       }
     }
 
@@ -259,10 +270,7 @@ export function ChatInterface() {
           pickupDate: pickupDate.toISOString().split('T')[0],
           pickupTimeSlot
         },
-        route: {
-          distance: route.distance,
-          duration: route.duration
-        }
+        route
       }
     };
   };
@@ -294,7 +302,6 @@ export function ChatInterface() {
     try {
       // Only validate addresses if we're at the address collection step
       // and the message contains address information
-      let quoteMetadata: QuoteMetadata | undefined;
       const lastAssistantMessage = messages
         .filter(m => m.role === 'assistant')
         .pop()?.content || '';
@@ -302,24 +309,84 @@ export function ChatInterface() {
       const isAddressStep = lastAssistantMessage.includes('pickup address') || 
                            lastAssistantMessage.includes('delivery address');
       
+      let validationResult: { isValid: boolean; error?: string; quoteMetadata?: QuoteMetadata } | undefined;
       if (isAddressStep && (input.toLowerCase().includes('from') || input.toLowerCase().includes('to'))) {
-        const validation = await validateAddresses(input);
-        if (!validation.isValid) {
+        validationResult = await validateAddresses(input);
+        if (!validationResult?.isValid) {
           setMessages(prev => [...prev, {
             role: 'assistant',
-            content: validation.error,
+            content: validationResult?.error || 'Invalid addresses provided.',
             metadata: { timestamp: Date.now() }
           }]);
           setIsLoading(false);
           return;
         }
-        setQuoteMetadataState(validation.quoteMetadata);
+        setQuoteMetadataState(prev => ({
+          ...prev,
+          ...validationResult?.quoteMetadata,
+        }));
       }
 
       // Prepare the metadata for the request
-      const currentQuoteMetadata = isAddressStep ? quoteMetadataState : {
+      const currentQuoteMetadata = {
         ...quoteMetadataState,
-        ...quoteMetadata
+        ...validationResult?.quoteMetadata
+      };
+
+      // Only calculate service options if we have both package details and route information
+      const hasPackageDetails = currentQuoteMetadata?.packageDetails?.volume && 
+                               currentQuoteMetadata?.packageDetails?.weight;
+      const hasRouteInfo = currentQuoteMetadata?.route?.distance?.kilometers;
+
+      let serviceOptions = {};
+      if (hasPackageDetails && hasRouteInfo && currentQuoteMetadata.packageDetails && currentQuoteMetadata.route) {
+        const { volume, weight, palletCount } = currentQuoteMetadata.packageDetails;
+        const { kilometers } = currentQuoteMetadata.route.distance;
+        const pickupDate = currentQuoteMetadata.destination?.pickupDate || new Date().toISOString().split('T')[0];
+
+        serviceOptions = {
+          expressPrice: quoteCalculationService.calculateServicePrice(
+            'express_freight', 
+            kilometers,
+            parseFloat(volume),
+            parseFloat(weight),
+            parseInt(palletCount || '0'),
+            true
+          ),
+          standardPrice: quoteCalculationService.calculateServicePrice(
+            'standard_freight', 
+            kilometers,
+            parseFloat(volume),
+            parseFloat(weight),
+            parseInt(palletCount || '0'),
+            false
+          ),
+          ecoPrice: quoteCalculationService.calculateServicePrice(
+            'eco_freight', 
+            kilometers,
+            parseFloat(volume),
+            parseFloat(weight),
+            parseInt(palletCount || '0'),
+            false
+          ),
+          expressDelivery: quoteCalculationService.calculateEstimatedDelivery(
+            pickupDate,
+            'express_freight'
+          ),
+          standardDelivery: quoteCalculationService.calculateEstimatedDelivery(
+            pickupDate,
+            'standard_freight'
+          ),
+          ecoDelivery: quoteCalculationService.calculateEstimatedDelivery(
+            pickupDate,
+            'eco_freight'
+          )
+        };
+      }
+
+      const finalQuoteMetadata = {
+        ...currentQuoteMetadata,
+        ...serviceOptions
       };
 
       const response = await fetch('/api/ai-support', {
@@ -340,7 +407,7 @@ export function ChatInterface() {
             },
             token: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
             session: session,
-            quote: currentQuoteMetadata
+            quote: finalQuoteMetadata
           }
         }),
       });

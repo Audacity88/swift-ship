@@ -23,6 +23,7 @@ import { TIME_SLOTS } from '@/types/time-slots'
 import { AddressAutocomplete } from '@/components/features/quotes/AddressAutocomplete'
 import type { RadarAddress } from '@/types/quote'
 import { radarService, type RouteInfo } from '@/lib/services/radar-service'
+import { quoteCalculationService, type ServiceOption } from '@/lib/services/quote-calculation-service'
 
 type Step = 'package' | 'destination' | 'service' | 'summary' | 'done'
 
@@ -112,14 +113,6 @@ interface QuoteRequest {
   created_at: string
 }
 
-interface ServiceOption {
-  id: string
-  name: string
-  price: number
-  duration: string
-  description: string
-}
-
 interface ValidationErrors {
   pickup?: string
   delivery?: string
@@ -171,37 +164,6 @@ const initialDestination: {
   },
   pickupDate: '',
   pickupTimeSlot: '',
-}
-
-// Base rates per kilometer for different services
-const SERVICE_RATES = {
-  express_freight: {
-    basePrice: 1500,      // Base price for any distance
-    perKm: 2.5,          // Cost per kilometer
-    perM3: 8,            // Cost per cubic meter of volume
-    perTon: 15,          // Cost per metric ton
-    perPallet: 12,       // Cost per pallet
-    speedFactor: 1.0,    // Multiplier for estimated duration
-    rushFactor: 1.5      // Price multiplier for expedited delivery
-  },
-  standard_freight: {
-    basePrice: 1000,
-    perKm: 1.8,
-    perM3: 6,
-    perTon: 12,
-    perPallet: 10,
-    speedFactor: 1.3,
-    rushFactor: 1.0
-  },
-  eco_freight: {
-    basePrice: 800,
-    perKm: 1.2,
-    perM3: 4,
-    perTon: 8,
-    perPallet: 8,
-    speedFactor: 1.6,
-    rushFactor: 0.8
-  }
 }
 
 export default function QuotePage() {
@@ -310,90 +272,7 @@ export default function QuotePage() {
 
   // Calculate service options based on distance and volume
   const calculateServiceOptions = (route: RouteInfo | null): ServiceOption[] => {
-    if (!route) return []
-
-    const volume = parseFloat(packageDetails.volume) || 0
-    const weight = parseFloat(packageDetails.weight) || 0
-    const palletCount = parseInt(packageDetails.palletCount || '0') || 0
-    const isRushDelivery = route.duration.hours < 24 // Consider it rush delivery if less than 24 hours
-
-    const calculatePrice = (rates: typeof SERVICE_RATES.express_freight) => {
-      // For intra-city deliveries (less than 50km), use a simplified calculation
-      if (route.distance.kilometers <= 50) {
-        const baseAmount = rates.basePrice + 
-          (volume * rates.perM3) +
-          (weight * rates.perTon) +
-          (palletCount * rates.perPallet)
-        
-        // Apply rush factor if it's a rush delivery
-        const rushMultiplier = isRushDelivery ? rates.rushFactor : 1.0
-        
-        // Round to nearest $100
-        return Math.ceil(baseAmount * rushMultiplier / 100) * 100
-      }
-
-      // For longer distances, include per-kilometer rates
-      const baseAmount = rates.basePrice + 
-        (route.distance.kilometers * rates.perKm) + 
-        (volume * rates.perM3) +
-        (weight * rates.perTon) +
-        (palletCount * rates.perPallet)
-      
-      // Apply rush factor if it's a rush delivery
-      const rushMultiplier = isRushDelivery ? rates.rushFactor : 1.0
-      
-      // Round to nearest $1000
-      return Math.ceil(baseAmount * rushMultiplier / 1000) * 1000
-    }
-
-    // Calculate business days based on distance and speed
-    const calculateDeliveryTime = (speedFactor: number, handlingHours: number): string => {
-      // Base calculation: assume average speed of 80 km/h
-      const travelHours = route.distance.kilometers / 80
-      
-      // Apply speed factor and add handling time (varies by service level)
-      const totalHours = (travelHours * speedFactor) + handlingHours
-      
-      // Convert to business days (8 hours per business day)
-      const businessDays = Math.ceil(totalHours / 8)
-      
-      // Format the delivery time estimate
-      if (businessDays <= 1) {
-        if (totalHours <= 4) {
-          return "Same day delivery"
-        } else {
-          return "Next business day"
-        }
-      } else if (businessDays === 2) {
-        return "2 business days"
-      } else {
-        return `${businessDays} business days`
-      }
-    }
-
-    return [
-      {
-        id: 'express_freight',
-        name: 'Express Freight',
-        price: calculatePrice(SERVICE_RATES.express_freight),
-        duration: calculateDeliveryTime(SERVICE_RATES.express_freight.speedFactor, 2), // 2 hours handling
-        description: 'Priority handling and expedited transport'
-      },
-      {
-        id: 'standard_freight',
-        name: 'Standard Freight',
-        price: calculatePrice(SERVICE_RATES.standard_freight),
-        duration: calculateDeliveryTime(SERVICE_RATES.standard_freight.speedFactor, 8), // 1 business day handling
-        description: 'Regular service with standard handling'
-      },
-      {
-        id: 'eco_freight',
-        name: 'Eco Freight',
-        price: calculatePrice(SERVICE_RATES.eco_freight),
-        duration: calculateDeliveryTime(SERVICE_RATES.eco_freight.speedFactor, 16), // 2 business days handling
-        description: 'Cost-effective with consolidated handling'
-      }
-    ]
+    return quoteCalculationService.calculateServiceOptions(route, packageDetails)
   }
 
   // Calculate route when origin and destination coordinates are available
@@ -452,36 +331,7 @@ export default function QuotePage() {
     from: { latitude: number; longitude: number },
     to: { latitude: number; longitude: number }
   ): RouteInfo => {
-    const R = 6371 // Earth's radius in kilometers
-
-    const dLat = toRad(to.latitude - from.latitude)
-    const dLon = toRad(to.longitude - from.longitude)
-    const lat1 = toRad(from.latitude)
-    const lat2 = toRad(to.latitude)
-
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-              Math.sin(dLon/2) * Math.sin(dLon/2) * Math.cos(lat1) * Math.cos(lat2)
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
-    const distanceKm = R * c
-
-    // Assume average speed of 60 km/h for duration estimate
-    const durationHours = distanceKm / 60
-
-    return {
-      distance: {
-        kilometers: Math.round(distanceKm * 10) / 10,
-        miles: Math.round(distanceKm * 0.621371 * 10) / 10
-      },
-      duration: {
-        minutes: Math.round(durationHours * 60),
-        hours: Math.round(durationHours * 10) / 10
-      }
-    }
-  }
-
-  // Helper function to convert degrees to radians
-  const toRad = (degrees: number): number => {
-    return degrees * (Math.PI / 180)
+    return quoteCalculationService.calculateFallbackRoute(from, to)
   }
 
   const handleNext = () => {
@@ -633,25 +483,7 @@ export default function QuotePage() {
 
   // Helper function to calculate estimated delivery based on service type
   const calculateEstimatedDelivery = (pickupDate: string, serviceId: string): string => {
-    const pickup = new Date(pickupDate)
-    const service = calculateServiceOptions(routeInfo).find(s => s.id === serviceId)
-    
-    if (!service) return ''
-
-    // Extract the number of days from the duration string (e.g., "2-3 Business Days" -> 3)
-    const maxDays = parseInt(service.duration.match(/\d+/g)?.pop() || '0')
-    
-    // Add business days to pickup date
-    const delivery = new Date(pickup)
-    let daysToAdd = maxDays
-    while (daysToAdd > 0) {
-      delivery.setDate(delivery.getDate() + 1)
-      if (delivery.getDay() !== 0 && delivery.getDay() !== 6) { // Skip weekends
-        daysToAdd--
-      }
-    }
-
-    return delivery.toISOString().split('T')[0]
+    return quoteCalculationService.calculateEstimatedDelivery(pickupDate, serviceId)
   }
 
   // Transform quote to QuoteRequest type

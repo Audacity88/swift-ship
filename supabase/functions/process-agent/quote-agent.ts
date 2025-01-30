@@ -63,6 +63,7 @@ interface QuoteState {
 export class QuoteAgent {
   private debugLogs: string[] = [];
   private baseUrl: string;
+  private context: AgentContext | null = null;
 
   private readonly QUOTE_MESSAGES = {
     START_QUOTE: "I'll help you create a shipping quote. First, I need some details about your shipment:\n\n" +
@@ -82,32 +83,60 @@ export class QuoteAgent {
       "3. When would you like the pickup to be scheduled? (date and time)\n\n" +
       "Please provide all these details in your response.",
 
-    SERVICE_OPTIONS: (distance: number, pickupDate?: string) => {
-      const expressPrice = Math.ceil((distance * 2.5 + 1000) / 100) * 100;
-      const standardPrice = Math.ceil((distance * 1.5 + 500) / 100) * 100;
-      const ecoPrice = Math.ceil((distance * 1.0 + 300) / 100) * 100;
+    SERVICE_OPTIONS: (metadata: any) => {
+      if (!metadata) {
+        return "I apologize, but I need the shipping details to calculate service options. Let's start over:\n\n" + 
+               "1. What type of shipment is this? (FTL, LTL, Sea Container, or Bulk Freight)\n" +
+               "2. What's the total weight in metric tons?\n" +
+               "3. What's the total volume in cubic meters?\n" +
+               "4. Are there any hazardous materials?";
+      }
 
-      const getDeliveryDate = (daysToAdd: number): string => {
-        const date = new Date(pickupDate || new Date());
-        date.setDate(date.getDate() + daysToAdd);
-        return date.toISOString().split('T')[0];
-      };
+      const route = metadata.route;
+      if (!route) {
+        return "I need the pickup and delivery addresses to calculate service options. Please provide:\n\n" +
+               "1. Complete pickup address (including city and state)\n" +
+               "2. Complete delivery address (including city and state)\n" +
+               "3. Preferred pickup date and time";
+      }
 
-      return `Based on your shipment details, here are the available service options:
+      // Calculate prices based on distance
+      const distance = route.distance.kilometers;
+      const baseRate = 2.5; // Base rate per kilometer
+      const expressMultiplier = 2.0;
+      const standardMultiplier = 1.5;
+      const ecoMultiplier = 1.0;
 
-1. Express Freight - $${expressPrice}
-   - Priority handling and expedited transport
-   - Estimated delivery: ${getDeliveryDate(2)}
+      const basePrice = distance * baseRate;
+      const expressPrice = Math.round(basePrice * expressMultiplier);
+      const standardPrice = Math.round(basePrice * standardMultiplier);
+      const ecoPrice = Math.round(basePrice * ecoMultiplier);
 
-2. Standard Freight - $${standardPrice}
-   - Regular service with standard handling
-   - Estimated delivery: ${getDeliveryDate(4)}
+      // Calculate delivery dates based on pickup date
+      const pickupDate = new Date(metadata.destination.pickupDate);
+      const expressDelivery = new Date(pickupDate);
+      const standardDelivery = new Date(pickupDate);
+      const ecoDelivery = new Date(pickupDate);
 
-3. Eco Freight - $${ecoPrice}
-   - Cost-effective with consolidated handling
-   - Estimated delivery: ${getDeliveryDate(6)}
+      expressDelivery.setDate(pickupDate.getDate() + 1);
+      standardDelivery.setDate(pickupDate.getDate() + 2);
+      ecoDelivery.setDate(pickupDate.getDate() + 3);
 
-Please select your preferred service option (1, 2, or 3):`;
+      return `Based on your shipping details:\n\n` +
+        `Pickup: ${metadata.destination.from.formattedAddress}\n` +
+        `Delivery: ${metadata.destination.to.formattedAddress}\n` +
+        `Distance: ${route.distance.kilometers.toFixed(1)} km\n\n` +
+        `Here are your available service options:\n\n` +
+        `1. Express Freight - $${expressPrice}\n` +
+        `   - Priority handling and expedited transport\n` +
+        `   - Estimated delivery: ${expressDelivery.toLocaleDateString()}\n\n` +
+        `2. Standard Freight - $${standardPrice}\n` +
+        `   - Regular service with standard handling\n` +
+        `   - Estimated delivery: ${standardDelivery.toLocaleDateString()}\n\n` +
+        `3. Eco Freight - $${ecoPrice}\n` +
+        `   - Cost-effective with consolidated handling\n` +
+        `   - Estimated delivery: ${ecoDelivery.toLocaleDateString()}\n\n` +
+        `Please select your preferred service option (1, 2, or 3):`;
     }
   };
 
@@ -491,7 +520,30 @@ Service Details:
       if (!deliveryMatch) return null;
 
       // Extract pickup date and time
-      const dateTimeMatch = content.match(/(?:pickup|schedule|on|at)\s+(?:next\s+)?(\w+)\s+(?:at\s+)?(\d{1,2}(?::\d{2})?(?:\s*[AaPp][Mm])?)/i);
+      const dateMatch = content.match(/next\s+(\w+)\s+at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+      let pickupDateTime = '';
+      
+      if (dateMatch) {
+        const [_, day, hour, minute, ampm] = dateMatch;
+        const today = new Date();
+        const daysOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+        const targetDay = daysOfWeek.findIndex(d => d.toLowerCase().startsWith(day.toLowerCase()));
+        
+        if (targetDay !== -1) {
+          let daysToAdd = targetDay - today.getDay();
+          if (daysToAdd <= 0) daysToAdd += 7; // If the target day is today or earlier, go to next week
+          const pickupDate = new Date(today);
+          pickupDate.setDate(today.getDate() + daysToAdd);
+          
+          // Parse hour and adjust for AM/PM
+          let hourNum = parseInt(hour);
+          if (ampm?.toLowerCase() === 'pm' && hourNum < 12) hourNum += 12;
+          if (ampm?.toLowerCase() === 'am' && hourNum === 12) hourNum = 0;
+          pickupDate.setHours(hourNum, minute ? parseInt(minute) : 0, 0, 0);
+          
+          pickupDateTime = pickupDate.toISOString();
+        }
+      }
 
       const addressDetails = {
         pickup: {
@@ -504,7 +556,7 @@ Service Details:
           city: deliveryMatch[2]?.trim(),
           state: deliveryMatch[3]?.trim()
         },
-        pickupDateTime: dateTimeMatch ? `${dateTimeMatch[1]} ${dateTimeMatch[2]}` : undefined
+        pickupDateTime: pickupDateTime || undefined
       };
 
       this.log('Extracted address details:', addressDetails);
@@ -554,22 +606,14 @@ Service Details:
       const contentLower = content.toLowerCase();
 
       let type: 'express_freight' | 'standard_freight' | 'eco_freight' | null = null;
-      let price = 0;
-      let duration = '';
 
       // Only match exact service selections
       if (contentLower.match(/^(?:option\s*)?1\s*$/) || contentLower.match(/\b(?:express|express[\s-]freight)\b/)) {
         type = 'express_freight';
-        price = 2500;
-        duration = '2-3 business days';
       } else if (contentLower.match(/^(?:option\s*)?2\s*$/) || contentLower.match(/\b(?:standard|standard[\s-]freight)\b/)) {
         type = 'standard_freight';
-        price = 1500;
-        duration = '4-5 business days';
       } else if (contentLower.match(/^(?:option\s*)?3\s*$/) || contentLower.match(/\b(?:eco|eco[\s-]freight)\b/)) {
         type = 'eco_freight';
-        price = 1000;
-        duration = '6-7 business days';
       }
 
       if (!type) {
@@ -577,73 +621,27 @@ Service Details:
         return null;
       }
 
-      const serviceDetails = {
-        type,
-        price,
-        duration
-      };
+      // Use the price and delivery date from the frontend metadata
+      const quote = this.context?.metadata?.quote;
+      if (!quote) {
+        this.log('No quote metadata found');
+        return null;
+      }
 
-      this.log('Extracted service details:', serviceDetails);
-      return serviceDetails;
+      return {
+        type,
+        price: quote.estimatedPrice,
+        duration: quote.estimatedDelivery
+      };
     } catch (error) {
       this.log('Error extracting service details:', error);
       return null;
     }
   }
 
-  private calculateDistance(from: { city: string; state: string }, to: { city: string; state: string }): number {
-    // This is a simplified distance calculation
-    // In a real application, you would use a geocoding service
-    const distances: Record<string, Record<string, number>> = {
-      'Los Angeles': {
-        'New York': 2789,
-        'Chicago': 2004,
-        'Houston': 1377
-      },
-      'New York': {
-        'Los Angeles': 2789,
-        'Chicago': 787,
-        'Houston': 1417
-      },
-      'Chicago': {
-        'Los Angeles': 2004,
-        'New York': 787,
-        'Houston': 940
-      },
-      'Houston': {
-        'Los Angeles': 1377,
-        'New York': 1417,
-        'Chicago': 940
-      }
-    };
-
-    return distances[from.city]?.[to.city] || 1000; // Default to 1000 miles if not found
-  }
-
-  private calculateEstimatedDeliveryDate(pickupDate: string, serviceType: string): string {
-    if (!pickupDate) return '';
-    
-    const date = new Date(pickupDate);
-    let daysToAdd = 2; // default for express
-
-    switch (serviceType) {
-      case 'express_freight':
-        daysToAdd = 2;
-        break;
-      case 'standard_freight':
-        daysToAdd = 4;
-        break;
-      case 'eco_freight':
-        daysToAdd = 6;
-        break;
-    }
-
-    date.setDate(date.getDate() + daysToAdd);
-    return date.toISOString().split('T')[0];
-  }
-
   public async process(context: AgentContext): Promise<AgentResponse> {
-    this.debugLogs = []; // Reset debug logs at the start of processing
+    this.context = context;
+    this.debugLogs = [];
     this.log('QuoteAgent: Starting process with context:', {
       metadata: context.metadata,
       messageCount: context.messages.length
@@ -706,11 +704,7 @@ Service Details:
           `Hazardous: ${packageDetails.hazardous ? 'Yes' : 'No'}\n\n` +
           this.QUOTE_MESSAGES.ADDRESS_DETAILS;
       } else {
-        response = "I couldn't understand all the package details. Please provide:\n" +
-          "1. Type of shipment (FTL, LTL, Sea Container, or Bulk Freight)\n" +
-          "2. Weight in metric tons\n" +
-          "3. Volume in cubic meters\n" +
-          "4. Whether there are hazardous materials";
+        response = this.QUOTE_MESSAGES.START_QUOTE;
       }
     }
     // If we're waiting for addresses
@@ -719,11 +713,9 @@ Service Details:
       const packageDetails = this.findLastPackageDetails(allMessages);
       
       if (addressDetails) {
-        // Calculate distance and show service options
-        const distance = this.calculateDistance(
-          { city: addressDetails.pickup.city || '', state: addressDetails.pickup.state || '' },
-          { city: addressDetails.delivery.city || '', state: addressDetails.delivery.state || '' }
-        );
+        // Get distance from metadata instead of calculating it
+        const distance = this.getDistanceFromMetadata(context);
+        const isRushDelivery = this.isRushDeliveryFromMetadata(context);
 
         response = "Great! I've got your shipping details:\n\n" +
           "Pickup Address:\n" +
@@ -733,7 +725,7 @@ Service Details:
           `${addressDetails.delivery.address}, ${addressDetails.delivery.city}` +
           (addressDetails.delivery.state ? `, ${addressDetails.delivery.state}` : '') + "\n\n" +
           (addressDetails.pickupDateTime ? `Pickup Time: ${addressDetails.pickupDateTime}\n\n` : '') +
-          this.QUOTE_MESSAGES.SERVICE_OPTIONS(distance, addressDetails.pickupDateTime);
+          this.QUOTE_MESSAGES.SERVICE_OPTIONS(context.metadata?.quote);
       } else if (packageDetails) {
         response = "I'll need the following information to proceed:\n\n" +
           "1. Complete pickup address (including city and state)\n" +
@@ -747,221 +739,49 @@ Service Details:
     // If we're waiting for service selection
     else if (step === 'service_selection') {
       const serviceDetails = this.extractServiceSelection(lastUserMessage);
-      const addressDetails = this.extractAddressDetails(lastUserMessage);
+      const packageDetails = this.findLastPackageDetails(allMessages);
       
       // If they haven't made a selection yet, show the options
       if (!serviceDetails) {
-        // Try to get the last known address details to calculate distance
-        let lastAddressDetails = addressDetails;
-        if (!lastAddressDetails) {
-          for (let i = allMessages.length - 1; i >= 0; i--) {
-            if (allMessages[i].role === 'user') {
-              lastAddressDetails = this.extractAddressDetails(allMessages[i].content);
-              if (lastAddressDetails) break;
-            }
-          }
-        }
+        // Check if we have route information from metadata
+        const hasRouteInfo = context.metadata?.quote?.route;
 
-        if (lastAddressDetails) {
-          const distance = this.calculateDistance(
-            { city: lastAddressDetails.pickup.city || '', state: lastAddressDetails.pickup.state || '' },
-            { city: lastAddressDetails.delivery.city || '', state: lastAddressDetails.delivery.state || '' }
-          );
-          response = this.QUOTE_MESSAGES.SERVICE_OPTIONS(distance, lastAddressDetails.pickupDateTime);
+        if (hasRouteInfo) {
+          response = this.QUOTE_MESSAGES.SERVICE_OPTIONS(context.metadata?.quote);
         } else {
-          response = "I couldn't find the address details. Let's start over:\n\n" + this.QUOTE_MESSAGES.START_QUOTE;
+          response = "I need the pickup and delivery addresses to calculate service options. Please provide:\n\n" +
+            "1. Complete pickup address (including city and state)\n" +
+            "2. Complete delivery address (including city and state)\n" +
+            "3. Preferred pickup date and time";
         }
       } else {
-        response = "Perfect! I've got your service selection:\n\n" +
-          `Service: ${serviceDetails.type.replace(/_/g, ' ')}\n` +
-          `Price: $${serviceDetails.price}\n` +
-          `Estimated Delivery: ${serviceDetails.duration}\n\n` +
-          "Would you like me to create this shipping quote for you? (yes/no)";
-      }
-    }
-    // If we're in confirmation
-    else if (step === 'confirmation') {
-      const confirmation = lastUserMessage.toLowerCase();
-      
-      // Check if this is the first confirmation message (service selection)
-      const isServiceSelection = /^(?:option\s*)?[123]\s*$/.test(confirmation) || 
-                               confirmation.includes('express') ||
-                               confirmation.includes('standard') ||
-                               confirmation.includes('eco');
-
-      if (isServiceSelection) {
-        // Extract service details from the selection
-        const serviceDetails = this.extractServiceSelection(confirmation);
-        if (serviceDetails) {
+        // Use the calculated price and delivery date
+        const quote = context.metadata?.quote;
+        if (!quote) {
+          response = "I apologize, but I couldn't find the quote details. Let's start over:\n\n" + this.QUOTE_MESSAGES.START_QUOTE;
+        } else {
           response = "Perfect! I've got your service selection:\n\n" +
             `Service: ${serviceDetails.type.replace(/_/g, ' ')}\n` +
             `Price: $${serviceDetails.price}\n` +
             `Estimated Delivery: ${serviceDetails.duration}\n\n` +
             "Would you like me to create this shipping quote for you? (yes/no)";
-        } else {
-          // If we couldn't extract service details, show options again
-          response = "I couldn't understand your service selection. Please choose one of the following options:\n\n" +
-            "1. Express Freight\n" +
-            "2. Standard Freight\n" +
-            "3. Eco Freight";
         }
-      } else if (confirmation.includes('yes') || confirmation.includes('yeah') || confirmation.includes('sure')) {
-        // Get token from metadata or use service role key
-        const token = context.metadata?.token || context.metadata?.supabaseToken || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-        if (!token) {
-          this.log('No token found in metadata:', context.metadata);
-          response = "I apologize, but I need authorization to create the quote. Please try again with proper authentication.";
-        } else {
-          // Get the logged-in user's information from the auth context
-          const authUser = context.metadata?.session?.user;
-          if (!authUser?.id) {
-            this.log('No authenticated user found:', context.metadata);
-            response = "I apologize, but you need to be logged in to create a quote. Please log in and try again.";
-          } else {
-            // Collect all the details from the conversation
-            const packageDetails = this.findLastPackageDetails(context.messages);
-            const addressDetails = this.findLastAddressDetails(context.messages);
-            const serviceDetails = this.findLastServiceSelection(context.messages);
-
-            if (!packageDetails || !addressDetails || !serviceDetails) {
-              response = "I apologize, but I couldn't find all the necessary details. Let's start over:\n\n" + this.QUOTE_MESSAGES.START_QUOTE;
-              return {
-                content: response,
-                metadata: {
-                  agentId: 'quote',
-                  timestamp: Date.now(),
-                  error: 'Missing required details'
-                }
-              };
-            }
-
-            // Calculate distance for price adjustment
-            const distance = this.calculateDistance(
-              { city: addressDetails.pickup.city || '', state: addressDetails.pickup.state || '' },
-              { city: addressDetails.delivery.city || '', state: addressDetails.delivery.state || '' }
-            );
-
-            // Parse pickup date and time
-            const pickupDateTime = addressDetails.pickupDateTime || '';
-            const [day, time] = pickupDateTime.split(' at ');
-            const pickupDate = day ? new Date().toISOString().split('T')[0] : ''; // You may want to properly parse the day
-            const pickupTimeSlot = time && time.toLowerCase().includes('am') ? 'morning_2' : 
-                                 time && time.toLowerCase().includes('pm') && parseInt(time) < 5 ? 'afternoon_2' : 
-                                 'evening_2';
-
-            const success = await this.createTicket(context.messages, {
-              token,
-              customer,
-              quote: {
-                isQuote: true,
-                destination: {
-                  from: {
-                    address: `${addressDetails.pickup.address}, ${addressDetails.pickup.city}, ${addressDetails.pickup.state} ${context.metadata?.quote?.destination?.from?.placeDetails?.postalCode || ''} USA`,
-                    coordinates: {
-                      latitude: context.metadata?.quote?.destination?.from?.coordinates?.latitude || 
-                               context.metadata?.quote?.destination?.from?.placeDetails?.coordinates?.latitude || 
-                               context.metadata?.quote?.destination?.from?.placeDetails?.latitude || 0,
-                      longitude: context.metadata?.quote?.destination?.from?.coordinates?.longitude || 
-                                context.metadata?.quote?.destination?.from?.placeDetails?.coordinates?.longitude || 
-                                context.metadata?.quote?.destination?.from?.placeDetails?.longitude || 0
-                    },
-                    placeDetails: {
-                      city: addressDetails.pickup.city || '',
-                      state: this.expandStateName(addressDetails.pickup.state) || '',
-                      country: 'United States',
-                      latitude: context.metadata?.quote?.destination?.from?.coordinates?.latitude || 
-                               context.metadata?.quote?.destination?.from?.placeDetails?.coordinates?.latitude || 
-                               context.metadata?.quote?.destination?.from?.placeDetails?.latitude || 0,
-                      longitude: context.metadata?.quote?.destination?.from?.coordinates?.longitude || 
-                                context.metadata?.quote?.destination?.from?.placeDetails?.coordinates?.longitude || 
-                                context.metadata?.quote?.destination?.from?.placeDetails?.longitude || 0,
-                      stateCode: addressDetails.pickup.state || '',
-                      postalCode: context.metadata?.quote?.destination?.from?.placeDetails?.postalCode || '',
-                      coordinates: {
-                        latitude: context.metadata?.quote?.destination?.from?.coordinates?.latitude || 
-                                 context.metadata?.quote?.destination?.from?.placeDetails?.coordinates?.latitude || 
-                                 context.metadata?.quote?.destination?.from?.placeDetails?.latitude || 0,
-                        longitude: context.metadata?.quote?.destination?.from?.coordinates?.longitude || 
-                                  context.metadata?.quote?.destination?.from?.placeDetails?.coordinates?.longitude || 
-                                  context.metadata?.quote?.destination?.from?.placeDetails?.longitude || 0
-                      },
-                      countryCode: 'US',
-                      countryFlag: '🇺🇸',
-                      formattedAddress: context.metadata?.quote?.destination?.from?.formattedAddress || 
-                        `${addressDetails.pickup.address}, ${addressDetails.pickup.city}, ${addressDetails.pickup.state} ${context.metadata?.quote?.destination?.from?.placeDetails?.postalCode || ''} US`
-                    },
-                    formattedAddress: context.metadata?.quote?.destination?.from?.formattedAddress || 
-                      `${addressDetails.pickup.address}, ${addressDetails.pickup.city}, ${addressDetails.pickup.state} ${context.metadata?.quote?.destination?.from?.placeDetails?.postalCode || ''} US`
-                  },
-                  to: {
-                    address: `${addressDetails.delivery.address}, ${addressDetails.delivery.city}, ${addressDetails.delivery.state} ${context.metadata?.quote?.destination?.to?.placeDetails?.postalCode || ''} USA`,
-                    coordinates: {
-                      latitude: context.metadata?.quote?.destination?.to?.coordinates?.latitude || 
-                               context.metadata?.quote?.destination?.to?.placeDetails?.coordinates?.latitude || 
-                               context.metadata?.quote?.destination?.to?.placeDetails?.latitude || 0,
-                      longitude: context.metadata?.quote?.destination?.to?.coordinates?.longitude || 
-                                context.metadata?.quote?.destination?.to?.placeDetails?.coordinates?.longitude || 
-                                context.metadata?.quote?.destination?.to?.placeDetails?.longitude || 0
-                    },
-                    placeDetails: {
-                      city: addressDetails.delivery.city || '',
-                      state: this.expandStateName(addressDetails.delivery.state) || '',
-                      country: 'United States',
-                      latitude: context.metadata?.quote?.destination?.to?.coordinates?.latitude || 
-                               context.metadata?.quote?.destination?.to?.placeDetails?.coordinates?.latitude || 
-                               context.metadata?.quote?.destination?.to?.placeDetails?.latitude || 0,
-                      longitude: context.metadata?.quote?.destination?.to?.coordinates?.longitude || 
-                                context.metadata?.quote?.destination?.to?.placeDetails?.coordinates?.longitude || 
-                                context.metadata?.quote?.destination?.to?.placeDetails?.longitude || 0,
-                      stateCode: addressDetails.delivery.state || '',
-                      postalCode: context.metadata?.quote?.destination?.to?.placeDetails?.postalCode || '',
-                      coordinates: {
-                        latitude: context.metadata?.quote?.destination?.to?.coordinates?.latitude || 
-                                 context.metadata?.quote?.destination?.to?.placeDetails?.coordinates?.latitude || 
-                                 context.metadata?.quote?.destination?.to?.placeDetails?.latitude || 0,
-                        longitude: context.metadata?.quote?.destination?.to?.coordinates?.longitude || 
-                                  context.metadata?.quote?.destination?.to?.placeDetails?.coordinates?.longitude || 
-                                  context.metadata?.quote?.destination?.to?.placeDetails?.longitude || 0
-                      },
-                      countryCode: 'US',
-                      countryFlag: '🇺🇸',
-                      formattedAddress: context.metadata?.quote?.destination?.to?.formattedAddress || 
-                        `${addressDetails.delivery.address}, ${addressDetails.delivery.city}, ${addressDetails.delivery.state} ${context.metadata?.quote?.destination?.to?.placeDetails?.postalCode || ''} US`
-                    },
-                    formattedAddress: context.metadata?.quote?.destination?.to?.formattedAddress || 
-                      `${addressDetails.delivery.address}, ${addressDetails.delivery.city}, ${addressDetails.delivery.state} ${context.metadata?.quote?.destination?.to?.placeDetails?.postalCode || ''} US`
-                  },
-                  pickupDate: context.metadata?.quote?.destination?.pickupDate || pickupDate,
-                  pickupTimeSlot: context.metadata?.quote?.destination?.pickupTimeSlot || pickupTimeSlot
-                },
-                packageDetails: {
-                  type: packageDetails.type,
-                  volume: packageDetails.volume,
-                  weight: packageDetails.weight,
-                  hazardous: packageDetails.hazardous,
-                  palletCount: packageDetails.palletCount || '',
-                  specialRequirements: packageDetails.specialRequirements || ''
-                },
-                selectedService: serviceDetails.type,
-                estimatedPrice: serviceDetails.price,
-                estimatedDelivery: this.calculateEstimatedDeliveryDate(
-                  context.metadata?.quote?.destination?.pickupDate || pickupDate,
-                  serviceDetails.type
-                )
-              }
-            });
-            if (success) {
-              response = "Great! I've created your shipping quote. You'll receive a confirmation email shortly with all the details.\n\n" +
-                "Is there anything else I can help you with?";
-            } else {
-              response = "I apologize, but I encountered an error while creating your quote. Would you like to try again?";
-            }
-          }
-        }
-      } else if (confirmation.includes('no') || confirmation.includes('nope') || confirmation.includes('cancel')) {
-        response = "No problem! Let me know if you'd like to create a different quote or if there's anything else I can help you with.";
+      }
+    }
+    // If we're in confirmation
+    else if (step === 'confirmation') {
+      const quote = context.metadata?.quote;
+      if (quote) {
+        response = "Perfect! I've got your service selection:\n\n" +
+          `Service: ${quote.selectedService.replace(/_/g, ' ')}\n` +
+          `Price: $${quote.estimatedPrice}\n` +
+          `Estimated Delivery: ${quote.estimatedDelivery}\n\n` +
+          "Would you like me to create this shipping quote for you? (yes/no)";
       } else {
-        response = "I didn't catch that. Would you like me to create this shipping quote for you? Please answer with yes or no.";
+        response = "I couldn't understand your service selection. Please choose one of the following options:\n\n" +
+          "1. Express Freight\n" +
+          "2. Standard Freight\n" +
+          "3. Eco Freight";
       }
     }
     // Default to starting over
@@ -1041,5 +861,37 @@ Service Details:
     };
     
     return stateMap[stateCode.toUpperCase()] || stateCode;
+  }
+
+  private calculateEstimatedDeliveryDate(pickupDate: string, serviceType: string): string {
+    // This method is no longer used in the new implementation
+    return '';
+  }
+
+  private calculateServicePrice(
+    serviceType: 'express_freight' | 'standard_freight' | 'eco_freight',
+    distance: number,
+    volume: number,
+    weight: number,
+    palletCount: number = 0,
+    isRushDelivery: boolean = false
+  ): number {
+    // This method is no longer used in the new implementation
+    return 0;
+  }
+
+  private calculateDeliveryTime(distance: number, speedFactor: number, handlingHours: number): string {
+    // This method is no longer used in the new implementation
+    return '';
+  }
+
+  private getDistanceFromMetadata(context: AgentContext | null): number {
+    // This method is no longer used in the new implementation
+    return 0;
+  }
+
+  private isRushDeliveryFromMetadata(context: AgentContext): boolean {
+    // This method is no longer used in the new implementation
+    return false;
   }
 } 
