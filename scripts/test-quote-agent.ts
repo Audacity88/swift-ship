@@ -1,4 +1,4 @@
-import { QuoteAgent } from '../supabase/functions/process-agent/quote-agent.ts';
+import { QuoteAgent } from '../supabase/functions/quote-agent/quote-agent.js';
 import { load } from 'https://deno.land/std/dotenv/mod.ts';
 
 // Load environment variables from .env.local

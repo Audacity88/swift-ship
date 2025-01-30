@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { serve } from '@/lib/process-agent/deps';
-import { createClient, OpenAI } from '@/lib/process-agent/deps';
-import { AgentFactory } from '@/lib/process-agent/shared/agent-factory';
+import { serve } from '@/lib/quote-agent/deps';
+import { createClient, OpenAI } from '@/lib/quote-agent/deps';
+import { AgentFactory } from '@/lib/quote-agent/shared/agent-factory';
 import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
 

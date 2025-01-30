@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
 
     // Call the edge function with streaming
     const response = await fetch(
-      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/process-agent`,
+      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/quote-agent`,
       {
         method: 'POST',
         headers: {

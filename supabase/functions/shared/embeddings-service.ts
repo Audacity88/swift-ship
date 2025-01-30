@@ -1,5 +1,4 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { Configuration, OpenAIApi } from 'https://esm.sh/openai@4';
+import { createClient, OpenAI, Configuration } from '../quote-agent/deps.ts';
 
 export interface SearchResult {
   id: number;
@@ -15,7 +14,7 @@ export class EmbeddingsService {
 
   constructor(supabaseUrl: string, supabaseKey: string, openaiKey: string) {
     this.supabase = createClient(supabaseUrl, supabaseKey);
-    this.openai = new OpenAIApi(new Configuration({ apiKey: openaiKey }));
+    this.openai = new OpenAI(new Configuration({ apiKey: openaiKey }));
   }
 
   async generateEmbedding(text: string): Promise<number[]> {

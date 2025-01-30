@@ -47,7 +47,7 @@ make_request() {
     
     # Make the API call and show the parsed response
     echo -e "${BLUE}Response:${NC}"
-    response=$(curl -s -X POST "${SUPABASE_URL}/functions/v1/process-agent" \
+    response=$(curl -s -X POST "${SUPABASE_URL}/functions/v1/quote-agent" \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
         -d "{

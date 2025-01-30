@@ -1,5 +1,3 @@
-import OpenAI from 'https://esm.sh/openai@4'
-
 interface AgentMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
@@ -806,17 +804,11 @@ Service Details:
         const packageDetails = this.findLastPackageDetails(allMessages);
         
         if (addressDetails) {
-          // Get distance from metadata instead of calculating it
-          const distance = this.getDistanceFromMetadata(context);
-          const isRushDelivery = this.isRushDeliveryFromMetadata(context);
-
           response = "Great! I've got your shipping details:\n\n" +
             "Pickup Address:\n" +
-            `${addressDetails.pickup.address}, ${addressDetails.pickup.city}` +
-            (addressDetails.pickup.state ? `, ${addressDetails.pickup.state}` : '') + "\n\n" +
+            this.formatAddress(addressDetails.pickup) + "\n\n" +
             "Delivery Address:\n" +
-            `${addressDetails.delivery.address}, ${addressDetails.delivery.city}` +
-            (addressDetails.delivery.state ? `, ${addressDetails.delivery.state}` : '') + "\n\n" +
+            this.formatAddress(addressDetails.delivery) + "\n\n" +
             (addressDetails.pickupDateTime ? `Pickup Time: ${addressDetails.pickupDateTime}\n\n` : '') +
             this.QUOTE_MESSAGES.SERVICE_OPTIONS(context.metadata?.quote);
         } else if (packageDetails) {
@@ -993,5 +985,14 @@ Service Details:
     };
     
     return stateMap[stateCode.toUpperCase()] || stateCode;
+  }
+
+  private formatAddress(address: { address: string; city?: string; state?: string }): string {
+    const parts = [
+      address.address,
+      address.city,
+      address.state ? this.expandStateName(address.state) : undefined
+    ].filter(Boolean);
+    return parts.join(', ');
   }
 }
