@@ -98,16 +98,28 @@ AVAILABLE TOPICS:
         ...context.messages.map(m => ({ role: m.role, content: m.content }))
       ];
 
-      // Get completion with relevant docs context
-      const content = await this.getCompletion(messages, 0.7);
+      // Get streaming completion with relevant docs context
+      const completion = await this.openai.chat.completions.create({
+        model: 'gpt-4',
+        messages,
+        temperature: 0.7,
+        stream: true
+      });
 
-      return this.createMessage(content, {
+      let fullContent = '';
+      for await (const chunk of completion) {
+        const content = chunk.choices[0]?.delta?.content || '';
+        if (content) {
+          fullContent += content;
+        }
+      }
+
+      return this.createMessage(fullContent, {
         debugLogs: this.debugLogs,
         matchedDocs: matchedDocs.map(doc => ({
           title: doc.title,
           url: doc.url,
-          score: doc.similarity,
-          preview: doc.content.substring(0, 100) + '...'
+          score: doc.similarity
         }))
       });
     } catch (error) {

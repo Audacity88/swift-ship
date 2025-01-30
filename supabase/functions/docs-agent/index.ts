@@ -36,23 +36,45 @@ serve(async (req: Request) => {
       metadata
     });
 
+    // Create a streaming response
     const stream = new ReadableStream({
-      start(controller) {
+      async start(controller) {
         try {
           const encodeSSE = (data: any) => {
             const jsonString = JSON.stringify(data);
+            // Split long messages into smaller chunks if needed
+            const maxChunkSize = 16384; // 16KB chunks
+            if (jsonString.length > maxChunkSize) {
+              const chunks = [];
+              for (let i = 0; i < jsonString.length; i += maxChunkSize) {
+                chunks.push(jsonString.slice(i, i + maxChunkSize));
+              }
+              return chunks.map(chunk => `data: ${chunk}\n`).join('') + '\n';
+            }
             return `data: ${jsonString}\n\n`;
           };
 
-          // Send the main content
-          controller.enqueue(
-            new TextEncoder().encode(
-              encodeSSE({
-                type: 'chunk',
-                content: agentResponse.content
-              })
-            )
-          );
+          // Send the content in smaller chunks for better streaming
+          const words = agentResponse.content.split(/(\s+)/);
+          let currentChunk = '';
+          
+          for (const word of words) {
+            currentChunk += word;
+            // Send chunk when it reaches a reasonable size or at the end
+            if (currentChunk.length > 20 || word === words[words.length - 1]) {
+              controller.enqueue(
+                new TextEncoder().encode(
+                  encodeSSE({
+                    type: 'chunk',
+                    content: currentChunk
+                  })
+                )
+              );
+              currentChunk = '';
+              // Add a small delay between chunks for smoother streaming
+              await new Promise(resolve => setTimeout(resolve, 50));
+            }
+          }
 
           // Send metadata if available
           if (agentResponse.metadata) {

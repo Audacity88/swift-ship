@@ -1,4 +1,4 @@
-import { serve, createClient } from './deps.ts';
+import { serve } from './deps.ts';
 import { ShipmentsAgent } from './shipments-agent.ts';
 
 const corsHeaders = {
@@ -12,14 +12,9 @@ interface Message {
   metadata?: Record<string, any>;
 }
 
-interface AgentRequest {
+interface Request {
   message: string;
   conversationHistory: Message[];
-  metadata?: Record<string, any>;
-}
-
-interface AgentResponse {
-  content: string;
   metadata?: Record<string, any>;
 }
 
@@ -29,74 +24,51 @@ serve(async (req: Request) => {
   }
 
   try {
-    const body = await req.json() as AgentRequest;
-    console.log('Raw request body:', body);
+    const apiKey = Deno.env.get('OPENAI_API_KEY');
+    if (!apiKey) {
+      throw new Error('OpenAI API key not configured');
+    }
 
-    const { message, conversationHistory, metadata } = body;
-
-    // Validate
-    if (!message && (!conversationHistory || conversationHistory.length === 0)) {
+    const body = await req.json() as Request;
+    if (!body.message && (!body.conversationHistory?.length)) {
       return new Response(
         JSON.stringify({ error: 'No input provided' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Build conversation context
-    const safeHistory = Array.isArray(conversationHistory) ? conversationHistory : [];
-    const allMessages = safeHistory;
-
-    // If there's no last user message, add the new message as a user message
-    if (!safeHistory.length && message) {
-      allMessages.push({ role: 'user', content: message });
+    const agent = ShipmentsAgent.getInstance(apiKey);
+    const safeHistory = Array.isArray(body.conversationHistory) ? 
+      body.conversationHistory.slice(-2) : 
+      [];
+    
+    if (!safeHistory.length && body.message) {
+      safeHistory.push({ role: 'user', content: body.message });
     }
 
-    // Initialize the agent
-    const shipmentsAgent = new ShipmentsAgent(Deno.env.get('OPENAI_API_KEY') ?? '');
-
-    // Get response from ShipmentsAgent
-    const agentResponse: AgentResponse = await shipmentsAgent.process({
-      messages: allMessages,
-      metadata
+    const response = await agent.process({
+      messages: safeHistory,
+      metadata: body.metadata
     });
 
-    // Create SSE streaming
     const stream = new ReadableStream({
-      start(controller) {
+      async start(controller) {
         try {
-          const encodeSSE = (data: any) => {
-            const jsonString = JSON.stringify(data);
-            return `data: ${jsonString}\n\n`;
-          };
-
-          // Send the content
-          controller.enqueue(
-            new TextEncoder().encode(
-              encodeSSE({
-                type: 'chunk',
-                content: agentResponse.content
-              })
-            )
+          const encoder = new TextEncoder();
+          const chunk = encoder.encode(
+            `data: ${JSON.stringify({ type: 'chunk', content: response.content })}\n\n`
           );
+          controller.enqueue(chunk);
 
-          // Send metadata if present
-          if (agentResponse.metadata) {
-            controller.enqueue(
-              new TextEncoder().encode(
-                encodeSSE({
-                  type: 'metadata',
-                  metadata: {
-                    agent: 'SHIPMENTS_AGENT',
-                    ...agentResponse.metadata
-                  }
-                })
-              )
+          if (response.metadata) {
+            const metadata = encoder.encode(
+              `data: ${JSON.stringify({ type: 'metadata', metadata: response.metadata })}\n\n`
             );
+            controller.enqueue(metadata);
           }
 
           controller.close();
         } catch (error) {
-          console.error('Streaming error:', error);
           controller.error(error);
         }
       }
@@ -111,12 +83,12 @@ serve(async (req: Request) => {
       }
     });
 
-  } catch (error) {
-    console.error('Error:', error);
+  } catch (error: unknown) {
+    const err = error as Error;
     return new Response(
-      JSON.stringify({ error: error.message || error.toString() }),
+      JSON.stringify({ error: err.message || 'Unknown error' }),
       {
-        status: 500,
+        status: err.message === 'OpenAI API key not configured' ? 503 : 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       },
     );
