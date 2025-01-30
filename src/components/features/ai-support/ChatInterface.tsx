@@ -275,6 +275,62 @@ export function ChatInterface() {
     };
   };
 
+  const extractPackageDetails = (content: string): QuoteMetadata['packageDetails'] | null => {
+    const contentLower = content.toLowerCase();
+    
+    // Extract shipment type
+    let type: 'full_truckload' | 'less_than_truckload' | 'sea_container' | 'bulk_freight' | null = null;
+    if (contentLower.match(/\b(full.*truck|ftl|full.*load)\b/)) {
+      type = 'full_truckload';
+    } else if (contentLower.match(/\b(less.*truck|ltl|less.*load)\b/)) {
+      type = 'less_than_truckload';
+    } else if (contentLower.match(/\b(container|sea.*freight)\b/)) {
+      type = 'sea_container';
+    } else if (contentLower.match(/\b(bulk)\b/)) {
+      type = 'bulk_freight';
+    }
+
+    // Extract weight
+    const weightMatch = contentLower.match(/(\d+(?:\.\d+)?)\s*(?:ton|tons|t\b|tonnes)/);
+    if (!weightMatch) return null;
+    const weight = weightMatch[1];
+
+    // Extract volume
+    const volumeMatch = contentLower.match(/(\d+(?:\.\d+)?)\s*(?:cubic\s*meter|cubic\s*meters|m3|m³|cbm)/);
+    if (!volumeMatch) return null;
+    const volume = volumeMatch[1];
+
+    // Check for hazardous materials
+    const hasHazardousWord = contentLower.includes('hazardous') || contentLower.includes('dangerous');
+    const hasNegation = contentLower.includes('no') || contentLower.includes('non') || contentLower.includes('not');
+    const hazardous = hasHazardousWord && !hasNegation;
+
+    if (!type || !weight || !volume) return null;
+
+    return {
+      type,
+      weight,
+      volume,
+      hazardous,
+      specialRequirements: ''
+    };
+  };
+
+  const findPackageDetailsFromHistory = (messages: Message[]): QuoteMetadata['packageDetails'] | null => {
+    // Look through messages from newest to oldest
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const message = messages[i];
+      if (message.role === 'user') {
+        const details = extractPackageDetails(message.content);
+        if (details) {
+          console.log('Found package details in history:', details);
+          return details;
+        }
+      }
+    }
+    return null;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
@@ -300,12 +356,28 @@ export function ChatInterface() {
     setIsLoading(true);
 
     try {
-      // Only validate addresses if we're at the address collection step
-      // and the message contains address information
       const lastAssistantMessage = messages
         .filter(m => m.role === 'assistant')
         .pop()?.content || '';
 
+      // Check if we're at the package details step
+      const isPackageStep = lastAssistantMessage.includes('type of shipment') || 
+                           lastAssistantMessage.includes('weight') ||
+                           lastAssistantMessage.includes('volume');
+
+      // Extract package details if we're at that step
+      if (isPackageStep) {
+        const packageDetails = extractPackageDetails(input);
+        if (packageDetails) {
+          console.log('Extracted package details:', packageDetails);
+          setQuoteMetadataState(prev => ({
+            ...prev,
+            packageDetails
+          }));
+        }
+      }
+
+      // Check if we're at the address step
       const isAddressStep = lastAssistantMessage.includes('pickup address') || 
                            lastAssistantMessage.includes('delivery address');
       
@@ -328,15 +400,33 @@ export function ChatInterface() {
       }
 
       // Prepare the metadata for the request
-      const currentQuoteMetadata = {
+      let currentQuoteMetadata = {
         ...quoteMetadataState,
         ...validationResult?.quoteMetadata
       };
+
+      // If we don't have package details in the current state, try to find them in history
+      if (!currentQuoteMetadata?.packageDetails) {
+        const historicalPackageDetails = findPackageDetailsFromHistory([...messages, userMessage]);
+        if (historicalPackageDetails) {
+          currentQuoteMetadata = {
+            ...currentQuoteMetadata,
+            packageDetails: historicalPackageDetails
+          };
+        }
+      }
 
       // Only calculate service options if we have both package details and route information
       const hasPackageDetails = currentQuoteMetadata?.packageDetails?.volume && 
                                currentQuoteMetadata?.packageDetails?.weight;
       const hasRouteInfo = currentQuoteMetadata?.route?.distance?.kilometers;
+
+      console.log('Quote calculation conditions:', {
+        hasPackageDetails,
+        hasRouteInfo,
+        packageDetails: currentQuoteMetadata?.packageDetails,
+        route: currentQuoteMetadata?.route
+      });
 
       let serviceOptions = {};
       if (hasPackageDetails && hasRouteInfo && currentQuoteMetadata.packageDetails && currentQuoteMetadata.route) {
@@ -344,72 +434,102 @@ export function ChatInterface() {
         const { kilometers } = currentQuoteMetadata.route.distance;
         const pickupDate = currentQuoteMetadata.destination?.pickupDate || new Date().toISOString().split('T')[0];
 
+        console.log('Calculating service prices with:', {
+          volume,
+          weight,
+          palletCount,
+          kilometers,
+          pickupDate
+        });
+
+        const expressPrice = quoteCalculationService.calculateServicePrice(
+          'express_freight', 
+          kilometers,
+          parseFloat(volume),
+          parseFloat(weight),
+          parseInt(palletCount || '0'),
+          true
+        );
+        const standardPrice = quoteCalculationService.calculateServicePrice(
+          'standard_freight', 
+          kilometers,
+          parseFloat(volume),
+          parseFloat(weight),
+          parseInt(palletCount || '0'),
+          false
+        );
+        const ecoPrice = quoteCalculationService.calculateServicePrice(
+          'eco_freight', 
+          kilometers,
+          parseFloat(volume),
+          parseFloat(weight),
+          parseInt(palletCount || '0'),
+          false
+        );
+
+        const expressDelivery = quoteCalculationService.calculateEstimatedDelivery(
+          pickupDate,
+          'express_freight'
+        );
+        const standardDelivery = quoteCalculationService.calculateEstimatedDelivery(
+          pickupDate,
+          'standard_freight'
+        );
+        const ecoDelivery = quoteCalculationService.calculateEstimatedDelivery(
+          pickupDate,
+          'eco_freight'
+        );
+
         serviceOptions = {
-          expressPrice: quoteCalculationService.calculateServicePrice(
-            'express_freight', 
-            kilometers,
-            parseFloat(volume),
-            parseFloat(weight),
-            parseInt(palletCount || '0'),
-            true
-          ),
-          standardPrice: quoteCalculationService.calculateServicePrice(
-            'standard_freight', 
-            kilometers,
-            parseFloat(volume),
-            parseFloat(weight),
-            parseInt(palletCount || '0'),
-            false
-          ),
-          ecoPrice: quoteCalculationService.calculateServicePrice(
-            'eco_freight', 
-            kilometers,
-            parseFloat(volume),
-            parseFloat(weight),
-            parseInt(palletCount || '0'),
-            false
-          ),
-          expressDelivery: quoteCalculationService.calculateEstimatedDelivery(
-            pickupDate,
-            'express_freight'
-          ),
-          standardDelivery: quoteCalculationService.calculateEstimatedDelivery(
-            pickupDate,
-            'standard_freight'
-          ),
-          ecoDelivery: quoteCalculationService.calculateEstimatedDelivery(
-            pickupDate,
-            'eco_freight'
-          )
+          expressPrice,
+          standardPrice,
+          ecoPrice,
+          expressDelivery,
+          standardDelivery,
+          ecoDelivery
         };
+
+        console.log('Calculated service options:', serviceOptions);
       }
 
       const finalQuoteMetadata = {
         ...currentQuoteMetadata,
-        ...serviceOptions
+        ...serviceOptions,
+        selectedService: undefined, // Reset selected service
+        estimatedPrice: undefined, // Reset estimated price
+        estimatedDelivery: undefined // Reset estimated delivery
       };
+
+      console.log('Final quote metadata:', finalQuoteMetadata);
+
+      // Update the quote metadata state
+      setQuoteMetadataState(finalQuoteMetadata);
+
+      const requestBody = {
+        message: userMessage.content,
+        conversationHistory: [...messages, userMessage],
+        agentType: "quote",
+        metadata: {
+          userId: user?.id,
+          customer: {
+            id: user?.id,
+            name: user?.name || 'Anonymous',
+            email: user?.email
+          },
+          token: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+          session: session,
+          quote: finalQuoteMetadata
+        }
+      };
+
+      console.log('Sending request with metadata:', requestBody);
 
       const response = await fetch('/api/ai-support', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          message: userMessage.content,
-          conversationHistory: [...messages, userMessage],
-          agentType: "quote",
-          metadata: {
-            userId: user?.id,
-            customer: {
-              id: user?.id,
-              name: user?.name || 'Anonymous',
-              email: user?.email
-            },
-            token: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-            session: session,
-            quote: finalQuoteMetadata
-          }
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {

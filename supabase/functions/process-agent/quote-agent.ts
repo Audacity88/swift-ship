@@ -100,42 +100,20 @@ export class QuoteAgent {
                "3. Preferred pickup date and time";
       }
 
-      // Calculate prices based on distance
-      const distance = route.distance.kilometers;
-      const baseRate = 2.5; // Base rate per kilometer
-      const expressMultiplier = 2.0;
-      const standardMultiplier = 1.5;
-      const ecoMultiplier = 1.0;
-
-      const basePrice = distance * baseRate;
-      const expressPrice = Math.round(basePrice * expressMultiplier);
-      const standardPrice = Math.round(basePrice * standardMultiplier);
-      const ecoPrice = Math.round(basePrice * ecoMultiplier);
-
-      // Calculate delivery dates based on pickup date
-      const pickupDate = new Date(metadata.destination.pickupDate);
-      const expressDelivery = new Date(pickupDate);
-      const standardDelivery = new Date(pickupDate);
-      const ecoDelivery = new Date(pickupDate);
-
-      expressDelivery.setDate(pickupDate.getDate() + 1);
-      standardDelivery.setDate(pickupDate.getDate() + 2);
-      ecoDelivery.setDate(pickupDate.getDate() + 3);
-
       return `Based on your shipping details:\n\n` +
         `Pickup: ${metadata.destination.from.formattedAddress}\n` +
         `Delivery: ${metadata.destination.to.formattedAddress}\n` +
         `Distance: ${route.distance.kilometers.toFixed(1)} km\n\n` +
         `Here are your available service options:\n\n` +
-        `1. Express Freight - $${expressPrice}\n` +
+        `1. Express Freight - $${metadata.expressPrice}\n` +
         `   - Priority handling and expedited transport\n` +
-        `   - Estimated delivery: ${expressDelivery.toLocaleDateString()}\n\n` +
-        `2. Standard Freight - $${standardPrice}\n` +
+        `   - Estimated delivery: ${metadata.expressDelivery}\n\n` +
+        `2. Standard Freight - $${metadata.standardPrice}\n` +
         `   - Regular service with standard handling\n` +
-        `   - Estimated delivery: ${standardDelivery.toLocaleDateString()}\n\n` +
-        `3. Eco Freight - $${ecoPrice}\n` +
+        `   - Estimated delivery: ${metadata.standardDelivery}\n\n` +
+        `3. Eco Freight - $${metadata.ecoPrice}\n` +
         `   - Cost-effective with consolidated handling\n` +
-        `   - Estimated delivery: ${ecoDelivery.toLocaleDateString()}\n\n` +
+        `   - Estimated delivery: ${metadata.ecoDelivery}\n\n` +
         `Please select your preferred service option (1, 2, or 3):`;
     }
   };
@@ -621,17 +599,38 @@ Service Details:
         return null;
       }
 
-      // Use the price and delivery date from the frontend metadata
+      // Get the quote metadata
       const quote = this.context?.metadata?.quote;
       if (!quote) {
         this.log('No quote metadata found');
         return null;
       }
 
+      // Use the pre-calculated service options from metadata
+      let price = 0;
+      let duration = '';
+
+      switch (type) {
+        case 'express_freight':
+          price = quote.expressPrice || 0;
+          duration = quote.expressDelivery || '';
+          break;
+        case 'standard_freight':
+          price = quote.standardPrice || 0;
+          duration = quote.standardDelivery || '';
+          break;
+        case 'eco_freight':
+          price = quote.ecoPrice || 0;
+          duration = quote.ecoDelivery || '';
+          break;
+      }
+
+      this.log('Using pre-calculated service options:', { type, price, duration });
+
       return {
         type,
-        price: quote.estimatedPrice,
-        duration: quote.estimatedDelivery
+        price,
+        duration
       };
     } catch (error) {
       this.log('Error extracting service details:', error);
@@ -862,36 +861,4 @@ Service Details:
     
     return stateMap[stateCode.toUpperCase()] || stateCode;
   }
-
-  private calculateEstimatedDeliveryDate(pickupDate: string, serviceType: string): string {
-    // This method is no longer used in the new implementation
-    return '';
-  }
-
-  private calculateServicePrice(
-    serviceType: 'express_freight' | 'standard_freight' | 'eco_freight',
-    distance: number,
-    volume: number,
-    weight: number,
-    palletCount: number = 0,
-    isRushDelivery: boolean = false
-  ): number {
-    // This method is no longer used in the new implementation
-    return 0;
-  }
-
-  private calculateDeliveryTime(distance: number, speedFactor: number, handlingHours: number): string {
-    // This method is no longer used in the new implementation
-    return '';
-  }
-
-  private getDistanceFromMetadata(context: AgentContext | null): number {
-    // This method is no longer used in the new implementation
-    return 0;
-  }
-
-  private isRushDeliveryFromMetadata(context: AgentContext): boolean {
-    // This method is no longer used in the new implementation
-    return false;
-  }
-} 
+}
