@@ -114,6 +114,7 @@ export function ChatInterface() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [quoteMetadataState, setQuoteMetadataState] = useState<QuoteMetadata | undefined>();
   const { user } = useAuth();
 
   const validateAddresses = async (content: string) => {
@@ -136,8 +137,9 @@ export function ChatInterface() {
       };
     }
 
-    const fromAddress = fromMatch[1].trim();
-    const toAddress = toMatch[1].trim();
+    // Clean up the extracted addresses to remove any "from" or "to" prefixes
+    const fromAddress = fromMatch[1].trim().replace(/^(?:from|pickup)\s+/i, '');
+    const toAddress = toMatch[1].trim().replace(/^(?:to|delivery)\s+/i, '');
 
     // Geocode both addresses
     const [fromGeocode, toGeocode] = await Promise.all([
@@ -207,7 +209,7 @@ export function ChatInterface() {
         isQuote: true,
         destination: {
           from: {
-            address: fromAddress,
+            address: fromGeocode.formattedAddress,
             coordinates: {
               latitude: fromGeocode.latitude,
               longitude: fromGeocode.longitude
@@ -231,7 +233,7 @@ export function ChatInterface() {
             formattedAddress: fromGeocode.formattedAddress
           },
           to: {
-            address: toAddress,
+            address: toGeocode.formattedAddress,
             coordinates: {
               latitude: toGeocode.latitude,
               longitude: toGeocode.longitude
@@ -311,8 +313,14 @@ export function ChatInterface() {
           setIsLoading(false);
           return;
         }
-        quoteMetadata = validation.quoteMetadata;
+        setQuoteMetadataState(validation.quoteMetadata);
       }
+
+      // Prepare the metadata for the request
+      const currentQuoteMetadata = isAddressStep ? quoteMetadataState : {
+        ...quoteMetadataState,
+        ...quoteMetadata
+      };
 
       const response = await fetch('/api/ai-support', {
         method: 'POST',
@@ -332,7 +340,7 @@ export function ChatInterface() {
             },
             token: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
             session: session,
-            quote: quoteMetadata
+            quote: currentQuoteMetadata
           }
         }),
       });

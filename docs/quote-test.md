@@ -4,6 +4,6 @@ I have a full truckload shipment, weighing 10 tons, with a volume of 40 cubic me
 
 Pickup from 123 Main St, Los Angeles, CA to 456 Park Ave, New York, NY. Pickup next Monday at 9am
 
-I'll take the standard freight option
+1
 
 yes

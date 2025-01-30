@@ -60,46 +60,56 @@ interface QuoteState {
   };
 }
 
-const QUOTE_MESSAGES = {
-  START_QUOTE: "I'll help you create a shipping quote. First, I need some details about your shipment:\n\n" +
-    "1. What type of shipment is this?\n" +
-    "   - Full Truckload (FTL)\n" +
-    "   - Less than Truckload (LTL)\n" +
-    "   - Sea Container\n" +
-    "   - Bulk Freight\n\n" +
-    "2. What's the total weight in metric tons?\n" +
-    "3. What's the total volume in cubic meters?\n" +
-    "4. Are there any hazardous materials?\n\n" +
-    "Please provide all these details in your response.",
-  
-  ADDRESS_DETAILS: "Thanks! Now I need the pickup and delivery information:\n\n" +
-    "1. What's the complete pickup address? (including city and state)\n" +
-    "2. What's the complete delivery address? (including city and state)\n" +
-    "3. When would you like the pickup to be scheduled? (date and time)\n\n" +
-    "Please provide all these details in your response.",
-
-  SERVICE_OPTIONS: (distance: number) => {
-    const expressPrice = Math.ceil((distance * 2.5 + 1000) / 100) * 100;
-    const standardPrice = Math.ceil((distance * 1.5 + 500) / 100) * 100;
-    const ecoPrice = Math.ceil((distance * 1.0 + 300) / 100) * 100;
-
-    return "Based on your shipment details, here are the available service options:\n\n" +
-      "1. Express Freight - $" + expressPrice + "\n" +
-      "   - Priority handling and expedited transport\n" +
-      "   - Estimated delivery: 2-3 business days\n\n" +
-      "2. Standard Freight - $" + standardPrice + "\n" +
-      "   - Regular service with standard handling\n" +
-      "   - Estimated delivery: 4-5 business days\n\n" +
-      "3. Eco Freight - $" + ecoPrice + "\n" +
-      "   - Cost-effective with consolidated handling\n" +
-      "   - Estimated delivery: 6-7 business days\n\n" +
-      "Please select your preferred service option (1, 2, or 3):"
-  }
-};
-
 export class QuoteAgent {
   private debugLogs: string[] = [];
   private baseUrl: string;
+
+  private readonly QUOTE_MESSAGES = {
+    START_QUOTE: "I'll help you create a shipping quote. First, I need some details about your shipment:\n\n" +
+      "1. What type of shipment is this?\n" +
+      "   - Full Truckload (FTL)\n" +
+      "   - Less than Truckload (LTL)\n" +
+      "   - Sea Container\n" +
+      "   - Bulk Freight\n\n" +
+      "2. What's the total weight in metric tons?\n" +
+      "3. What's the total volume in cubic meters?\n" +
+      "4. Are there any hazardous materials?\n\n" +
+      "Please provide all these details in your response.",
+    
+    ADDRESS_DETAILS: "Thanks! Now I need the pickup and delivery information:\n\n" +
+      "1. What's the complete pickup address? (including city and state)\n" +
+      "2. What's the complete delivery address? (including city and state)\n" +
+      "3. When would you like the pickup to be scheduled? (date and time)\n\n" +
+      "Please provide all these details in your response.",
+
+    SERVICE_OPTIONS: (distance: number, pickupDate?: string) => {
+      const expressPrice = Math.ceil((distance * 2.5 + 1000) / 100) * 100;
+      const standardPrice = Math.ceil((distance * 1.5 + 500) / 100) * 100;
+      const ecoPrice = Math.ceil((distance * 1.0 + 300) / 100) * 100;
+
+      const getDeliveryDate = (daysToAdd: number): string => {
+        const date = new Date(pickupDate || new Date());
+        date.setDate(date.getDate() + daysToAdd);
+        return date.toISOString().split('T')[0];
+      };
+
+      return `Based on your shipment details, here are the available service options:
+
+1. Express Freight - $${expressPrice}
+   - Priority handling and expedited transport
+   - Estimated delivery: ${getDeliveryDate(2)}
+
+2. Standard Freight - $${standardPrice}
+   - Regular service with standard handling
+   - Estimated delivery: ${getDeliveryDate(4)}
+
+3. Eco Freight - $${ecoPrice}
+   - Cost-effective with consolidated handling
+   - Estimated delivery: ${getDeliveryDate(6)}
+
+Please select your preferred service option (1, 2, or 3):`;
+    }
+  };
 
   constructor(baseUrl: string = 'https://dkrhdxqqkgutrnvsfhxi.supabase.co') {
     this.baseUrl = baseUrl;
@@ -251,7 +261,36 @@ Service Details:
         type: 'task',
         source: 'web',
         metadata: {
-          quote
+          quote: {
+            isQuote: true,
+            destination: {
+              from: {
+                address: quote.destination.from.address,
+                coordinates: quote.destination.from.coordinates,
+                placeDetails: quote.destination.from.placeDetails,
+                formattedAddress: quote.destination.from.formattedAddress
+              },
+              to: {
+                address: quote.destination.to.address,
+                coordinates: quote.destination.to.coordinates,
+                placeDetails: quote.destination.to.placeDetails,
+                formattedAddress: quote.destination.to.formattedAddress
+              },
+              pickupDate: quote.destination.pickupDate,
+              pickupTimeSlot: quote.destination.pickupTimeSlot
+            },
+            packageDetails: {
+              type: quote.packageDetails.type,
+              volume: quote.packageDetails.volume,
+              weight: quote.packageDetails.weight,
+              hazardous: quote.packageDetails.hazardous,
+              palletCount: quote.packageDetails.palletCount,
+              specialRequirements: quote.packageDetails.specialRequirements
+            },
+            selectedService: quote.selectedService,
+            estimatedPrice: quote.estimatedPrice,
+            estimatedDelivery: quote.estimatedDelivery
+          }
         }
       };
 
@@ -581,6 +620,28 @@ Service Details:
     return distances[from.city]?.[to.city] || 1000; // Default to 1000 miles if not found
   }
 
+  private calculateEstimatedDeliveryDate(pickupDate: string, serviceType: string): string {
+    if (!pickupDate) return '';
+    
+    const date = new Date(pickupDate);
+    let daysToAdd = 2; // default for express
+
+    switch (serviceType) {
+      case 'express_freight':
+        daysToAdd = 2;
+        break;
+      case 'standard_freight':
+        daysToAdd = 4;
+        break;
+      case 'eco_freight':
+        daysToAdd = 6;
+        break;
+    }
+
+    date.setDate(date.getDate() + daysToAdd);
+    return date.toISOString().split('T')[0];
+  }
+
   public async process(context: AgentContext): Promise<AgentResponse> {
     this.debugLogs = []; // Reset debug logs at the start of processing
     this.log('QuoteAgent: Starting process with context:', {
@@ -630,7 +691,7 @@ Service Details:
 
     // If we're in the initial state or this is the first message
     if (step === 'initial') {
-      response = QUOTE_MESSAGES.START_QUOTE;
+      response = this.QUOTE_MESSAGES.START_QUOTE;
     } 
     // If we're waiting for package details, try to extract them
     else if (step === 'package_details') {
@@ -643,7 +704,7 @@ Service Details:
           `Weight: ${packageDetails.weight} tons\n` +
           `Volume: ${packageDetails.volume} cubic meters\n` +
           `Hazardous: ${packageDetails.hazardous ? 'Yes' : 'No'}\n\n` +
-          QUOTE_MESSAGES.ADDRESS_DETAILS;
+          this.QUOTE_MESSAGES.ADDRESS_DETAILS;
       } else {
         response = "I couldn't understand all the package details. Please provide:\n" +
           "1. Type of shipment (FTL, LTL, Sea Container, or Bulk Freight)\n" +
@@ -672,7 +733,7 @@ Service Details:
           `${addressDetails.delivery.address}, ${addressDetails.delivery.city}` +
           (addressDetails.delivery.state ? `, ${addressDetails.delivery.state}` : '') + "\n\n" +
           (addressDetails.pickupDateTime ? `Pickup Time: ${addressDetails.pickupDateTime}\n\n` : '') +
-          QUOTE_MESSAGES.SERVICE_OPTIONS(distance);
+          this.QUOTE_MESSAGES.SERVICE_OPTIONS(distance, addressDetails.pickupDateTime);
       } else if (packageDetails) {
         response = "I'll need the following information to proceed:\n\n" +
           "1. Complete pickup address (including city and state)\n" +
@@ -680,7 +741,7 @@ Service Details:
           "3. Preferred pickup date and time\n\n" +
           "Please provide all these details in your response.";
       } else {
-        response = QUOTE_MESSAGES.START_QUOTE;
+        response = this.QUOTE_MESSAGES.START_QUOTE;
       }
     }
     // If we're waiting for service selection
@@ -706,9 +767,9 @@ Service Details:
             { city: lastAddressDetails.pickup.city || '', state: lastAddressDetails.pickup.state || '' },
             { city: lastAddressDetails.delivery.city || '', state: lastAddressDetails.delivery.state || '' }
           );
-          response = QUOTE_MESSAGES.SERVICE_OPTIONS(distance);
+          response = this.QUOTE_MESSAGES.SERVICE_OPTIONS(distance, lastAddressDetails.pickupDateTime);
         } else {
-          response = "I couldn't find the address details. Let's start over:\n\n" + QUOTE_MESSAGES.START_QUOTE;
+          response = "I couldn't find the address details. Let's start over:\n\n" + this.QUOTE_MESSAGES.START_QUOTE;
         }
       } else {
         response = "Perfect! I've got your service selection:\n\n" +
@@ -763,7 +824,7 @@ Service Details:
             const serviceDetails = this.findLastServiceSelection(context.messages);
 
             if (!packageDetails || !addressDetails || !serviceDetails) {
-              response = "I apologize, but I couldn't find all the necessary details. Let's start over:\n\n" + QUOTE_MESSAGES.START_QUOTE;
+              response = "I apologize, but I couldn't find all the necessary details. Let's start over:\n\n" + this.QUOTE_MESSAGES.START_QUOTE;
               return {
                 content: response,
                 metadata: {
@@ -795,55 +856,83 @@ Service Details:
                 isQuote: true,
                 destination: {
                   from: {
-                    address: addressDetails.pickup.address,
+                    address: `${addressDetails.pickup.address}, ${addressDetails.pickup.city}, ${addressDetails.pickup.state} ${context.metadata?.quote?.destination?.from?.placeDetails?.postalCode || ''} USA`,
                     coordinates: {
-                      latitude: 0,
-                      longitude: 0
+                      latitude: context.metadata?.quote?.destination?.from?.coordinates?.latitude || 
+                               context.metadata?.quote?.destination?.from?.placeDetails?.coordinates?.latitude || 
+                               context.metadata?.quote?.destination?.from?.placeDetails?.latitude || 0,
+                      longitude: context.metadata?.quote?.destination?.from?.coordinates?.longitude || 
+                                context.metadata?.quote?.destination?.from?.placeDetails?.coordinates?.longitude || 
+                                context.metadata?.quote?.destination?.from?.placeDetails?.longitude || 0
                     },
                     placeDetails: {
                       city: addressDetails.pickup.city || '',
-                      state: addressDetails.pickup.state || '',
+                      state: this.expandStateName(addressDetails.pickup.state) || '',
                       country: 'United States',
-                      latitude: 0,
-                      longitude: 0,
+                      latitude: context.metadata?.quote?.destination?.from?.coordinates?.latitude || 
+                               context.metadata?.quote?.destination?.from?.placeDetails?.coordinates?.latitude || 
+                               context.metadata?.quote?.destination?.from?.placeDetails?.latitude || 0,
+                      longitude: context.metadata?.quote?.destination?.from?.coordinates?.longitude || 
+                                context.metadata?.quote?.destination?.from?.placeDetails?.coordinates?.longitude || 
+                                context.metadata?.quote?.destination?.from?.placeDetails?.longitude || 0,
                       stateCode: addressDetails.pickup.state || '',
-                      postalCode: '',
+                      postalCode: context.metadata?.quote?.destination?.from?.placeDetails?.postalCode || '',
                       coordinates: {
-                        latitude: 0,
-                        longitude: 0
+                        latitude: context.metadata?.quote?.destination?.from?.coordinates?.latitude || 
+                                 context.metadata?.quote?.destination?.from?.placeDetails?.coordinates?.latitude || 
+                                 context.metadata?.quote?.destination?.from?.placeDetails?.latitude || 0,
+                        longitude: context.metadata?.quote?.destination?.from?.coordinates?.longitude || 
+                                  context.metadata?.quote?.destination?.from?.placeDetails?.coordinates?.longitude || 
+                                  context.metadata?.quote?.destination?.from?.placeDetails?.longitude || 0
                       },
                       countryCode: 'US',
                       countryFlag: '🇺🇸',
-                      formattedAddress: `${addressDetails.pickup.address}, ${addressDetails.pickup.city}${addressDetails.pickup.state ? `, ${addressDetails.pickup.state}` : ''}`
+                      formattedAddress: context.metadata?.quote?.destination?.from?.formattedAddress || 
+                        `${addressDetails.pickup.address}, ${addressDetails.pickup.city}, ${addressDetails.pickup.state} ${context.metadata?.quote?.destination?.from?.placeDetails?.postalCode || ''} US`
                     },
-                    formattedAddress: `${addressDetails.pickup.address}, ${addressDetails.pickup.city}${addressDetails.pickup.state ? `, ${addressDetails.pickup.state}` : ''}`
+                    formattedAddress: context.metadata?.quote?.destination?.from?.formattedAddress || 
+                      `${addressDetails.pickup.address}, ${addressDetails.pickup.city}, ${addressDetails.pickup.state} ${context.metadata?.quote?.destination?.from?.placeDetails?.postalCode || ''} US`
                   },
                   to: {
-                    address: addressDetails.delivery.address,
+                    address: `${addressDetails.delivery.address}, ${addressDetails.delivery.city}, ${addressDetails.delivery.state} ${context.metadata?.quote?.destination?.to?.placeDetails?.postalCode || ''} USA`,
                     coordinates: {
-                      latitude: 0,
-                      longitude: 0
+                      latitude: context.metadata?.quote?.destination?.to?.coordinates?.latitude || 
+                               context.metadata?.quote?.destination?.to?.placeDetails?.coordinates?.latitude || 
+                               context.metadata?.quote?.destination?.to?.placeDetails?.latitude || 0,
+                      longitude: context.metadata?.quote?.destination?.to?.coordinates?.longitude || 
+                                context.metadata?.quote?.destination?.to?.placeDetails?.coordinates?.longitude || 
+                                context.metadata?.quote?.destination?.to?.placeDetails?.longitude || 0
                     },
                     placeDetails: {
                       city: addressDetails.delivery.city || '',
-                      state: addressDetails.delivery.state || '',
+                      state: this.expandStateName(addressDetails.delivery.state) || '',
                       country: 'United States',
-                      latitude: 0,
-                      longitude: 0,
+                      latitude: context.metadata?.quote?.destination?.to?.coordinates?.latitude || 
+                               context.metadata?.quote?.destination?.to?.placeDetails?.coordinates?.latitude || 
+                               context.metadata?.quote?.destination?.to?.placeDetails?.latitude || 0,
+                      longitude: context.metadata?.quote?.destination?.to?.coordinates?.longitude || 
+                                context.metadata?.quote?.destination?.to?.placeDetails?.coordinates?.longitude || 
+                                context.metadata?.quote?.destination?.to?.placeDetails?.longitude || 0,
                       stateCode: addressDetails.delivery.state || '',
-                      postalCode: '',
+                      postalCode: context.metadata?.quote?.destination?.to?.placeDetails?.postalCode || '',
                       coordinates: {
-                        latitude: 0,
-                        longitude: 0
+                        latitude: context.metadata?.quote?.destination?.to?.coordinates?.latitude || 
+                                 context.metadata?.quote?.destination?.to?.placeDetails?.coordinates?.latitude || 
+                                 context.metadata?.quote?.destination?.to?.placeDetails?.latitude || 0,
+                        longitude: context.metadata?.quote?.destination?.to?.coordinates?.longitude || 
+                                  context.metadata?.quote?.destination?.to?.placeDetails?.coordinates?.longitude || 
+                                  context.metadata?.quote?.destination?.to?.placeDetails?.longitude || 0
                       },
                       countryCode: 'US',
                       countryFlag: '🇺🇸',
-                      formattedAddress: `${addressDetails.delivery.address}, ${addressDetails.delivery.city}${addressDetails.delivery.state ? `, ${addressDetails.delivery.state}` : ''}`
+                      formattedAddress: context.metadata?.quote?.destination?.to?.formattedAddress || 
+                        `${addressDetails.delivery.address}, ${addressDetails.delivery.city}, ${addressDetails.delivery.state} ${context.metadata?.quote?.destination?.to?.placeDetails?.postalCode || ''} US`
                     },
-                    formattedAddress: `${addressDetails.delivery.address}, ${addressDetails.delivery.city}${addressDetails.delivery.state ? `, ${addressDetails.delivery.state}` : ''}`
+                    formattedAddress: context.metadata?.quote?.destination?.to?.formattedAddress || 
+                      `${addressDetails.delivery.address}, ${addressDetails.delivery.city}, ${addressDetails.delivery.state} ${context.metadata?.quote?.destination?.to?.placeDetails?.postalCode || ''} US`
                   },
-                  pickupDate,
-                  pickupTimeSlot
+                  pickupDate: context.metadata?.quote?.destination?.pickupDate || pickupDate,
+                  pickupTimeSlot: context.metadata?.quote?.destination?.pickupTimeSlot || pickupTimeSlot
                 },
                 packageDetails: {
                   type: packageDetails.type,
@@ -855,7 +944,10 @@ Service Details:
                 },
                 selectedService: serviceDetails.type,
                 estimatedPrice: serviceDetails.price,
-                estimatedDelivery: serviceDetails.duration
+                estimatedDelivery: this.calculateEstimatedDeliveryDate(
+                  context.metadata?.quote?.destination?.pickupDate || pickupDate,
+                  serviceDetails.type
+                )
               }
             });
             if (success) {
@@ -874,7 +966,7 @@ Service Details:
     }
     // Default to starting over
     else {
-      response = QUOTE_MESSAGES.START_QUOTE;
+      response = this.QUOTE_MESSAGES.START_QUOTE;
     }
 
     this.log('QuoteAgent: Sending response:', response);
@@ -890,5 +982,64 @@ Service Details:
         debugLogs: this.debugLogs // Include debug logs in the response
       }
     };
+  }
+
+  private expandStateName(stateCode: string | undefined): string {
+    if (!stateCode) return '';
+    
+    const stateMap: Record<string, string> = {
+      'AL': 'Alabama',
+      'AK': 'Alaska',
+      'AZ': 'Arizona',
+      'AR': 'Arkansas',
+      'CA': 'California',
+      'CO': 'Colorado',
+      'CT': 'Connecticut',
+      'DE': 'Delaware',
+      'FL': 'Florida',
+      'GA': 'Georgia',
+      'HI': 'Hawaii',
+      'ID': 'Idaho',
+      'IL': 'Illinois',
+      'IN': 'Indiana',
+      'IA': 'Iowa',
+      'KS': 'Kansas',
+      'KY': 'Kentucky',
+      'LA': 'Louisiana',
+      'ME': 'Maine',
+      'MD': 'Maryland',
+      'MA': 'Massachusetts',
+      'MI': 'Michigan',
+      'MN': 'Minnesota',
+      'MS': 'Mississippi',
+      'MO': 'Missouri',
+      'MT': 'Montana',
+      'NE': 'Nebraska',
+      'NV': 'Nevada',
+      'NH': 'New Hampshire',
+      'NJ': 'New Jersey',
+      'NM': 'New Mexico',
+      'NY': 'New York',
+      'NC': 'North Carolina',
+      'ND': 'North Dakota',
+      'OH': 'Ohio',
+      'OK': 'Oklahoma',
+      'OR': 'Oregon',
+      'PA': 'Pennsylvania',
+      'RI': 'Rhode Island',
+      'SC': 'South Carolina',
+      'SD': 'South Dakota',
+      'TN': 'Tennessee',
+      'TX': 'Texas',
+      'UT': 'Utah',
+      'VT': 'Vermont',
+      'VA': 'Virginia',
+      'WA': 'Washington',
+      'WV': 'West Virginia',
+      'WI': 'Wisconsin',
+      'WY': 'Wyoming'
+    };
+    
+    return stateMap[stateCode.toUpperCase()] || stateCode;
   }
 } 
