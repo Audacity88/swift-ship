@@ -72,14 +72,12 @@ export class QuoteAgent {
       "   - Bulk Freight\n\n" +
       "2. What's the total weight in metric tons?\n" +
       "3. What's the total volume in cubic meters?\n" +
-      "4. Are there any hazardous materials?\n\n" +
-      "Please provide all these details in your response.",
+      "4. Are there any hazardous materials?\n\n",
     
     ADDRESS_DETAILS: "Thanks! Now I need the pickup and delivery information:\n\n" +
       "1. What's the complete pickup address? (including city and state)\n" +
       "2. What's the complete delivery address? (including city and state)\n" +
-      "3. When would you like the pickup to be scheduled? (date and time)\n\n" +
-      "Please provide all these details in your response.",
+      "3. When would you like the pickup to be scheduled? (date and time)\n\n",
 
     SERVICE_OPTIONS: (metadata: any) => {
       if (!metadata) {
@@ -815,8 +813,7 @@ Service Details:
           response = "I'll need the following information to proceed:\n\n" +
             "1. Complete pickup address (including city and state)\n" +
             "2. Complete delivery address (including city and state)\n" +
-            "3. Preferred pickup date and time\n\n" +
-            "Please provide all these details in your response.";
+            "3. Preferred pickup date and time\n\n";
         } else {
           response = this.QUOTE_MESSAGES.START_QUOTE;
         }

@@ -28,11 +28,6 @@ const AGENT_CONFIGS = {
     title: 'Quote Creation',
     description: 'Get instant shipping quotes',
     initialMessage: 'I\'ll help you create a shipping quote. Would you like to start?'
-  },
-  router: {
-    title: 'Smart Router',
-    description: 'Get directed to the right department',
-    initialMessage: 'I\'ll help direct your inquiry to the right department. What do you need help with?'
   }
 } as const;
 
@@ -55,7 +50,7 @@ export default function AISupportPage() {
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="support" className="w-full">
-            <TabsList className="grid grid-cols-2 lg:grid-cols-5 w-full">
+            <TabsList className="grid grid-cols-2 lg:grid-cols-4 w-full">
               {Object.entries(AGENT_CONFIGS).map(([key, config]) => (
                 <TabsTrigger key={key} value={key} className="text-sm">
                   {config.title}

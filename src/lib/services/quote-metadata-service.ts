@@ -57,14 +57,15 @@ export const quoteMetadataService = {
     }
   },
 
-  async validateAddresses(content: string, onCheckingMessage?: () => void): Promise<{
+  async validateAddresses(content: string, callbacks?: {
+    onGeocoding?: () => void;
+    onRouteCalculation?: () => void;
+    onServiceCalculation?: () => void;
+  }): Promise<{
     isValid: boolean;
     error?: string;
     quoteMetadata?: QuoteMetadata;
   }> {
-    // Notify that we're checking addresses
-    onCheckingMessage?.();
-
     // Extract addresses from the message
     const fromMatch = content.match(/(?:from|pickup).*?([^,]+,[^,]+,[^,]+)/i);
     const toMatch = content.match(/(?:to|delivery).*?([^,]+,[^,]+,[^,]+)/i);
@@ -81,6 +82,7 @@ export const quoteMetadataService = {
     const toAddress = toMatch[1].trim().replace(/^(?:to|delivery)\s+/i, '');
 
     // Geocode both addresses
+    callbacks?.onGeocoding?.();
     const [fromGeocode, toGeocode] = await Promise.all([
       radarService.geocodeAddress(fromAddress),
       radarService.geocodeAddress(toAddress)
@@ -94,6 +96,7 @@ export const quoteMetadataService = {
     }
 
     // Calculate route
+    callbacks?.onRouteCalculation?.();
     const route = await quoteCalculationService.calculateRoute(
       { latitude: fromGeocode.latitude, longitude: fromGeocode.longitude },
       { latitude: toGeocode.latitude, longitude: toGeocode.longitude }
@@ -105,6 +108,8 @@ export const quoteMetadataService = {
         error: 'Could not calculate a route between these addresses. Please try different addresses.'
       };
     }
+
+    callbacks?.onServiceCalculation?.();
 
     // Parse pickup date from the message
     let pickupDate = new Date();

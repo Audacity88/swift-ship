@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -28,7 +28,7 @@ interface Message {
 interface AIRequestPayload {
   message: string;
   conversationHistory: Message[];
-  agentType: 'docs' | 'router' | 'shipments' | 'support' | 'quote';
+  agentType: 'docs' | 'shipments' | 'support' | 'quote';
   metadata: RequestMetadata;
 }
 
@@ -45,12 +45,16 @@ interface RequestMetadata {
 }
 
 interface AISupportChatProps {
-  agentType: 'docs' | 'router' | 'shipments' | 'support' | 'quote';
+  agentType: 'docs' | 'shipments' | 'support' | 'quote';
   initialMessage?: string;
   className?: string;
 }
 
+const STREAM_INTERVAL = 50; // ms per word for streaming simulation
+
 export function AISupportChat({ agentType, initialMessage, className }: AISupportChatProps) {
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const [messages, setMessages] = useState<Message[]>(() => 
     initialMessage ? [{
       role: 'assistant',
@@ -62,6 +66,73 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
   const [isLoading, setIsLoading] = useState(false);
   const [quoteMetadataState, setQuoteMetadataState] = useState<QuoteMetadata>({ isQuote: true });
   const { user } = useAuth();
+
+  const scrollToBottom = () => {
+    const viewport = document.querySelector('[data-radix-scroll-area-viewport]');
+    if (viewport) {
+      const scrollHeight = viewport.scrollHeight;
+      const height = viewport.clientHeight;
+      const maxScrollTop = scrollHeight - height;
+      viewport.scrollTop = maxScrollTop > 0 ? maxScrollTop : 0;
+    }
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const simulateStreaming = async (content: string, updateMessage: (text: string) => void) => {
+    const words = content.split(/(\s+)/); // Split by whitespace but keep the separators
+    let currentText = '';
+    
+    for (let i = 0; i < words.length; i++) {
+      currentText += words[i];
+      updateMessage(currentText);
+      // Only add delay if it's an actual word (not whitespace)
+      if (words[i].trim()) {
+        await new Promise(resolve => setTimeout(resolve, STREAM_INTERVAL));
+      }
+    }
+  };
+
+  const handleChunkUpdate = async (chunk: string, accumulatedContent: string, lastMessage: Message) => {
+    if (agentType === 'quote') {
+      // Use streaming effect for quote agent
+      await simulateStreaming(
+        chunk,
+        (streamedText) => {
+          setMessages(prev => {
+            const newMessages = [...prev];
+            const lastMsg = newMessages[newMessages.length - 1];
+            newMessages[newMessages.length - 1] = {
+              ...lastMsg,
+              content: accumulatedContent + streamedText,
+              metadata: {
+                ...lastMsg.metadata,
+                timestamp: Date.now(),
+              }
+            };
+            return newMessages;
+          });
+        }
+      );
+    } else {
+      // Immediate update for other agents
+      setMessages(prev => {
+        const newMessages = [...prev];
+        const lastMsg = newMessages[newMessages.length - 1];
+        newMessages[newMessages.length - 1] = {
+          ...lastMsg,
+          content: accumulatedContent + chunk,
+          metadata: {
+            ...lastMsg.metadata,
+            timestamp: Date.now(),
+          }
+        };
+        return newMessages;
+      });
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -117,24 +188,85 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
 
         if (quoteMetadataService.isAddressStep(lastAssistantMessage) && 
             quoteMetadataService.hasAddressInfo(input)) {
-          const validationResult = await quoteMetadataService.validateAddresses(input, () => {
-            // Add checking message
-            setMessages(prev => [...prev, {
-              role: 'assistant',
-              content: 'Checking available options, one minute...',
-              metadata: { timestamp: Date.now() }
-            }]);
+          // Add initial checking message
+          setMessages(prev => [...prev, {
+            role: 'assistant',
+            content: '',
+            metadata: { timestamp: Date.now() }
+          }]);
+
+          // Stream the initial checking message
+          await simulateStreaming(
+            'Checking available options...\nValidating addresses...',
+            (streamedText) => {
+              setMessages(prev => {
+                const newMessages = [...prev];
+                const lastMsg = newMessages[newMessages.length - 1];
+                newMessages[newMessages.length - 1] = {
+                  ...lastMsg,
+                  content: streamedText,
+                  metadata: {
+                    ...lastMsg.metadata,
+                    timestamp: Date.now()
+                  }
+                };
+                return newMessages;
+              });
+            }
+          );
+
+          // Update progress messages during validation
+          const updateProgress = async (progress: string) => {
+            await simulateStreaming(
+              '\n' + progress,
+              (streamedText) => {
+                setMessages(prev => {
+                  const newMessages = [...prev];
+                  const lastMsg = newMessages[newMessages.length - 1];
+                  newMessages[newMessages.length - 1] = {
+                    ...lastMsg,
+                    content: lastMsg.content + streamedText,
+                    metadata: {
+                      ...lastMsg.metadata,
+                      timestamp: Date.now()
+                    }
+                  };
+                  return newMessages;
+                });
+              }
+            );
+          };
+
+          const validationResult = await quoteMetadataService.validateAddresses(input, {
+            onGeocoding: () => updateProgress('Looking up locations...'),
+            onRouteCalculation: () => updateProgress('Calculating optimal route...'),
+            onServiceCalculation: () => updateProgress('Determining available services...')
           });
 
           if (!validationResult.isValid) {
-            setMessages(prev => [...prev, {
-              role: 'assistant',
-              content: validationResult.error || 'Invalid addresses provided.',
-              metadata: { timestamp: Date.now() }
-            }]);
+            // Stream the error message
+            await simulateStreaming(
+              '\n\n' + (validationResult.error || 'Invalid addresses provided.'),
+              (streamedText) => {
+                setMessages(prev => {
+                  const newMessages = [...prev];
+                  const lastMsg = newMessages[newMessages.length - 1];
+                  newMessages[newMessages.length - 1] = {
+                    ...lastMsg,
+                    content: lastMsg.content + streamedText,
+                    metadata: {
+                      ...lastMsg.metadata,
+                      timestamp: Date.now()
+                    }
+                  };
+                  return newMessages;
+                });
+              }
+            );
             setIsLoading(false);
             return;
           }
+
           if (validationResult.quoteMetadata) {
             setQuoteMetadataState(prev => ({
               ...prev,
@@ -177,6 +309,14 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
         }
 
         metadata.quote = currentQuoteMetadata;
+
+        // If we're in address validation step and the validation failed, don't proceed with API call
+        if (quoteMetadataService.isAddressStep(lastAssistantMessage) && 
+            quoteMetadataService.hasAddressInfo(input) && 
+            !currentQuoteMetadata.route) {
+          setIsLoading(false);
+          return;
+        }
       }
 
       const requestBody: AIRequestPayload = {
@@ -226,11 +366,10 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
           if (done) break;
 
           const text = decoder.decode(value);
-          buffer += text; // Add new text to buffer
+          buffer += text;
           
-          // Process complete messages from buffer
           const messages = buffer.split('\n\n');
-          buffer = messages.pop() || ''; // Keep the last potentially incomplete message
+          buffer = messages.pop() || '';
 
           for (const message of messages) {
             if (!message.trim() || !message.startsWith('data: ')) continue;
@@ -240,20 +379,9 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
               const data = JSON.parse(jsonStr);
 
               if (data.type === 'chunk') {
-                accumulatedContent += data.content;
-                setMessages(prev => {
-                  const newMessages = [...prev];
-                  const lastMessage = newMessages[newMessages.length - 1];
-                  newMessages[newMessages.length - 1] = {
-                    ...lastMessage,
-                    content: accumulatedContent,
-                    metadata: {
-                      ...lastMessage.metadata,
-                      timestamp: Date.now(),
-                    }
-                  };
-                  return newMessages;
-                });
+                const newContent = data.content;
+                await handleChunkUpdate(newContent, accumulatedContent, messages[messages.length - 1]);
+                accumulatedContent += newContent;
               } else if (data.type === 'metadata') {
                 lastMetadata = data.metadata;
                 setMessages(prev => {
@@ -307,6 +435,7 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
             const data = JSON.parse(jsonStr);
             
             if (data.type === 'chunk') {
+              await handleChunkUpdate(data.content, accumulatedContent, messages[messages.length - 1]);
               accumulatedContent += data.content;
             } else if (data.type === 'metadata') {
               lastMetadata = data.metadata;
@@ -400,6 +529,7 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
               </div>
             </div>
           ))}
+          <div ref={messagesEndRef} />
         </div>
       </ScrollArea>
       <form onSubmit={handleSubmit} className="p-4 border-t bg-background">
