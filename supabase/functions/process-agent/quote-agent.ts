@@ -100,20 +100,43 @@ export class QuoteAgent {
                "3. Preferred pickup date and time";
       }
 
+      // Safely format service type by handling undefined case
+      const formatServiceType = (type: string | undefined) => {
+        if (!type) return '';
+        return type.replace(/_/g, ' ');
+      };
+
+      // Format the dates
+      const formatDate = (dateStr: string | undefined) => {
+        if (!dateStr) return 'Not available';
+        const date = new Date(dateStr);
+        return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
+      };
+
+      // Safely get addresses with fallbacks
+      const pickupAddress = metadata.destination?.from?.formattedAddress || 'Address not available';
+      const deliveryAddress = metadata.destination?.to?.formattedAddress || 'Address not available';
+      const distance = route.distance?.kilometers?.toFixed(1) || '0';
+
+      // Safely get prices with fallbacks
+      const expressPrice = metadata.expressPrice || 'Price not available';
+      const standardPrice = metadata.standardPrice || 'Price not available';
+      const ecoPrice = metadata.ecoPrice || 'Price not available';
+
       return `Based on your shipping details:\n\n` +
-        `Pickup: ${metadata.destination.from.formattedAddress}\n` +
-        `Delivery: ${metadata.destination.to.formattedAddress}\n` +
-        `Distance: ${route.distance.kilometers.toFixed(1)} km\n\n` +
+        `Pickup: ${pickupAddress}\n` +
+        `Delivery: ${deliveryAddress}\n` +
+        `Distance: ${distance} km\n\n` +
         `Here are your available service options:\n\n` +
-        `1. Express Freight - $${metadata.expressPrice}\n` +
+        `1. Express Freight - $${expressPrice}\n` +
         `   - Priority handling and expedited transport\n` +
-        `   - Estimated delivery: ${metadata.expressDelivery}\n\n` +
-        `2. Standard Freight - $${metadata.standardPrice}\n` +
+        `   - Estimated delivery: ${formatDate(metadata.expressDelivery)}\n\n` +
+        `2. Standard Freight - $${standardPrice}\n` +
         `   - Regular service with standard handling\n` +
-        `   - Estimated delivery: ${metadata.standardDelivery}\n\n` +
-        `3. Eco Freight - $${metadata.ecoPrice}\n` +
+        `   - Estimated delivery: ${formatDate(metadata.standardDelivery)}\n\n` +
+        `3. Eco Freight - $${ecoPrice}\n` +
         `   - Cost-effective with consolidated handling\n` +
-        `   - Estimated delivery: ${metadata.ecoDelivery}\n\n` +
+        `   - Estimated delivery: ${formatDate(metadata.ecoDelivery)}\n\n` +
         `Please select your preferred service option (1, 2, or 3):`;
     }
   };
@@ -165,102 +188,152 @@ export class QuoteAgent {
       serviceDetails: QuoteState['serviceDetails'];
     },
     metadata: {
-      customer?: { id: string; name: string; email: string };
+      isQuote: boolean;
+      customer?: {
+        id: string;
+        name: string;
+        email: string;
+      };
       token?: string;
-      quote: {
-        isQuote: boolean;
-        destination: {
-          from: {
-            address: string;
+      destination: {
+        from?: {
+          address?: string;
+          coordinates?: {
+            latitude: number;
+            longitude: number;
+          };
+          placeDetails?: {
+            city: string;
+            state: string;
+            country: string;
+            latitude: number;
+            longitude: number;
+            stateCode: string;
+            postalCode: string;
             coordinates: {
               latitude: number;
               longitude: number;
             };
-            placeDetails: {
-              city: string;
-              state: string;
-              country: string;
-              latitude: number;
-              longitude: number;
-              stateCode: string;
-              postalCode: string;
-              coordinates: {
-                latitude: number;
-                longitude: number;
-              };
-              countryCode: string;
-              countryFlag: string;
-              formattedAddress: string;
-            };
+            countryCode: string;
+            countryFlag: string;
             formattedAddress: string;
           };
-          to: {
-            address: string;
+          formattedAddress?: string;
+        };
+        to?: {
+          address?: string;
+          coordinates?: {
+            latitude: number;
+            longitude: number;
+          };
+          placeDetails?: {
+            city: string;
+            state: string;
+            country: string;
+            latitude: number;
+            longitude: number;
+            stateCode: string;
+            postalCode: string;
             coordinates: {
               latitude: number;
               longitude: number;
             };
-            placeDetails: {
-              city: string;
-              state: string;
-              country: string;
-              latitude: number;
-              longitude: number;
-              stateCode: string;
-              postalCode: string;
-              coordinates: {
-                latitude: number;
-                longitude: number;
-              };
-              countryCode: string;
-              countryFlag: string;
-              formattedAddress: string;
-            };
+            countryCode: string;
+            countryFlag: string;
             formattedAddress: string;
           };
-          pickupDate: string;
-          pickupTimeSlot: string;
+          formattedAddress?: string;
         };
-        packageDetails: {
-          type: string;
-          volume: string;
-          weight: string;
-          hazardous: boolean;
-          palletCount?: string;
-          specialRequirements: string;
+        pickupDate?: string;
+        pickupTimeSlot?: string;
+      };
+      packageDetails?: {
+        type?: string;
+        volume?: string;
+        weight?: string;
+        hazardous?: boolean;
+        palletCount?: string;
+        specialRequirements?: string;
+      };
+      selectedService?: string;
+      estimatedPrice?: number;
+      estimatedDelivery?: string;
+      expressPrice?: number;
+      standardPrice?: number;
+      ecoPrice?: number;
+      expressDelivery?: string;
+      standardDelivery?: string;
+      ecoDelivery?: string;
+      route?: {
+        distance: {
+          kilometers: number;
+          miles: number;
         };
-        selectedService: string;
-        estimatedPrice: number;
-        estimatedDelivery: string;
+        duration: {
+          minutes: number;
+          hours: number;
+        };
       };
     }
   ): Promise<{ success: boolean; error?: string; ticket?: any }> {
     try {
-      const { quote } = metadata;
-      
-      // Format the ticket data using the quote metadata
+      // Safely format service type
+      const formatServiceType = (type: string | undefined) => {
+        if (!type) return 'Unknown Service';
+        return type.replace(/_/g, ' ');
+      };
+
+      // Format the dates
+      const formatDate = (dateStr: string | undefined) => {
+        if (!dateStr) return 'Not available';
+        const date = new Date(dateStr);
+        return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
+      };
+
+      // Get the selected service details
+      const selectedService = quoteDetails.serviceDetails?.type || 'Unknown Service';
+      let estimatedPrice = 0;
+      let estimatedDelivery = '';
+
+      // Get the correct price and delivery date based on service type
+      switch (selectedService) {
+        case 'express_freight':
+          estimatedPrice = metadata.expressPrice || 0;
+          estimatedDelivery = metadata.expressDelivery || '';
+          break;
+        case 'standard_freight':
+          estimatedPrice = metadata.standardPrice || 0;
+          estimatedDelivery = metadata.standardDelivery || '';
+          break;
+        case 'eco_freight':
+          estimatedPrice = metadata.ecoPrice || 0;
+          estimatedDelivery = metadata.ecoDelivery || '';
+          break;
+      }
+
+      // Format the ticket data using the metadata
       const ticketData = {
-        title: `New Quote Request - ${quote.selectedService.replace(/_/g, ' ')}`,
+        title: `New Quote Request - ${formatServiceType(selectedService)}`,
         description: `
 Package Details:
-- Type: ${quote.packageDetails.type.replace(/_/g, ' ')}
-- Weight: ${quote.packageDetails.weight} tons
-- Volume: ${quote.packageDetails.volume} cubic meters
-- Hazardous: ${quote.packageDetails.hazardous ? 'Yes' : 'No'}
-${quote.packageDetails.palletCount ? `- Pallet Count: ${quote.packageDetails.palletCount}` : ''}
-${quote.packageDetails.specialRequirements ? `- Special Requirements: ${quote.packageDetails.specialRequirements}` : ''}
+- Type: ${formatServiceType(metadata.packageDetails?.type)}
+- Weight: ${metadata.packageDetails?.weight || 'Not specified'} tons
+- Volume: ${metadata.packageDetails?.volume || 'Not specified'} cubic meters
+- Hazardous: ${metadata.packageDetails?.hazardous ? 'Yes' : 'No'}
+${metadata.packageDetails?.palletCount ? `- Pallet Count: ${metadata.packageDetails.palletCount}` : ''}
+${metadata.packageDetails?.specialRequirements ? `- Special Requirements: ${metadata.packageDetails.specialRequirements}` : ''}
 
 Pickup Address:
-${quote.destination.from.formattedAddress}
-Pickup Time: ${quote.destination.pickupDate} (${quote.destination.pickupTimeSlot.replace(/_/g, ' ')})
+${metadata.destination?.from?.formattedAddress || 'Address not available'}
+Pickup Time: ${metadata.destination?.pickupDate || 'Not specified'} (${formatServiceType(metadata.destination?.pickupTimeSlot)})
 
 Delivery Address:
-${quote.destination.to.formattedAddress}
+${metadata.destination?.to?.formattedAddress || 'Address not available'}
 
 Service Details:
-- Service Type: ${quote.selectedService.replace(/_/g, ' ')}
-- Estimated Price: $${quote.estimatedPrice}
-- Estimated Delivery: ${quote.estimatedDelivery}
+- Service Type: ${formatServiceType(selectedService)}
+- Estimated Price: $${estimatedPrice}
+- Estimated Delivery: ${formatDate(estimatedDelivery)}
         `.trim(),
         priority: 'medium',
         customer_id: metadata.customer?.id,
@@ -268,36 +341,19 @@ Service Details:
         type: 'task',
         source: 'web',
         metadata: {
-          quote: {
-            isQuote: true,
-            destination: {
-              from: {
-                address: quote.destination.from.address,
-                coordinates: quote.destination.from.coordinates,
-                placeDetails: quote.destination.from.placeDetails,
-                formattedAddress: quote.destination.from.formattedAddress
-              },
-              to: {
-                address: quote.destination.to.address,
-                coordinates: quote.destination.to.coordinates,
-                placeDetails: quote.destination.to.placeDetails,
-                formattedAddress: quote.destination.to.formattedAddress
-              },
-              pickupDate: quote.destination.pickupDate,
-              pickupTimeSlot: quote.destination.pickupTimeSlot
-            },
-            packageDetails: {
-              type: quote.packageDetails.type,
-              volume: quote.packageDetails.volume,
-              weight: quote.packageDetails.weight,
-              hazardous: quote.packageDetails.hazardous,
-              palletCount: quote.packageDetails.palletCount,
-              specialRequirements: quote.packageDetails.specialRequirements
-            },
-            selectedService: quote.selectedService,
-            estimatedPrice: quote.estimatedPrice,
-            estimatedDelivery: quote.estimatedDelivery
-          }
+          isQuote: true,
+          destination: metadata.destination,
+          packageDetails: metadata.packageDetails,
+          selectedService,
+          estimatedPrice,
+          estimatedDelivery,
+          expressPrice: metadata.expressPrice,
+          expressDelivery: metadata.expressDelivery,
+          standardPrice: metadata.standardPrice,
+          standardDelivery: metadata.standardDelivery,
+          ecoPrice: metadata.ecoPrice,
+          ecoDelivery: metadata.ecoDelivery,
+          route: metadata.route
         }
       };
 
@@ -382,7 +438,7 @@ Service Details:
 
     const userMessages = messages.filter(m => m.role === 'user');
     const assistantMessages = messages.filter(m => m.role === 'assistant');
-    const lastUserMessage = userMessages[userMessages.length - 1]?.content || '';
+    const lastUserMessage = userMessages[userMessages.length - 1]?.content?.toLowerCase().trim() || '';
     const lastAssistantMessage = assistantMessages[assistantMessages.length - 1]?.content || '';
     
     this.log('Determining step from messages:', {
@@ -393,7 +449,7 @@ Service Details:
 
     // If the last assistant message asked for confirmation and user said yes/no
     if (lastAssistantMessage.includes('create this shipping quote') && 
-        (lastUserMessage.toLowerCase().includes('yes') || lastUserMessage.toLowerCase().includes('no'))) {
+        (lastUserMessage === 'yes' || lastUserMessage === 'no')) {
       return 'confirmation';
     }
 
@@ -581,16 +637,16 @@ Service Details:
   private extractServiceSelection(content: string): QuoteState['serviceDetails'] | null {
     try {
       this.log('Extracting service selection from:', content);
-      const contentLower = content.toLowerCase();
+      const contentLower = content.toLowerCase().trim();
 
       let type: 'express_freight' | 'standard_freight' | 'eco_freight' | null = null;
 
       // Only match exact service selections
-      if (contentLower.match(/^(?:option\s*)?1\s*$/) || contentLower.match(/\b(?:express|express[\s-]freight)\b/)) {
+      if (contentLower === '1' || contentLower.match(/\b(?:express|express[\s-]freight)\b/)) {
         type = 'express_freight';
-      } else if (contentLower.match(/^(?:option\s*)?2\s*$/) || contentLower.match(/\b(?:standard|standard[\s-]freight)\b/)) {
+      } else if (contentLower === '2' || contentLower.match(/\b(?:standard|standard[\s-]freight)\b/)) {
         type = 'standard_freight';
-      } else if (contentLower.match(/^(?:option\s*)?3\s*$/) || contentLower.match(/\b(?:eco|eco[\s-]freight)\b/)) {
+      } else if (contentLower === '3' || contentLower.match(/\b(?:eco|eco[\s-]freight)\b/)) {
         type = 'eco_freight';
       }
 
@@ -599,7 +655,7 @@ Service Details:
         return null;
       }
 
-      // Get the quote metadata
+      // Get the metadata
       const quote = this.context?.metadata?.quote;
       if (!quote) {
         this.log('No quote metadata found');
@@ -673,7 +729,7 @@ Service Details:
     // Get the last user message from the context
     const lastUserMessage = context.messages
       .filter(m => m.role === 'user')
-      .pop()?.content || '';
+      .pop()?.content?.toLowerCase().trim() || '';
 
     this.log('Processing user message:', lastUserMessage);
 
@@ -686,106 +742,183 @@ Service Details:
 
     let response: string;
 
-    // If we're in the initial state or this is the first message
-    if (step === 'initial') {
-      response = this.QUOTE_MESSAGES.START_QUOTE;
-    } 
-    // If we're waiting for package details, try to extract them
-    else if (step === 'package_details') {
-      const packageDetails = this.extractPackageDetails(lastUserMessage);
-      this.log('Extracted package details:', packageDetails);
-      
-      if (packageDetails) {
-        response = "Great! I've got your package details:\n\n" +
-          `Type: ${packageDetails.type.replace(/_/g, ' ')}\n` +
-          `Weight: ${packageDetails.weight} tons\n` +
-          `Volume: ${packageDetails.volume} cubic meters\n` +
-          `Hazardous: ${packageDetails.hazardous ? 'Yes' : 'No'}\n\n` +
-          this.QUOTE_MESSAGES.ADDRESS_DETAILS;
-      } else {
-        response = this.QUOTE_MESSAGES.START_QUOTE;
-      }
-    }
-    // If we're waiting for addresses
-    else if (step === 'addresses') {
-      const addressDetails = this.extractAddressDetails(lastUserMessage);
-      const packageDetails = this.findLastPackageDetails(allMessages);
-      
-      if (addressDetails) {
-        // Get distance from metadata instead of calculating it
-        const distance = this.getDistanceFromMetadata(context);
-        const isRushDelivery = this.isRushDeliveryFromMetadata(context);
-
-        response = "Great! I've got your shipping details:\n\n" +
-          "Pickup Address:\n" +
-          `${addressDetails.pickup.address}, ${addressDetails.pickup.city}` +
-          (addressDetails.pickup.state ? `, ${addressDetails.pickup.state}` : '') + "\n\n" +
-          "Delivery Address:\n" +
-          `${addressDetails.delivery.address}, ${addressDetails.delivery.city}` +
-          (addressDetails.delivery.state ? `, ${addressDetails.delivery.state}` : '') + "\n\n" +
-          (addressDetails.pickupDateTime ? `Pickup Time: ${addressDetails.pickupDateTime}\n\n` : '') +
-          this.QUOTE_MESSAGES.SERVICE_OPTIONS(context.metadata?.quote);
-      } else if (packageDetails) {
-        response = "I'll need the following information to proceed:\n\n" +
-          "1. Complete pickup address (including city and state)\n" +
-          "2. Complete delivery address (including city and state)\n" +
-          "3. Preferred pickup date and time\n\n" +
-          "Please provide all these details in your response.";
-      } else {
-        response = this.QUOTE_MESSAGES.START_QUOTE;
-      }
-    }
-    // If we're waiting for service selection
-    else if (step === 'service_selection') {
-      const serviceDetails = this.extractServiceSelection(lastUserMessage);
-      const packageDetails = this.findLastPackageDetails(allMessages);
-      
-      // If they haven't made a selection yet, show the options
-      if (!serviceDetails) {
-        // Check if we have route information from metadata
-        const hasRouteInfo = context.metadata?.quote?.route;
-
-        if (hasRouteInfo) {
-          response = this.QUOTE_MESSAGES.SERVICE_OPTIONS(context.metadata?.quote);
+    // If we're in confirmation step and user said yes
+    if (step === 'confirmation' && lastUserMessage === 'yes') {
+      const quoteDetails = await this.collectQuoteDetails(allMessages);
+      if (quoteDetails) {
+        const result = await this.createTicketDirect(quoteDetails, {
+          ...context.metadata?.quote,
+          isQuote: true,
+          customer: {
+            id: context.metadata?.session?.user?.id,
+            name: context.metadata?.session?.user?.user_metadata?.full_name || 
+                  context.metadata?.session?.user?.email?.split('@')[0] || 
+                  'Anonymous',
+            email: context.metadata?.session?.user?.email || 'anonymous@example.com'
+          },
+          token: context.metadata?.token,
+          destination: context.metadata?.quote?.destination || {},
+          packageDetails: context.metadata?.quote?.packageDetails || {},
+          selectedService: context.metadata?.quote?.selectedService || '',
+          estimatedPrice: context.metadata?.quote?.estimatedPrice || 0,
+          estimatedDelivery: context.metadata?.quote?.estimatedDelivery || '',
+          expressPrice: context.metadata?.quote?.expressPrice || 0,
+          standardPrice: context.metadata?.quote?.standardPrice || 0,
+          ecoPrice: context.metadata?.quote?.ecoPrice || 0,
+          expressDelivery: context.metadata?.quote?.expressDelivery || '',
+          standardDelivery: context.metadata?.quote?.standardDelivery || '',
+          ecoDelivery: context.metadata?.quote?.ecoDelivery || '',
+          route: context.metadata?.quote?.route
+        });
+        if (result.success) {
+          response = "Great! I've created your shipping quote. You can view and manage your quotes in your account dashboard.";
         } else {
-          response = "I need the pickup and delivery addresses to calculate service options. Please provide:\n\n" +
+          response = `I'm sorry, but there was an error creating your quote: ${result.error || 'Unknown error'}`;
+        }
+      } else {
+        response = "I'm sorry, but I couldn't find all the required details for your quote. Let's start over:\n\n" + 
+                  this.QUOTE_MESSAGES.START_QUOTE;
+      }
+    } else {
+      // If we're in the initial state or this is the first message
+      if (step === 'initial') {
+        response = this.QUOTE_MESSAGES.START_QUOTE;
+      } 
+      // If we're waiting for package details, try to extract them
+      else if (step === 'package_details') {
+        const packageDetails = this.extractPackageDetails(lastUserMessage);
+        this.log('Extracted package details:', packageDetails);
+        
+        if (packageDetails) {
+          response = "Great! I've got your package details:\n\n" +
+            `Type: ${packageDetails.type.replace(/_/g, ' ')}\n` +
+            `Weight: ${packageDetails.weight} tons\n` +
+            `Volume: ${packageDetails.volume} cubic meters\n` +
+            `Hazardous: ${packageDetails.hazardous ? 'Yes' : 'No'}\n\n` +
+            this.QUOTE_MESSAGES.ADDRESS_DETAILS;
+        } else {
+          response = this.QUOTE_MESSAGES.START_QUOTE;
+        }
+      }
+      // If we're waiting for addresses
+      else if (step === 'addresses') {
+        const addressDetails = this.extractAddressDetails(lastUserMessage);
+        const packageDetails = this.findLastPackageDetails(allMessages);
+        
+        if (addressDetails) {
+          // Get distance from metadata instead of calculating it
+          const distance = this.getDistanceFromMetadata(context);
+          const isRushDelivery = this.isRushDeliveryFromMetadata(context);
+
+          response = "Great! I've got your shipping details:\n\n" +
+            "Pickup Address:\n" +
+            `${addressDetails.pickup.address}, ${addressDetails.pickup.city}` +
+            (addressDetails.pickup.state ? `, ${addressDetails.pickup.state}` : '') + "\n\n" +
+            "Delivery Address:\n" +
+            `${addressDetails.delivery.address}, ${addressDetails.delivery.city}` +
+            (addressDetails.delivery.state ? `, ${addressDetails.delivery.state}` : '') + "\n\n" +
+            (addressDetails.pickupDateTime ? `Pickup Time: ${addressDetails.pickupDateTime}\n\n` : '') +
+            this.QUOTE_MESSAGES.SERVICE_OPTIONS(context.metadata?.quote);
+        } else if (packageDetails) {
+          response = "I'll need the following information to proceed:\n\n" +
             "1. Complete pickup address (including city and state)\n" +
             "2. Complete delivery address (including city and state)\n" +
-            "3. Preferred pickup date and time";
-        }
-      } else {
-        // Use the calculated price and delivery date
-        const quote = context.metadata?.quote;
-        if (!quote) {
-          response = "I apologize, but I couldn't find the quote details. Let's start over:\n\n" + this.QUOTE_MESSAGES.START_QUOTE;
+            "3. Preferred pickup date and time\n\n" +
+            "Please provide all these details in your response.";
         } else {
-          response = "Perfect! I've got your service selection:\n\n" +
-            `Service: ${serviceDetails.type.replace(/_/g, ' ')}\n` +
-            `Price: $${serviceDetails.price}\n` +
-            `Estimated Delivery: ${serviceDetails.duration}\n\n` +
-            "Would you like me to create this shipping quote for you? (yes/no)";
+          response = this.QUOTE_MESSAGES.START_QUOTE;
         }
       }
-    }
-    // If we're in confirmation
-    else if (step === 'confirmation') {
-      const quote = context.metadata?.quote;
-      if (quote) {
-        response = "Perfect! I've got your service selection:\n\n" +
-          `Service: ${quote.selectedService.replace(/_/g, ' ')}\n` +
-          `Price: $${quote.estimatedPrice}\n` +
-          `Estimated Delivery: ${quote.estimatedDelivery}\n\n` +
-          "Would you like me to create this shipping quote for you? (yes/no)";
-      } else {
-        response = "I couldn't understand your service selection. Please choose one of the following options:\n\n" +
-          "1. Express Freight\n" +
-          "2. Standard Freight\n" +
-          "3. Eco Freight";
+      // If we're waiting for service selection
+      else if (step === 'service_selection') {
+        const serviceDetails = this.extractServiceSelection(lastUserMessage);
+        const packageDetails = this.findLastPackageDetails(allMessages);
+        
+        // If they haven't made a selection yet, show the options
+        if (!serviceDetails) {
+          // Check if we have route information from metadata
+          const hasRouteInfo = context.metadata?.quote?.route;
+
+          if (hasRouteInfo) {
+            response = this.QUOTE_MESSAGES.SERVICE_OPTIONS(context.metadata?.quote);
+          } else {
+            response = "I need the pickup and delivery addresses to calculate service options. Please provide:\n\n" +
+              "1. Complete pickup address (including city and state)\n" +
+              "2. Complete delivery address (including city and state)\n" +
+              "3. Preferred pickup date and time";
+          }
+        } else {
+          // Use the pre-calculated values from metadata based on the selected service
+          const quote = context.metadata?.quote;
+          if (!quote) {
+            response = "I apologize, but I couldn't find the quote details. Let's start over:\n\n" + this.QUOTE_MESSAGES.START_QUOTE;
+          } else {
+            let price = 0;
+            let deliveryDate = '';
+            
+            switch (serviceDetails.type) {
+              case 'express_freight':
+                price = quote.expressPrice || 0;
+                deliveryDate = quote.expressDelivery || '';
+                break;
+              case 'standard_freight':
+                price = quote.standardPrice || 0;
+                deliveryDate = quote.standardDelivery || '';
+                break;
+              case 'eco_freight':
+                price = quote.ecoPrice || 0;
+                deliveryDate = quote.ecoDelivery || '';
+                break;
+            }
+
+            response = "Perfect! I've got your service selection:\n\n" +
+              `Service: ${serviceDetails.type.replace(/_/g, ' ')}\n` +
+              `Price: $${price}\n` +
+              `Estimated Delivery: ${deliveryDate}\n\n` +
+              "Would you like me to create this shipping quote for you? (yes/no)";
+          }
+        }
       }
-    }
-    // Default to starting over
-    else {
-      response = this.QUOTE_MESSAGES.START_QUOTE;
+      // If we're in confirmation
+      else if (step === 'confirmation') {
+        const quote = context.metadata?.quote;
+        if (quote) {
+          // Get the selected service details from metadata
+          let price = 0;
+          let deliveryDate = '';
+          const selectedService = quote.selectedService || '';
+          
+          switch (selectedService) {
+            case 'express_freight':
+              price = quote.expressPrice || 0;
+              deliveryDate = quote.expressDelivery || '';
+              break;
+            case 'standard_freight':
+              price = quote.standardPrice || 0;
+              deliveryDate = quote.standardDelivery || '';
+              break;
+            case 'eco_freight':
+              price = quote.ecoPrice || 0;
+              deliveryDate = quote.ecoDelivery || '';
+              break;
+          }
+
+          response = "Perfect! I've got your service selection:\n\n" +
+            `Service: ${selectedService.replace(/_/g, ' ')}\n` +
+            `Price: $${price}\n` +
+            `Estimated Delivery: ${deliveryDate}\n\n` +
+            "Would you like me to create this shipping quote for you? (yes/no)";
+        } else {
+          response = "I couldn't understand your service selection. Please choose one of the following options:\n\n" +
+            "1. Express Freight\n" +
+            "2. Standard Freight\n" +
+            "3. Eco Freight";
+        }
+      }
+      // Default to starting over
+      else {
+        response = this.QUOTE_MESSAGES.START_QUOTE;
+      }
     }
 
     this.log('QuoteAgent: Sending response:', response);

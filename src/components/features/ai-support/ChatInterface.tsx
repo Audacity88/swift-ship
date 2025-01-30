@@ -125,7 +125,7 @@ export function ChatInterface() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [quoteMetadataState, setQuoteMetadataState] = useState<QuoteMetadata | undefined>();
+  const [quoteMetadataState, setQuoteMetadataState] = useState<QuoteMetadata>({ isQuote: true });
   const { user } = useAuth();
 
   const validateAddresses = async (content: string) => {
@@ -372,6 +372,7 @@ export function ChatInterface() {
           console.log('Extracted package details:', packageDetails);
           setQuoteMetadataState(prev => ({
             ...prev,
+            isQuote: true,
             packageDetails
           }));
         }
@@ -395,7 +396,8 @@ export function ChatInterface() {
         }
         setQuoteMetadataState(prev => ({
           ...prev,
-          ...validationResult?.quoteMetadata,
+          isQuote: true,
+          ...validationResult?.quoteMetadata
         }));
       }
 
@@ -492,12 +494,13 @@ export function ChatInterface() {
         console.log('Calculated service options:', serviceOptions);
       }
 
-      const finalQuoteMetadata = {
+      const finalQuoteMetadata: QuoteMetadata = {
+        isQuote: true,
         ...currentQuoteMetadata,
         ...serviceOptions,
-        selectedService: undefined, // Reset selected service
-        estimatedPrice: undefined, // Reset estimated price
-        estimatedDelivery: undefined // Reset estimated delivery
+        selectedService: undefined,
+        estimatedPrice: undefined,
+        estimatedDelivery: undefined
       };
 
       console.log('Final quote metadata:', finalQuoteMetadata);
