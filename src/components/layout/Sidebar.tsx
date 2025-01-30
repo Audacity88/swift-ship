@@ -40,7 +40,7 @@ const navItems: NavItem[] = [
   },
   {
     icon: Quote,
-    label: 'Quote',
+    label: 'Quotes',
     href: '/quote',
     roles: [RoleType.CUSTOMER],
   },

@@ -9,15 +9,15 @@ export const metadata: Metadata = {
 };
 
 const AGENT_CONFIGS = {
-  docs: {
-    title: 'Documentation',
-    description: 'Search and explore our documentation',
-    initialMessage: 'Hello! I can help you find information in our documentation. What would you like to know?'
-  },
   support: {
     title: 'General Support',
     description: 'Get help with general inquiries',
     initialMessage: 'Hi! I\'m your support assistant. How can I help you today?'
+  },
+  docs: {
+    title: 'Documentation',
+    description: 'Search and explore our documentation',
+    initialMessage: 'Hello! I can help you find information in our documentation. What would you like to know?'
   },
   shipments: {
     title: 'Shipment Tracking',

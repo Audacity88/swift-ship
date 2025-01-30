@@ -39,9 +39,25 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Call the edge function with streaming
+    // Map agent type to the correct edge function
+    const agentEndpoints = {
+      quote: 'quote-agent',
+      docs: 'docs-agent',
+      shipments: 'shipments-agent',
+      support: 'support-agent'
+    };
+
+    const endpoint = agentEndpoints[agentType as keyof typeof agentEndpoints];
+    if (!endpoint) {
+      return NextResponse.json(
+        { error: 'Invalid agent type' },
+        { status: 400 }
+      );
+    }
+
+    // Call the appropriate edge function with streaming
     const response = await fetch(
-      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/quote-agent`,
+      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/${endpoint}`,
       {
         method: 'POST',
         headers: {
@@ -69,8 +85,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Return the streaming response directly
-    return new Response(response.body, {
+    // Forward the streaming response
+    return new NextResponse(response.body, {
       headers: {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',

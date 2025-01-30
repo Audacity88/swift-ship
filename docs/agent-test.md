@@ -7,3 +7,6 @@ Pickup from 123 Main St, Los Angeles, CA to 456 Park Ave, New York, NY. Pickup n
 1
 
 yes
+
+
+all shipments

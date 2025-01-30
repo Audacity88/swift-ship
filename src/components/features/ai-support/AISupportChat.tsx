@@ -10,6 +10,7 @@ import { useAuth } from '@/lib/hooks/useAuth';
 import { createBrowserClient } from '@supabase/ssr';
 import { QuoteMetadata } from '@/types/quote';
 import { quoteMetadataService } from '@/lib/services/quote-metadata-service';
+import { shipmentService } from '@/lib/services';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -42,6 +43,7 @@ interface RequestMetadata {
   token?: string;
   session?: any;
   quote?: QuoteMetadata;
+  shipments?: any[];
 }
 
 interface AISupportChatProps {
@@ -66,6 +68,7 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
   const [isLoading, setIsLoading] = useState(false);
   const [quoteMetadataState, setQuoteMetadataState] = useState<QuoteMetadata>({ isQuote: true });
   const { user } = useAuth();
+  const [customerShipments, setCustomerShipments] = useState<any[]>([]);
 
   const scrollToBottom = () => {
     const viewport = document.querySelector('[data-radix-scroll-area-viewport]');
@@ -80,6 +83,22 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Fetch customer shipments when using shipments agent
+  useEffect(() => {
+    const fetchShipments = async () => {
+      if (agentType === 'shipments' && user?.id) {
+        try {
+          const shipments = await shipmentService.getCustomerShipments(undefined, user.id);
+          setCustomerShipments(shipments);
+        } catch (error) {
+          console.error('Error fetching customer shipments:', error);
+        }
+      }
+    };
+
+    void fetchShipments();
+  }, [agentType, user?.id]);
 
   const simulateStreaming = async (content: string, updateMessage: (text: string) => void) => {
     const words = content.split(/(\s+)/); // Split by whitespace but keep the separators
@@ -171,7 +190,68 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
         session
       };
 
+      // Add shipments to metadata if using shipments agent
+      if (agentType === 'shipments') {
+        metadata.shipments = customerShipments;
+      }
+
       if (agentType === 'quote') {
+        // Always include the current quote metadata in the request
+        metadata.quote = quoteMetadataState;
+
+        // Check if we're in service selection step
+        const lastAssistantMessage = messages
+          .filter(m => m.role === 'assistant')
+          .pop()?.content || '';
+
+        const isServiceSelection = lastAssistantMessage.includes('Please select your preferred service option');
+        const isQuoteConfirmation = lastAssistantMessage.includes('Would you like me to create this shipping quote for you?');
+
+        if (isServiceSelection) {
+          const serviceType = input.trim();
+          if (['1', '2', '3'].includes(serviceType)) {
+            // Map selection to service type
+            const serviceMap = {
+              '1': 'express_freight',
+              '2': 'standard_freight',
+              '3': 'eco_freight'
+            } as const;
+            const selectedService = serviceMap[serviceType as keyof typeof serviceMap];
+            
+            // Update metadata with selected service
+            const updatedMetadata: QuoteMetadata = {
+              ...quoteMetadataState,
+              selectedService
+            };
+            setQuoteMetadataState(updatedMetadata);
+            metadata.quote = updatedMetadata;
+          }
+        } else if (isQuoteConfirmation) {
+          const userResponse = input.trim().toLowerCase();
+          if (userResponse === 'yes' || userResponse === 'y') {
+            // Verify we have all required metadata
+            const hasRequiredMetadata = 
+              quoteMetadataState.packageDetails?.type &&
+              quoteMetadataState.packageDetails?.volume &&
+              quoteMetadataState.packageDetails?.weight &&
+              quoteMetadataState.destination?.from?.formattedAddress &&
+              quoteMetadataState.destination?.to?.formattedAddress &&
+              quoteMetadataState.selectedService &&
+              quoteMetadataState.route?.distance?.kilometers;
+
+            if (!hasRequiredMetadata) {
+              // Add error message if metadata is incomplete
+              setMessages(prev => [...prev, {
+                role: 'assistant',
+                content: 'I apologize, but some required information is missing. Let\'s start over to ensure we have all the necessary details.',
+                metadata: { timestamp: Date.now() }
+              }]);
+              setIsLoading(false);
+              return;
+            }
+          }
+        }
+
         // Check for package details in the message
         const packageDetails = quoteMetadataService.extractPackageDetails(input);
         if (packageDetails) {
@@ -182,10 +262,6 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
         }
 
         // Check for addresses and validate them
-        const lastAssistantMessage = messages
-          .filter(m => m.role === 'assistant')
-          .pop()?.content || '';
-
         if (quoteMetadataService.isAddressStep(lastAssistantMessage) && 
             quoteMetadataService.hasAddressInfo(input)) {
           // Add initial checking message
@@ -195,7 +271,7 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
             metadata: { timestamp: Date.now() }
           }]);
 
-          // Stream the initial checking message
+          // Stream the initial checking message as a single unit
           await simulateStreaming(
             'Checking available options...\nValidating addresses...',
             (streamedText) => {
@@ -217,24 +293,24 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
 
           // Update progress messages during validation
           const updateProgress = async (progress: string) => {
-            await simulateStreaming(
-              '\n' + progress,
-              (streamedText) => {
-                setMessages(prev => {
-                  const newMessages = [...prev];
-                  const lastMsg = newMessages[newMessages.length - 1];
-                  newMessages[newMessages.length - 1] = {
-                    ...lastMsg,
-                    content: lastMsg.content + streamedText,
-                    metadata: {
-                      ...lastMsg.metadata,
-                      timestamp: Date.now()
-                    }
-                  };
-                  return newMessages;
-                });
-              }
-            );
+            // Append the progress message with a newline
+            const fullMessage = '\n' + progress;
+            // Update the message immediately without streaming
+            setMessages(prev => {
+              const newMessages = [...prev];
+              const lastMsg = newMessages[newMessages.length - 1];
+              newMessages[newMessages.length - 1] = {
+                ...lastMsg,
+                content: lastMsg.content + fullMessage,
+                metadata: {
+                  ...lastMsg.metadata,
+                  timestamp: Date.now()
+                }
+              };
+              return newMessages;
+            });
+            // Add a small delay to make progress visible
+            await new Promise(resolve => setTimeout(resolve, 500));
           };
 
           const validationResult = await quoteMetadataService.validateAddresses(input, {
@@ -244,81 +320,100 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
           });
 
           if (!validationResult.isValid) {
-            // Stream the error message
-            await simulateStreaming(
-              '\n\n' + (validationResult.error || 'Invalid addresses provided.'),
-              (streamedText) => {
-                setMessages(prev => {
-                  const newMessages = [...prev];
-                  const lastMsg = newMessages[newMessages.length - 1];
-                  newMessages[newMessages.length - 1] = {
-                    ...lastMsg,
-                    content: lastMsg.content + streamedText,
-                    metadata: {
-                      ...lastMsg.metadata,
-                      timestamp: Date.now()
-                    }
-                  };
-                  return newMessages;
-                });
-              }
-            );
+            // Add error message without streaming
+            setMessages(prev => {
+              const newMessages = [...prev];
+              const lastMsg = newMessages[newMessages.length - 1];
+              newMessages[newMessages.length - 1] = {
+                ...lastMsg,
+                content: lastMsg.content + '\n\n' + (validationResult.error || 'Invalid addresses provided. Please provide complete addresses including city and state.'),
+                metadata: {
+                  ...lastMsg.metadata,
+                  timestamp: Date.now()
+                }
+              };
+              return newMessages;
+            });
             setIsLoading(false);
             return;
           }
 
           if (validationResult.quoteMetadata) {
-            setQuoteMetadataState(prev => ({
-              ...prev,
+            // Update state with validation result
+            const updatedMetadata = {
+              ...quoteMetadataState,
               ...validationResult.quoteMetadata
-            }));
-          }
-        }
-
-        // If we don't have package details in current state, try to find them in history
-        let currentQuoteMetadata = {
-          ...quoteMetadataState,
-          ...(packageDetails && { packageDetails })
-        };
-
-        if (!currentQuoteMetadata.packageDetails) {
-          const historicalPackageDetails = quoteMetadataService.findLastPackageDetails([...messages, userMessage]);
-          if (historicalPackageDetails) {
-            currentQuoteMetadata = {
-              ...currentQuoteMetadata,
-              packageDetails: historicalPackageDetails
             };
-            setQuoteMetadataState(currentQuoteMetadata);
+            setQuoteMetadataState(updatedMetadata);
+
+            // Add success message as a single unit
+            setMessages(prev => {
+              const newMessages = [...prev];
+              const lastMsg = newMessages[newMessages.length - 1];
+              newMessages[newMessages.length - 1] = {
+                ...lastMsg,
+                content: lastMsg.content + '\n\nAddresses validated successfully! Calculating service options...',
+                metadata: {
+                  ...lastMsg.metadata,
+                  timestamp: Date.now()
+                }
+              };
+              return newMessages;
+            });
+
+            // Calculate service options if we have all required information
+            const hasPackageDetails = updatedMetadata?.packageDetails?.volume && 
+                                    updatedMetadata?.packageDetails?.weight;
+            const hasRouteInfo = updatedMetadata?.route?.distance?.kilometers;
+
+            if (hasPackageDetails && hasRouteInfo) {
+              const serviceOptions = quoteMetadataService.calculateServiceOptions(updatedMetadata);
+              if (serviceOptions) {
+                const finalMetadata = {
+                  ...updatedMetadata,
+                  ...serviceOptions
+                };
+                setQuoteMetadataState(finalMetadata);
+                metadata.quote = finalMetadata;
+
+                // Make the API call immediately after calculating service options
+                const requestBody: AIRequestPayload = {
+                  message: userMessage.content,
+                  conversationHistory: [...messages, userMessage],
+                  agentType,
+                  metadata
+                };
+
+                const response = await fetch('/api/ai-support', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify(requestBody),
+                });
+
+                if (!response.ok) {
+                  throw new Error('Failed to get response');
+                }
+
+                // Continue with response handling...
+                await handleApiResponse(response);
+                return;
+              }
+            }
           }
         }
-
-        // Calculate service options if we have all required information
-        const hasPackageDetails = currentQuoteMetadata?.packageDetails?.volume && 
-                                currentQuoteMetadata?.packageDetails?.weight;
-        const hasRouteInfo = currentQuoteMetadata?.route?.distance?.kilometers;
-
-        if (hasPackageDetails && hasRouteInfo) {
-          const serviceOptions = quoteMetadataService.calculateServiceOptions(currentQuoteMetadata);
-          if (serviceOptions) {
-            currentQuoteMetadata = {
-              ...currentQuoteMetadata,
-              ...serviceOptions
-            };
-            setQuoteMetadataState(currentQuoteMetadata);
-          }
-        }
-
-        metadata.quote = currentQuoteMetadata;
 
         // If we're in address validation step and the validation failed, don't proceed with API call
         if (quoteMetadataService.isAddressStep(lastAssistantMessage) && 
             quoteMetadataService.hasAddressInfo(input) && 
-            !currentQuoteMetadata.route) {
+            !quoteMetadataState.route) {
           setIsLoading(false);
           return;
         }
       }
 
+      // Default API call for non-quote agents or when not in validation step
       const requestBody: AIRequestPayload = {
         message: userMessage.content,
         conversationHistory: [...messages, userMessage],
@@ -339,136 +434,8 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
         throw new Error(errorData.error || 'Failed to get response');
       }
 
-      if (!response.body) throw new Error('No response body');
+      await handleApiResponse(response);
 
-      // Initialize assistant message
-      const assistantMessage: Message = {
-        role: 'assistant',
-        content: '',
-        metadata: {
-          timestamp: Date.now(),
-          agent: agentType
-        },
-      };
-
-      // Add empty assistant message that will be updated
-      setMessages(prev => [...prev, assistantMessage]);
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let accumulatedContent = '';
-      let lastMetadata = {};
-      let buffer = ''; // Buffer for incomplete JSON data
-
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          const text = decoder.decode(value);
-          buffer += text;
-          
-          const messages = buffer.split('\n\n');
-          buffer = messages.pop() || '';
-
-          for (const message of messages) {
-            if (!message.trim() || !message.startsWith('data: ')) continue;
-
-            try {
-              const jsonStr = message.replace(/^data: /, '').trim();
-              const data = JSON.parse(jsonStr);
-
-              if (data.type === 'chunk') {
-                const newContent = data.content;
-                await handleChunkUpdate(newContent, accumulatedContent, messages[messages.length - 1]);
-                accumulatedContent += newContent;
-              } else if (data.type === 'metadata') {
-                lastMetadata = data.metadata;
-                setMessages(prev => {
-                  const newMessages = [...prev];
-                  const lastMessage = newMessages[newMessages.length - 1];
-                  newMessages[newMessages.length - 1] = {
-                    ...lastMessage,
-                    metadata: {
-                      ...lastMessage.metadata,
-                      ...data.metadata
-                    }
-                  };
-                  return newMessages;
-                });
-
-                // Update quote metadata if present
-                if (agentType === 'quote' && data.metadata?.quote) {
-                  setQuoteMetadataState(prev => ({
-                    ...prev,
-                    ...data.metadata.quote
-                  }));
-                }
-              } else if (data.type === 'sources') {
-                setMessages(prev => {
-                  const newMessages = [...prev];
-                  const lastMessage = newMessages[newMessages.length - 1];
-                  newMessages[newMessages.length - 1] = {
-                    ...lastMessage,
-                    metadata: {
-                      ...lastMessage.metadata,
-                      agent: agentType.toUpperCase() + '_AGENT',
-                      context: data.sources
-                    }
-                  };
-                  return newMessages;
-                });
-              }
-            } catch (e) {
-              console.error('Error parsing SSE data:', {
-                message,
-                error: e
-              });
-            }
-          }
-        }
-
-        // Process any remaining data in buffer
-        if (buffer.trim() && buffer.startsWith('data: ')) {
-          try {
-            const jsonStr = buffer.replace(/^data: /, '').trim();
-            const data = JSON.parse(jsonStr);
-            
-            if (data.type === 'chunk') {
-              await handleChunkUpdate(data.content, accumulatedContent, messages[messages.length - 1]);
-              accumulatedContent += data.content;
-            } else if (data.type === 'metadata') {
-              lastMetadata = data.metadata;
-            }
-          } catch (e) {
-            console.error('Error parsing final buffer:', {
-              buffer,
-              error: e
-            });
-          }
-        }
-
-        // After the stream is complete, update messages one final time
-        setMessages(prev => {
-          const newMessages = [...prev];
-          const lastMessage = newMessages[newMessages.length - 1];
-          newMessages[newMessages.length - 1] = {
-            role: 'assistant',
-            content: accumulatedContent,
-            metadata: {
-              ...lastMessage.metadata,
-              ...lastMetadata,
-              timestamp: Date.now(),
-            }
-          };
-          return newMessages;
-        });
-      } catch (error) {
-        console.error('Error in stream reading:', error);
-        throw error;
-      } finally {
-        reader.releaseLock();
-      }
     } catch (error) {
       console.error('Error in request:', error);
       setMessages(prev => {
@@ -485,6 +452,98 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
       });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Helper function to handle API response
+  const handleApiResponse = async (response: Response) => {
+    if (!response.body) throw new Error('No response body');
+
+    // Initialize assistant message
+    const assistantMessage: Message = {
+      role: 'assistant',
+      content: '',
+      metadata: {
+        timestamp: Date.now(),
+        agent: agentType
+      },
+    };
+
+    // Add empty assistant message that will be updated
+    setMessages(prev => [...prev, assistantMessage]);
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let accumulatedContent = '';
+    let lastMetadata = {};
+    let buffer = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const text = decoder.decode(value);
+        buffer += text;
+        
+        const messages = buffer.split('\n\n');
+        buffer = messages.pop() || '';
+
+        for (const message of messages) {
+          if (!message.trim() || !message.startsWith('data: ')) continue;
+
+          try {
+            const jsonStr = message.replace(/^data: /, '').trim();
+            const data = JSON.parse(jsonStr);
+
+            if (data.type === 'chunk') {
+              const newContent = data.content;
+              await handleChunkUpdate(newContent, accumulatedContent, assistantMessage);
+              accumulatedContent += newContent;
+            } else if (data.type === 'metadata') {
+              lastMetadata = data.metadata;
+              setMessages(prev => {
+                const newMessages = [...prev];
+                const lastMessage = newMessages[newMessages.length - 1];
+                newMessages[newMessages.length - 1] = {
+                  ...lastMessage,
+                  metadata: {
+                    ...lastMessage.metadata,
+                    ...data.metadata
+                  }
+                };
+                return newMessages;
+              });
+
+              // Update quote metadata if present
+              if (agentType === 'quote' && data.metadata?.quote) {
+                setQuoteMetadataState(prev => ({
+                  ...prev,
+                  ...data.metadata.quote
+                }));
+              }
+            } else if (data.type === 'sources') {
+              setMessages(prev => {
+                const newMessages = [...prev];
+                const lastMessage = newMessages[newMessages.length - 1];
+                newMessages[newMessages.length - 1] = {
+                  ...lastMessage,
+                  metadata: {
+                    ...lastMessage.metadata,
+                    agent: agentType.toUpperCase() + '_AGENT',
+                    context: data.sources
+                  }
+                };
+                return newMessages;
+              });
+            }
+          } catch (e) {
+            console.error('Error parsing SSE data:', e);
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
     }
   };
 

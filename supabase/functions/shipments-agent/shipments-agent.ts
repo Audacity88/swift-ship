@@ -8,7 +8,26 @@ interface AgentMessage {
 
 interface AgentContext {
   messages: AgentMessage[];
-  metadata?: Record<string, any>;
+  metadata?: {
+    userId: string;
+    customer: {
+      id: string;
+      name: string;
+      email: string;
+    };
+    shipments?: Array<{
+      id: string;
+      status: string;
+      type: string;
+      origin: string;
+      destination: string;
+      tracking_number: string;
+      scheduled_pickup?: string;
+      estimated_delivery?: string;
+      actual_delivery?: string;
+      metadata: Record<string, any>;
+    }>;
+  };
 }
 
 interface AgentResponse {
@@ -40,6 +59,9 @@ IMPORTANT RULES:
 4. When discussing shipment planning, always say "Swift Ship's logistics network" or "Swift Ship's delivery routes"
 5. Base your responses on the provided documentation when available
 6. If information is not in the provided docs, say "I don't have specific documentation about this shipment matter, but as Swift Ship's shipments agent, I recommend..."
+7. When discussing a customer's shipments, use the shipment data provided in the context
+8. For tracking queries, check the customer's shipments in the context and provide specific details about their shipments
+9. If asked about a specific tracking number, look it up in the customer's shipments and provide detailed status information
 
 Remember: Every response must maintain Swift Ship's brand voice and explicitly reference Swift Ship's services.
 `;
@@ -57,6 +79,11 @@ Remember: Every response must maintain Swift Ship's brand voice and explicitly r
     // Build conversation for OpenAI
     const conversation = [
       { role: 'system', content: this.systemPrompt },
+      // Add customer shipment data if available
+      ...(context.metadata?.shipments ? [{
+        role: 'system',
+        content: `Current customer shipments:\n${JSON.stringify(context.metadata.shipments, null, 2)}`
+      }] : []),
       ...context.messages.map(msg => ({
         role: msg.role,
         content: msg.content
