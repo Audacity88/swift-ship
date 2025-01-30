@@ -165,36 +165,12 @@ export function ChatInterface() {
       };
     }
 
-    // Calculate delivery times based on distance
-    const { distance, duration } = route;
-    let expressDeliveryDays = 1;  // Default to same-day/next-day for short distances
-    let standardDeliveryDays = 2;
-    let ecoDeliveryDays = 3;
-
-    if (distance.miles > 50) {  // For longer distances
-      expressDeliveryDays = 2;
-      standardDeliveryDays = 3;
-      ecoDeliveryDays = 4;
-    }
-    if (distance.miles > 200) {  // For very long distances
-      expressDeliveryDays = 3;
-      standardDeliveryDays = 5;
-      ecoDeliveryDays = 7;
-    }
-
-    // Calculate prices based on distance with minimum amounts
-    const basePrice = 1000;
-    const pricePerMile = 2;
-    const distancePrice = Math.round(basePrice + (distance.miles * pricePerMile));
-    
-    const expressPrice = Math.max(1500, Math.round(distancePrice * 1.5));
-    const standardPrice = Math.max(1000, distancePrice);
-    const ecoPrice = Math.max(800, Math.round(distancePrice * 0.8));
-
     // Parse pickup date from the message
     let pickupDate = new Date();
+    pickupDate.setDate(pickupDate.getDate() + 1); // Default to tomorrow
+    pickupDate.setHours(9, 0, 0, 0);
+
     const dateMatch = content.match(/next\s+(\w+)\s+at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
-    
     if (dateMatch) {
       const [_, day, hour, minute, ampm] = dateMatch;
       const today = new Date();
@@ -203,12 +179,9 @@ export function ChatInterface() {
       
       if (targetDay !== -1) {
         let daysToAdd = targetDay - today.getDay();
-        if (daysToAdd <= 0) daysToAdd += 7; // If the day has passed, go to next week
-        
+        if (daysToAdd <= 0) daysToAdd += 7;
         pickupDate = new Date(today);
         pickupDate.setDate(today.getDate() + daysToAdd);
-        
-        // Set the time if provided
         if (hour) {
           let hourNum = parseInt(hour);
           if (ampm && ampm.toLowerCase() === 'pm' && hourNum < 12) hourNum += 12;
@@ -216,57 +189,18 @@ export function ChatInterface() {
           pickupDate.setHours(hourNum, minute ? parseInt(minute) : 0, 0, 0);
         }
       }
-    } else {
-      // If no specific date/time found, default to tomorrow at 9am
-      pickupDate.setDate(pickupDate.getDate() + 1);
-      pickupDate.setHours(9, 0, 0, 0);
     }
-
-    const getDeliveryDate = (days: number) => {
-      const date = new Date(pickupDate);
-      let addedDays = 0;
-      while (addedDays < days) {
-        date.setDate(date.getDate() + 1);
-        // Skip weekends
-        if (date.getDay() !== 0 && date.getDay() !== 6) {
-          addedDays++;
-        }
-      }
-      return date.toISOString().split('T')[0];
-    };
 
     // Get pickup time slot based on the hour
     const hour = pickupDate.getHours();
-    let pickupTimeSlot = 'morning_2'; // Default to morning
+    let pickupTimeSlot = 'morning_2';
     if (hour >= 12 && hour < 17) {
       pickupTimeSlot = 'afternoon_2';
     } else if (hour >= 17) {
       pickupTimeSlot = 'evening_2';
     }
 
-    // Create service options message
-    const serviceOptionsMessage: Message = {
-      role: 'assistant',
-      content: `Based on your shipment details, here are the available service options:
-
-1. Express Freight - $${expressPrice}
-   - Priority handling and expedited transport
-   - Estimated delivery: ${expressDeliveryDays} business day${expressDeliveryDays > 1 ? 's' : ''}
-
-2. Standard Freight - $${standardPrice}
-   - Regular service with standard handling
-   - Estimated delivery: ${standardDeliveryDays} business days
-
-3. Eco Freight - $${ecoPrice}
-   - Cost-effective with consolidated handling
-   - Estimated delivery: ${ecoDeliveryDays} business days
-
-Please select your preferred service option (1, 2, or 3):`,
-      metadata: { timestamp: Date.now() }
-    };
-
-    setMessages(prev => [...prev, serviceOptionsMessage]);
-
+    // Return the geocoded addresses and route information
     return {
       isValid: true,
       quoteMetadata: {
@@ -278,7 +212,22 @@ Please select your preferred service option (1, 2, or 3):`,
               latitude: fromGeocode.latitude,
               longitude: fromGeocode.longitude
             },
-            placeDetails: fromGeocode,
+            placeDetails: {
+              city: fromGeocode.city,
+              state: fromGeocode.state,
+              country: fromGeocode.country,
+              latitude: fromGeocode.latitude,
+              longitude: fromGeocode.longitude,
+              stateCode: fromGeocode.stateCode,
+              postalCode: fromGeocode.postalCode,
+              coordinates: {
+                latitude: fromGeocode.latitude,
+                longitude: fromGeocode.longitude
+              },
+              countryCode: fromGeocode.countryCode,
+              countryFlag: fromGeocode.countryFlag,
+              formattedAddress: fromGeocode.formattedAddress
+            },
             formattedAddress: fromGeocode.formattedAddress
           },
           to: {
@@ -287,14 +236,31 @@ Please select your preferred service option (1, 2, or 3):`,
               latitude: toGeocode.latitude,
               longitude: toGeocode.longitude
             },
-            placeDetails: toGeocode,
+            placeDetails: {
+              city: toGeocode.city,
+              state: toGeocode.state,
+              country: toGeocode.country,
+              latitude: toGeocode.latitude,
+              longitude: toGeocode.longitude,
+              stateCode: toGeocode.stateCode,
+              postalCode: toGeocode.postalCode,
+              coordinates: {
+                latitude: toGeocode.latitude,
+                longitude: toGeocode.longitude
+              },
+              countryCode: toGeocode.countryCode,
+              countryFlag: toGeocode.countryFlag,
+              formattedAddress: toGeocode.formattedAddress
+            },
             formattedAddress: toGeocode.formattedAddress
           },
           pickupDate: pickupDate.toISOString().split('T')[0],
-          pickupTimeSlot: pickupTimeSlot
+          pickupTimeSlot
         },
-        estimatedPrice: expressPrice,
-        estimatedDelivery: getDeliveryDate(expressDeliveryDays)
+        route: {
+          distance: route.distance,
+          duration: route.duration
+        }
       }
     };
   };

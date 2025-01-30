@@ -150,36 +150,100 @@ export class QuoteAgent {
     metadata: {
       customer?: { id: string; name: string; email: string };
       token?: string;
+      quote: {
+        isQuote: boolean;
+        destination: {
+          from: {
+            address: string;
+            coordinates: {
+              latitude: number;
+              longitude: number;
+            };
+            placeDetails: {
+              city: string;
+              state: string;
+              country: string;
+              latitude: number;
+              longitude: number;
+              stateCode: string;
+              postalCode: string;
+              coordinates: {
+                latitude: number;
+                longitude: number;
+              };
+              countryCode: string;
+              countryFlag: string;
+              formattedAddress: string;
+            };
+            formattedAddress: string;
+          };
+          to: {
+            address: string;
+            coordinates: {
+              latitude: number;
+              longitude: number;
+            };
+            placeDetails: {
+              city: string;
+              state: string;
+              country: string;
+              latitude: number;
+              longitude: number;
+              stateCode: string;
+              postalCode: string;
+              coordinates: {
+                latitude: number;
+                longitude: number;
+              };
+              countryCode: string;
+              countryFlag: string;
+              formattedAddress: string;
+            };
+            formattedAddress: string;
+          };
+          pickupDate: string;
+          pickupTimeSlot: string;
+        };
+        packageDetails: {
+          type: string;
+          volume: string;
+          weight: string;
+          hazardous: boolean;
+          palletCount?: string;
+          specialRequirements: string;
+        };
+        selectedService: string;
+        estimatedPrice: number;
+        estimatedDelivery: string;
+      };
     }
   ): Promise<{ success: boolean; error?: string; ticket?: any }> {
     try {
-      const { packageDetails, addressDetails, serviceDetails } = quoteDetails;
-
-      // Format the ticket data according to the API schema
+      const { quote } = metadata;
+      
+      // Format the ticket data using the quote metadata
       const ticketData = {
-        title: `Shipping Quote - ${serviceDetails.type.replace(/_/g, ' ')}`,
+        title: `New Quote Request - ${quote.selectedService.replace(/_/g, ' ')}`,
         description: `
 Package Details:
-- Type: ${packageDetails.type.replace(/_/g, ' ')}
-- Weight: ${packageDetails.weight} tons
-- Volume: ${packageDetails.volume} cubic meters
-- Hazardous: ${packageDetails.hazardous ? 'Yes' : 'No'}
-${packageDetails.containerSize ? `- Container Size: ${packageDetails.containerSize}` : ''}
-${packageDetails.palletCount ? `- Pallet Count: ${packageDetails.palletCount}` : ''}
+- Type: ${quote.packageDetails.type.replace(/_/g, ' ')}
+- Weight: ${quote.packageDetails.weight} tons
+- Volume: ${quote.packageDetails.volume} cubic meters
+- Hazardous: ${quote.packageDetails.hazardous ? 'Yes' : 'No'}
+${quote.packageDetails.palletCount ? `- Pallet Count: ${quote.packageDetails.palletCount}` : ''}
+${quote.packageDetails.specialRequirements ? `- Special Requirements: ${quote.packageDetails.specialRequirements}` : ''}
 
 Pickup Address:
-${addressDetails.pickup.address}
-${addressDetails.pickup.city}${addressDetails.pickup.state ? `, ${addressDetails.pickup.state}` : ''}
-Pickup Time: ${addressDetails.pickupDateTime || 'Not specified'}
+${quote.destination.from.formattedAddress}
+Pickup Time: ${quote.destination.pickupDate} (${quote.destination.pickupTimeSlot.replace(/_/g, ' ')})
 
 Delivery Address:
-${addressDetails.delivery.address}
-${addressDetails.delivery.city}${addressDetails.delivery.state ? `, ${addressDetails.delivery.state}` : ''}
+${quote.destination.to.formattedAddress}
 
 Service Details:
-- Service Type: ${serviceDetails.type.replace(/_/g, ' ')}
-- Price: $${serviceDetails.price}
-- Estimated Duration: ${serviceDetails.duration}
+- Service Type: ${quote.selectedService.replace(/_/g, ' ')}
+- Estimated Price: $${quote.estimatedPrice}
+- Estimated Delivery: ${quote.estimatedDelivery}
         `.trim(),
         priority: 'medium',
         customer_id: metadata.customer?.id,
@@ -187,11 +251,7 @@ Service Details:
         type: 'task',
         source: 'web',
         metadata: {
-          quoteDetails: {
-            package: packageDetails,
-            addresses: addressDetails,
-            service: serviceDetails
-          }
+          quote
         }
       };
 
@@ -229,15 +289,14 @@ Service Details:
       let responseData;
       try {
         responseData = responseText ? JSON.parse(responseText) : { id: 'created' };
-      } catch (parseError) {
-        this.log('Error parsing response:', parseError);
-        // If we got a 201 but can't parse the response, consider it a success
+      } catch (error) {
+        this.log('Error parsing response:', error);
         if (response.status === 201) {
           responseData = { id: 'created' };
         } else {
           return {
             success: false,
-            error: `Failed to parse response: ${parseError.message}`
+            error: `Failed to parse response: ${error instanceof Error ? error.message : 'Unknown error'}`
           };
         }
       }
@@ -698,9 +757,106 @@ Service Details:
             this.log('No authenticated user found:', context.metadata);
             response = "I apologize, but you need to be logged in to create a quote. Please log in and try again.";
           } else {
+            // Collect all the details from the conversation
+            const packageDetails = this.findLastPackageDetails(context.messages);
+            const addressDetails = this.findLastAddressDetails(context.messages);
+            const serviceDetails = this.findLastServiceSelection(context.messages);
+
+            if (!packageDetails || !addressDetails || !serviceDetails) {
+              response = "I apologize, but I couldn't find all the necessary details. Let's start over:\n\n" + QUOTE_MESSAGES.START_QUOTE;
+              return {
+                content: response,
+                metadata: {
+                  agentId: 'quote',
+                  timestamp: Date.now(),
+                  error: 'Missing required details'
+                }
+              };
+            }
+
+            // Calculate distance for price adjustment
+            const distance = this.calculateDistance(
+              { city: addressDetails.pickup.city || '', state: addressDetails.pickup.state || '' },
+              { city: addressDetails.delivery.city || '', state: addressDetails.delivery.state || '' }
+            );
+
+            // Parse pickup date and time
+            const pickupDateTime = addressDetails.pickupDateTime || '';
+            const [day, time] = pickupDateTime.split(' at ');
+            const pickupDate = day ? new Date().toISOString().split('T')[0] : ''; // You may want to properly parse the day
+            const pickupTimeSlot = time && time.toLowerCase().includes('am') ? 'morning_2' : 
+                                 time && time.toLowerCase().includes('pm') && parseInt(time) < 5 ? 'afternoon_2' : 
+                                 'evening_2';
+
             const success = await this.createTicket(context.messages, {
               token,
-              customer
+              customer,
+              quote: {
+                isQuote: true,
+                destination: {
+                  from: {
+                    address: addressDetails.pickup.address,
+                    coordinates: {
+                      latitude: 0,
+                      longitude: 0
+                    },
+                    placeDetails: {
+                      city: addressDetails.pickup.city || '',
+                      state: addressDetails.pickup.state || '',
+                      country: 'United States',
+                      latitude: 0,
+                      longitude: 0,
+                      stateCode: addressDetails.pickup.state || '',
+                      postalCode: '',
+                      coordinates: {
+                        latitude: 0,
+                        longitude: 0
+                      },
+                      countryCode: 'US',
+                      countryFlag: '🇺🇸',
+                      formattedAddress: `${addressDetails.pickup.address}, ${addressDetails.pickup.city}${addressDetails.pickup.state ? `, ${addressDetails.pickup.state}` : ''}`
+                    },
+                    formattedAddress: `${addressDetails.pickup.address}, ${addressDetails.pickup.city}${addressDetails.pickup.state ? `, ${addressDetails.pickup.state}` : ''}`
+                  },
+                  to: {
+                    address: addressDetails.delivery.address,
+                    coordinates: {
+                      latitude: 0,
+                      longitude: 0
+                    },
+                    placeDetails: {
+                      city: addressDetails.delivery.city || '',
+                      state: addressDetails.delivery.state || '',
+                      country: 'United States',
+                      latitude: 0,
+                      longitude: 0,
+                      stateCode: addressDetails.delivery.state || '',
+                      postalCode: '',
+                      coordinates: {
+                        latitude: 0,
+                        longitude: 0
+                      },
+                      countryCode: 'US',
+                      countryFlag: '🇺🇸',
+                      formattedAddress: `${addressDetails.delivery.address}, ${addressDetails.delivery.city}${addressDetails.delivery.state ? `, ${addressDetails.delivery.state}` : ''}`
+                    },
+                    formattedAddress: `${addressDetails.delivery.address}, ${addressDetails.delivery.city}${addressDetails.delivery.state ? `, ${addressDetails.delivery.state}` : ''}`
+                  },
+                  pickupDate,
+                  pickupTimeSlot
+                },
+                packageDetails: {
+                  type: packageDetails.type,
+                  volume: packageDetails.volume,
+                  weight: packageDetails.weight,
+                  hazardous: packageDetails.hazardous,
+                  palletCount: packageDetails.palletCount || '',
+                  specialRequirements: packageDetails.specialRequirements || ''
+                },
+                selectedService: serviceDetails.type,
+                estimatedPrice: serviceDetails.price,
+                estimatedDelivery: serviceDetails.duration
+              }
             });
             if (success) {
               response = "Great! I've created your shipping quote. You'll receive a confirmation email shortly with all the details.\n\n" +

@@ -6,5 +6,4 @@ Pickup from 123 Main St, Los Angeles, CA to 456 Park Ave, New York, NY. Pickup n
 
 I'll take the standard freight option
 
-# Test 5: Confirm quote creation
-make_request "Yes, please create the quote"
+yes
