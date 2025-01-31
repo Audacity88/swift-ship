@@ -1,5 +1,7 @@
 'use client'
 
+import * as React from 'react'
+
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { 
@@ -38,7 +40,7 @@ const navItems: NavItem[] = [
   },
   {
     icon: Quote,
-    label: 'Quote',
+    label: 'Quotes',
     href: '/quote',
     roles: [RoleType.CUSTOMER],
   },
@@ -46,6 +48,18 @@ const navItems: NavItem[] = [
     icon: Truck,
     label: 'Shipments',
     href: '/shipments',
+    roles: [RoleType.CUSTOMER],
+  },
+  {
+    icon: MessageSquare,
+    label: 'Support Dashboard',
+    href: '/support',
+    roles: [RoleType.CUSTOMER],
+  },
+  {
+    icon: LifeBuoy,
+    label: 'AI Support',
+    href: '/portal/ai-support',
     roles: [RoleType.CUSTOMER],
   },
   {

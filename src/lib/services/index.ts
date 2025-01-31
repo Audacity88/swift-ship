@@ -17,6 +17,8 @@ export { authService } from './auth-service'
 export { conversationService } from './conversation-service'
 export { userService } from './user-service'
 export { customerService } from './customer-service'
+export { quoteCalculationService, type ServiceType, type ServiceOption } from './quote-calculation-service'
+export { quoteMetadataService } from './quote-metadata-service'
 
 // Individual Functions - Ticket Service
 export {
@@ -29,6 +31,7 @@ export {
 
 // Enums and Constants
 export { TicketPriority } from '@/types/ticket'
+export { SERVICE_RATES } from './quote-calculation-service'
 
 // Types
 export type { Ticket, TicketListItem, TicketStatus } from '@/types/ticket'

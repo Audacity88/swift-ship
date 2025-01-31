@@ -142,15 +142,15 @@ export function QuoteDetailView({
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Package className="w-4 h-4" />
-              <span>{quote.metadata.packageDetails.type.replace(/_/g, ' ').toUpperCase()}</span>
+              <span>{quote.metadata?.packageDetails?.type?.replace(/_/g, ' ').toUpperCase() || 'Unknown Type'}</span>
             </div>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <MapPin className="w-4 h-4" />
-              <span>{quote.metadata.destination.from.address} → {quote.metadata.destination.to.address}</span>
+              <span>{quote.metadata?.destination?.from?.address || 'Unknown'} → {quote.metadata?.destination?.to?.address || 'Unknown'}</span>
             </div>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Calendar className="w-4 h-4" />
-              <span>Pickup: {formatDate(quote.metadata.destination.pickupDate)}</span>
+              <span>Pickup: {formatDate(quote.metadata?.destination?.pickupDate)}</span>
             </div>
             {quote.metadata.estimatedDelivery && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -255,15 +255,15 @@ export function QuoteDetailView({
           <div>
             <h4 className="font-medium mb-2">Package Details</h4>
             <div className="space-y-1 text-sm">
-              <p>Weight: {quote.metadata.packageDetails.weight} metric tons</p>
-              <p>Volume: {quote.metadata.packageDetails.volume} m³</p>
-              {quote.metadata.packageDetails.containerSize && (
+              <p>Weight: {quote.metadata?.packageDetails?.weight || 'N/A'} metric tons</p>
+              <p>Volume: {quote.metadata?.packageDetails?.volume || 'N/A'} m³</p>
+              {quote.metadata?.packageDetails?.containerSize && (
                 <p>Container: {quote.metadata.packageDetails.containerSize}</p>
               )}
-              {quote.metadata.packageDetails.palletCount && (
+              {quote.metadata?.packageDetails?.palletCount && (
                 <p>Pallets: {quote.metadata.packageDetails.palletCount}</p>
               )}
-              <p>Hazardous: {quote.metadata.packageDetails.hazardous ? 'Yes' : 'No'}</p>
+              <p>Hazardous: {quote.metadata?.packageDetails?.hazardous ? 'Yes' : 'No'}</p>
             </div>
           </div>
         )}

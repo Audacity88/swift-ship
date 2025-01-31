@@ -10,15 +10,17 @@ const COOKIE_OPTIONS = {
 }
 
 export async function middleware(request: NextRequest) {
-  // console.log('\n[Middleware] Starting middleware check for:', request.nextUrl.pathname)
-  
+  // Handle favicon.ico requests immediately, without creating any response
+  if (request.nextUrl.pathname === '/favicon.ico') {
+    return new NextResponse(null, { status: 200 })
+  }
+
   // Skip middleware for API routes and public assets
   if (
     request.nextUrl.pathname.startsWith('/_next') ||
     request.nextUrl.pathname.startsWith('/api/') ||
     request.nextUrl.pathname.startsWith('/public')
   ) {
-    // console.log('[Middleware] Skipping middleware for system path')
     return NextResponse.next()
   }
 
@@ -38,9 +40,6 @@ export async function middleware(request: NextRequest) {
       cookies: {
         get(name: string) {
           const cookie = request.cookies.get(name)
-          // if (cookie?.value) {
-          //   console.log('[Middleware] Found cookie:', name)
-          // }
           return cookie?.value
         },
         set(name: string, value: string, options: any) {
@@ -70,7 +69,6 @@ export async function middleware(request: NextRequest) {
   try {
     // Check for session
     const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-    // console.log('[Middleware] Session check:', { hasSession: !!session, error: sessionError?.message })
 
     // Get user type early to use throughout middleware
     const { data: { user } } = await supabase.auth.getUser()
@@ -124,6 +122,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico).*)',
+    '/((?!_next/static|_next/image).*)',
   ]
 } 

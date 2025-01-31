@@ -61,4 +61,87 @@ export interface QuoteRequest {
   }
   status: string
   created_at: string
+}
+
+export interface QuoteMetadata {
+  isQuote: boolean;
+  destination?: {
+    from: {
+      address: string;
+      coordinates: {
+        latitude: number;
+        longitude: number;
+      };
+      placeDetails: {
+        city: string;
+        state: string;
+        country: string;
+        latitude: number;
+        longitude: number;
+        stateCode: string;
+        postalCode: string;
+        coordinates: {
+          latitude: number;
+          longitude: number;
+        };
+        countryCode: string;
+        countryFlag: string;
+        formattedAddress: string;
+      };
+      formattedAddress: string;
+    };
+    to: {
+      address: string;
+      coordinates: {
+        latitude: number;
+        longitude: number;
+      };
+      placeDetails: {
+        city: string;
+        state: string;
+        country: string;
+        latitude: number;
+        longitude: number;
+        stateCode: string;
+        postalCode: string;
+        coordinates: {
+          latitude: number;
+          longitude: number;
+        };
+        countryCode: string;
+        countryFlag: string;
+        formattedAddress: string;
+      };
+      formattedAddress: string;
+    };
+    pickupDate?: string;
+    pickupTimeSlot?: string;
+  };
+  packageDetails?: {
+    type: 'full_truckload' | 'less_than_truckload' | 'sea_container' | 'bulk_freight';
+    volume: string;
+    weight: string;
+    hazardous: boolean;
+    palletCount?: string;
+    specialRequirements: string;
+  };
+  selectedService?: 'express_freight' | 'standard_freight' | 'eco_freight';
+  estimatedPrice?: number;
+  estimatedDelivery?: string;
+  route?: {
+    distance: {
+      kilometers: number;
+      miles: number;
+    };
+    duration: {
+      minutes: number;
+      hours: number;
+    };
+  };
+  expressPrice?: number;
+  standardPrice?: number;
+  ecoPrice?: number;
+  expressDelivery?: string;
+  standardDelivery?: string;
+  ecoDelivery?: string;
 } 

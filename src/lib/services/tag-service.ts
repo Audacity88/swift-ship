@@ -35,11 +35,10 @@ export const tagService = {
           id,
           name,
           color,
-          usage_count,
           created_at
         `)
         .not('id', 'in', `(${existingTagIds.join(',')})`)
-        .order('usage_count', { ascending: false })
+        .order('created_at', { ascending: false })
         .limit(10)
 
       if (tagsError) {
@@ -55,7 +54,7 @@ export const tagService = {
           slug: tag.name.toLowerCase().replace(/\s+/g, '-'),
           created_at: tag.created_at,
         },
-        score: tag.usage_count || 0,
+        score: 0,
         reason: 'frequently_used',
       }))
     } catch (error) {
@@ -81,12 +80,10 @@ export const tagService = {
           id,
           name,
           color,
-          usage_count,
           created_at,
           created_by
         `)
         .ilike('name', `%${query}%`)
-        .order('usage_count', { ascending: false })
         .limit(20)
 
       if (error) {
@@ -99,7 +96,6 @@ export const tagService = {
         name: t.name,
         color: t.color || '#666666',
         slug: t.name.toLowerCase().replace(/\s+/g, '-'),
-        usage_count: t.usage_count || 0,
         created_at: t.created_at,
         created_by: t.created_by,
       }))
@@ -111,10 +107,12 @@ export const tagService = {
 
   async createTag(context: ServerContext, name: string, color?: string): Promise<Tag> {
     try {
+      console.log('[Tag Service] Creating new tag:', name)
       const supabase = getServerSupabase(context)
       const { data: { user }, error: userError } = await supabase.auth.getUser()
       
       if (userError || !user) {
+        console.error('[Tag Service] Unauthorized access')
         throw new Error('Unauthorized')
       }
 
@@ -124,52 +122,27 @@ export const tagService = {
           name,
           color: color || '#666666',
           created_by: user.id,
-          created_at: new Date().toISOString(),
-          usage_count: 0
+          created_at: new Date().toISOString()
         })
         .select()
         .single()
 
       if (error) {
-        console.error('Failed to create tag:', error)
+        console.error('[Tag Service] Failed to create tag:', error)
         throw error
       }
 
+      console.log('[Tag Service] Successfully created tag:', tag)
       return {
         id: tag.id,
         name: tag.name,
         color: tag.color,
         slug: tag.name.toLowerCase().replace(/\s+/g, '-'),
-        usage_count: 0,
         created_at: tag.created_at,
         created_by: tag.created_by,
       }
     } catch (error) {
-      console.error('Error in createTag:', error)
-      throw error
-    }
-  },
-
-  async updateTagUsage(context: ServerContext, tagId: string, increment: boolean = true): Promise<void> {
-    try {
-      const supabase = getServerSupabase(context)
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      
-      if (userError || !user) {
-        throw new Error('Unauthorized')
-      }
-
-      const { error } = await supabase.rpc('update_tag_usage_count', {
-        p_tag_id: tagId,
-        p_increment: increment
-      })
-
-      if (error) {
-        console.error('Failed to update tag usage:', error)
-        throw error
-      }
-    } catch (error) {
-      console.error('Error in updateTagUsage:', error)
+      console.error('[Tag Service] Error in createTag:', error)
       throw error
     }
   },
@@ -200,7 +173,6 @@ export const tagService = {
         name: data.name,
         color: data.color || '#666666',
         slug: data.name.toLowerCase().replace(/\s+/g, '-'),
-        usage_count: data.usage_count || 0,
         created_at: data.created_at,
         created_by: data.created_by,
       }
@@ -263,14 +235,10 @@ export const tagService = {
     ticketIds: string[]
   ): Promise<void> {
     try {
-      const supabase = getServerSupabase(context)
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      
-      if (userError || !user) {
+      const { supabase, user } = context
+      if (!supabase || !user) {
         throw new Error('Unauthorized')
       }
-
-      console.debug('Bulk updating ticket tags:', { operation, tagIds, ticketIds })
 
       if (operation === 'add') {
         // Create tag-ticket associations
@@ -281,20 +249,16 @@ export const tagService = {
           }))
         )
 
-        console.debug('Creating associations:', associations)
-
         // First verify the tags exist
         const { data: existingTags, error: tagCheckError } = await supabase
           .from('tags')
-          .select('id')
+          .select('*')
           .in('id', tagIds)
 
         if (tagCheckError) {
           console.error('Error checking tags:', tagCheckError)
           throw tagCheckError
         }
-
-        console.debug('Found existing tags:', existingTags)
 
         if (!existingTags || existingTags.length !== tagIds.length) {
           throw new Error('Some tags do not exist')
@@ -303,18 +267,16 @@ export const tagService = {
         // Insert the associations
         const { error } = await supabase
           .from('ticket_tags')
-          .upsert(associations, {
-            onConflict: 'ticket_id,tag_id',
-            ignoreDuplicates: true
-          })
+          .insert(associations)
 
         if (error) {
+          // If it's a duplicate, that's fine - ignore the error
+          if (error.code === '23505') { // PostgreSQL unique violation code
+            return
+          }
           console.error('Failed to add tags to tickets:', error)
           throw error
         }
-
-        // Update usage count for each tag
-        await Promise.all(tagIds.map(tagId => this.updateTagUsage(context, tagId, true)))
       } else {
         // Remove tag-ticket associations
         const { error } = await supabase
@@ -327,9 +289,6 @@ export const tagService = {
           console.error('Failed to remove tags from tickets:', error)
           throw error
         }
-
-        // Update usage count for each tag
-        await Promise.all(tagIds.map(tagId => this.updateTagUsage(context, tagId, false)))
       }
     } catch (error) {
       console.error('Error in bulkUpdateTicketTags:', error)
@@ -339,69 +298,97 @@ export const tagService = {
 
   async addTagToTicket(context: ServerContext, tagId: string, ticketId: string): Promise<void> {
     try {
-      const supabase = getServerSupabase(context)
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      
-      if (userError || !user) {
+      console.log('[Tag Service] Adding tag to ticket:', { tagId, ticketId })
+      const { supabase, user } = context
+      if (!supabase || !user) {
+        console.error('[Tag Service] Unauthorized access')
         throw new Error('Unauthorized')
       }
 
-      // First verify the tag exists
-      const { data: existingTag, error: tagCheckError } = await supabase
+      // Check if user is an agent or admin
+      const { data: agent } = await supabase
+        .from('agents')
+        .select('role')
+        .eq('id', user.id)
+        .single()
+
+      if (!agent) {
+        console.error('[Tag Service] Unauthorized - Agent access required')
+        throw new Error('Unauthorized - Agent access required')
+      }
+
+      // First get the tag details
+      const { data: tag, error: tagError } = await supabase
         .from('tags')
-        .select('id')
+        .select('*')
         .eq('id', tagId)
         .single()
 
-      if (tagCheckError || !existingTag) {
-        throw new Error('Tag does not exist')
+      if (tagError) {
+        console.error('Failed to fetch tag:', tagError)
+        throw tagError
       }
 
-      // Add the tag to the ticket
+      // Add the tag to the ticket_tags junction table
       const { error: insertError } = await supabase
         .from('ticket_tags')
-        .insert({ ticket_id: ticketId, tag_id: tagId })
+        .insert({
+          ticket_id: ticketId,
+          tag_id: tagId
+        })
 
       if (insertError) {
         // If it's a duplicate, that's fine - ignore the error
         if (insertError.code === '23505') { // PostgreSQL unique violation code
           return
         }
+        console.error('[Tag Service] Failed to add tag to ticket:', insertError)
         throw insertError
       }
 
-      // Update the tag usage count
-      await this.updateTagUsage(context, tagId, true)
+      console.log('[Tag Service] Successfully added tag to ticket')
     } catch (error) {
-      console.error('Error in addTagToTicket:', error)
+      console.error('[Tag Service] Error in addTagToTicket:', error)
       throw error
     }
   },
 
   async removeTagFromTicket(context: ServerContext, tagId: string, ticketId: string): Promise<void> {
     try {
-      const supabase = getServerSupabase(context)
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      
-      if (userError || !user) {
+      console.log('[Tag Service] Removing tag from ticket:', { tagId, ticketId })
+      const { supabase, user } = context
+      if (!supabase || !user) {
+        console.error('[Tag Service] Unauthorized access')
         throw new Error('Unauthorized')
       }
 
-      // Remove the tag from the ticket
-      const { error } = await supabase
+      // Check if user is an agent or admin
+      const { data: agent } = await supabase
+        .from('agents')
+        .select('role')
+        .eq('id', user.id)
+        .single()
+
+      if (!agent) {
+        console.error('[Tag Service] Unauthorized - Agent access required')
+        throw new Error('Unauthorized - Agent access required')
+      }
+
+      // Remove the tag from the ticket_tags junction table
+      const { error: deleteError } = await supabase
         .from('ticket_tags')
         .delete()
         .eq('ticket_id', ticketId)
         .eq('tag_id', tagId)
 
-      if (error) {
-        throw error
+      if (deleteError) {
+        console.error('[Tag Service] Failed to remove tag from ticket:', deleteError)
+        throw deleteError
       }
 
-      // Update the tag usage count
-      await this.updateTagUsage(context, tagId, false)
+      console.log('[Tag Service] Successfully removed tag from ticket')
     } catch (error) {
-      console.error('Error in removeTagFromTicket:', error)
+      console.error('[Tag Service] Error in removeTagFromTicket:', error)
       throw error
     }
   }

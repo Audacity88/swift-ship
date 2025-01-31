@@ -1,37 +1,44 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
-export const createClient = (cookieStore: ReturnType<typeof cookies>) => {
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
-    throw new Error('Missing env.NEXT_PUBLIC_SUPABASE_URL')
-  }
-  if (!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-    throw new Error('Missing env.NEXT_PUBLIC_SUPABASE_ANON_KEY')
-  }
-
+export const createClient = async () => {
+  const cookieStore = await cookies()
+  
   return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
         async get(name: string) {
           return cookieStore.get(name)?.value
         },
-        async set(name: string, value: string, options: any) {
+        async set(name: string, value: string, options: CookieOptions) {
           try {
-            cookieStore.set({ name, value, ...options })
+            cookieStore.set(name, value, options)
           } catch (error) {
-            // Handle the cookies.set error in development
+            // Handle cookie errors in development
+            console.error('Error setting cookie:', error)
           }
         },
-        async remove(name: string, options: any) {
+        async remove(name: string, options: CookieOptions) {
           try {
-            cookieStore.set({ name, value: '', ...options })
+            cookieStore.delete({ name, ...options })
           } catch (error) {
-            // Handle the cookies.delete error in development
+            // Handle cookie errors in development
+            console.error('Error removing cookie:', error)
           }
         },
       },
     }
   )
+}
+
+interface CookieOptions {
+  domain?: string
+  path?: string
+  expires?: Date
+  httpOnly?: boolean
+  maxAge?: number
+  sameSite?: 'strict' | 'lax' | 'none'
+  secure?: boolean
 } 

@@ -30,6 +30,7 @@ export function TicketConversation({
         isInternalNote={isInternalNote}
         onInternalNoteChange={handleInternalNoteChange}
         isAgent={isAgent}
+        hideHeader={true}
       />
     </div>
   )

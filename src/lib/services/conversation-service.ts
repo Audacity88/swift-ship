@@ -8,6 +8,12 @@ export interface Message {
   author_type: 'agent' | 'customer' | 'system'
   author_id: string
   created_at: string
+  author?: {
+    id: string
+    email: string
+    name: string | null
+    avatar_url: string | null
+  }
   attachments?: {
     name: string
     url: string
@@ -80,14 +86,55 @@ export const conversationService = {
       throw new Error('Unauthorized')
     }
 
-    const { data, error } = await supabase
+    // First get messages
+    const { data: messages, error: messagesError } = await supabase
       .from('messages')
       .select('*')
       .eq('ticket_id', ticketId)
       .order('created_at', { ascending: true })
 
-    if (error) throw error
-    return data as Message[]
+    if (messagesError) throw messagesError
+
+    // Group messages by author type
+    const customerMessages = messages.filter(m => m.author_type === 'customer')
+    const agentMessages = messages.filter(m => m.author_type === 'agent')
+
+    // Get customer authors
+    const customerIds = [...new Set(customerMessages.map(m => m.author_id))]
+    const { data: customers, error: customersError } = customerIds.length > 0 ? await supabase
+      .from('customers')
+      .select('id, name, email, avatar')
+      .in('id', customerIds) : { data: [], error: null }
+
+    if (customersError) throw customersError
+
+    // Get agent authors
+    const agentIds = [...new Set(agentMessages.map(m => m.author_id))]
+    const { data: agents, error: agentsError } = agentIds.length > 0 ? await supabase
+      .from('agents')
+      .select('id, name, email, avatar')
+      .in('id', agentIds) : { data: [], error: null }
+
+    if (agentsError) throw agentsError
+
+    // Map authors to messages
+    const messagesWithAuthors = messages.map(message => {
+      const author = message.author_type === 'customer' 
+        ? customers?.find(c => c.id === message.author_id)
+        : agents?.find(a => a.id === message.author_id)
+
+      return {
+        ...message,
+        author: author ? {
+          id: author.id,
+          email: author.email,
+          name: author.name,
+          avatar_url: author.avatar
+        } : undefined
+      }
+    })
+
+    return messagesWithAuthors as Message[]
   },
 
   async addMessage(
