@@ -122,6 +122,7 @@ AVAILABLE TOPICS:
           model: 'gpt-4o-mini',
           messages,
           temperature: 0.7,
+          max_tokens: 4000,
           stream: true
         });
 
