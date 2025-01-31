@@ -51,9 +51,15 @@ const navItems: NavItem[] = [
     roles: [RoleType.CUSTOMER],
   },
   {
-    icon: LifeBuoy,
-    label: 'Support',
+    icon: MessageSquare,
+    label: 'Support Dashboard',
     href: '/support',
+    roles: [RoleType.CUSTOMER],
+  },
+  {
+    icon: LifeBuoy,
+    label: 'AI Support',
+    href: '/portal/ai-support',
     roles: [RoleType.CUSTOMER],
   },
   {
