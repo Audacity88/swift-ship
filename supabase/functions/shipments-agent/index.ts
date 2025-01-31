@@ -55,11 +55,37 @@ serve(async (req: Request) => {
       async start(controller) {
         try {
           const encoder = new TextEncoder();
-          const chunk = encoder.encode(
-            `data: ${JSON.stringify({ type: 'chunk', content: response.content })}\n\n`
-          );
-          controller.enqueue(chunk);
 
+          // Split content into lines first
+          const lines = response.content.split('\n');
+          
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            
+            // Split each line into words
+            const words = line.split(/(\s+)/);
+            
+            for (const word of words) {
+              const data = encoder.encode(
+                `data: ${JSON.stringify({ type: 'chunk', content: word })}\n\n`
+              );
+              controller.enqueue(data);
+              // Small delay between words
+              await new Promise(resolve => setTimeout(resolve, 20));
+            }
+            
+            // Add newline if not the last line
+            if (i < lines.length - 1) {
+              const newline = encoder.encode(
+                `data: ${JSON.stringify({ type: 'chunk', content: '\n' })}\n\n`
+              );
+              controller.enqueue(newline);
+              // Slightly longer delay after newlines
+              await new Promise(resolve => setTimeout(resolve, 50));
+            }
+          }
+
+          // Send metadata if available
           if (response.metadata) {
             const metadata = encoder.encode(
               `data: ${JSON.stringify({ type: 'metadata', metadata: response.metadata })}\n\n`
