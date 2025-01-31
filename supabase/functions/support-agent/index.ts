@@ -37,6 +37,13 @@ serve(async (req: Request) => {
       throw new Error('OpenAI API key not configured');
     }
 
+    // Check for LangSmith environment variables
+    const langsmithApiKey = Deno.env.get('LANGSMITH_API_KEY');
+    const langsmithTracing = Deno.env.get('LANGSMITH_TRACING');
+    if (!langsmithApiKey || !langsmithTracing) {
+      console.warn('LangSmith environment variables not fully configured. Tracing may not work.');
+    }
+
     const agent = new SupportAgent(apiKey);
     const safeHistory = Array.isArray(body.conversationHistory) ? 
       body.conversationHistory.slice(-10) : 
