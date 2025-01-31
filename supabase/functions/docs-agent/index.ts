@@ -43,7 +43,7 @@ serve(async (req: Request) => {
           const encodeSSE = (data: any) => {
             const jsonString = JSON.stringify(data);
             // Split long messages into smaller chunks if needed
-            const maxChunkSize = 16384; // 16KB chunks
+            const maxChunkSize = 32768; // Increased from 16384
             if (jsonString.length > maxChunkSize) {
               const chunks = [];
               for (let i = 0; i < jsonString.length; i += maxChunkSize) {
@@ -54,14 +54,14 @@ serve(async (req: Request) => {
             return `data: ${jsonString}\n\n`;
           };
 
-          // Send the content in smaller chunks for better streaming
+          // Send the content in larger chunks for better streaming
           const words = agentResponse.content.split(/(\s+)/);
           let currentChunk = '';
           
           for (const word of words) {
             currentChunk += word;
             // Send chunk when it reaches a reasonable size or at the end
-            if (currentChunk.length > 20 || word === words[words.length - 1]) {
+            if (currentChunk.length > 1000 || word === words[words.length - 1]) {  // Increased from 20
               controller.enqueue(
                 new TextEncoder().encode(
                   encodeSSE({
@@ -71,8 +71,8 @@ serve(async (req: Request) => {
                 )
               );
               currentChunk = '';
-              // Add a small delay between chunks for smoother streaming
-              await new Promise(resolve => setTimeout(resolve, 50));
+              // Reduced delay between chunks for faster streaming
+              await new Promise(resolve => setTimeout(resolve, 10));  // Reduced from 50
             }
           }
 

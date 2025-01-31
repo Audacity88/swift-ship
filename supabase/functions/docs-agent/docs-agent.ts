@@ -122,7 +122,7 @@ AVAILABLE TOPICS:
           model: 'gpt-4o-mini',
           messages,
           temperature: 0.7,
-          max_tokens: 4000,
+          max_tokens: 8000,
           stream: true
         });
 
@@ -132,6 +132,13 @@ AVAILABLE TOPICS:
           if (content) {
             fullContent += content;
           }
+        }
+
+        // Split response into smaller chunks for streaming
+        const maxChunkSize = 32768;
+        const chunks = [];
+        for (let i = 0; i < fullContent.length; i += maxChunkSize) {
+          chunks.push(fullContent.slice(i, i + maxChunkSize));
         }
 
         return this.createMessage(fullContent, {
