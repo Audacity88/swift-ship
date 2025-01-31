@@ -1,7 +1,4 @@
 import { NextResponse } from 'next/server';
-import { serve } from '@/lib/quote-agent/deps';
-import { createClient, OpenAI } from '@/lib/quote-agent/deps';
-import { AgentFactory } from '@/lib/quote-agent/shared/agent-factory';
 import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
 
@@ -17,10 +14,20 @@ export async function POST(request: Request) {
             return cookieStore.get(name)?.value;
           },
           set(name: string, value: string, options: any) {
-            cookieStore.set({ name, value, ...options });
+            try {
+              cookieStore.set(name, value, options);
+            } catch (error) {
+              // Handle cookie setting error
+              console.error('Error setting cookie:', error);
+            }
           },
           remove(name: string, options: any) {
-            cookieStore.delete({ name, ...options });
+            try {
+              cookieStore.delete(name, options);
+            } catch (error) {
+              // Handle cookie deletion error
+              console.error('Error deleting cookie:', error);
+            }
           },
         },
       }
@@ -54,19 +61,25 @@ export async function POST(request: Request) {
       }
     ];
 
-    // Get the appropriate agent
-    const agent = AgentFactory.getAgent(agentType || 'router');
-    
-    // Process the request
-    const response = await agent.process({ 
-      messages,
-      metadata: {
-        ...metadata,
-        environment: 'local',
-        agentType,
-        userId: user.id
+    // Call the appropriate Edge Function based on agent type
+    const { data: response, error } = await supabase.functions.invoke(
+      `${agentType || 'router'}-agent`,
+      {
+        body: {
+          messages,
+          metadata: {
+            ...metadata,
+            environment: process.env.NODE_ENV,
+            agentType,
+            userId: user.id
+          }
+        }
       }
-    });
+    );
+
+    if (error) {
+      throw error;
+    }
 
     // Create a streaming response
     const stream = new ReadableStream({
