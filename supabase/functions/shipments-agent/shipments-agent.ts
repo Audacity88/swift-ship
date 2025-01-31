@@ -150,7 +150,7 @@ GUIDELINES:
           shipment_events (*),
           quotes:quote_id (metadata)
         `)
-        .eq('tracking_number', tracking_number)
+        .ilike('tracking_number', tracking_number)
         .single();
 
       if (shipmentError) return null;
@@ -169,65 +169,15 @@ GUIDELINES:
     }
   }
 
-  private async updateShipment(request: ShipmentUpdateRequest): Promise<ShipmentOperationResult> {
-    const { tracking_number, updates } = request;
-    
+  private async cancelShipment(tracking_number: string, customerId?: string): Promise<ShipmentOperationResult> {
     try {
-      const { data: shipment, error: fetchError } = await this.supabase
+      // Ensure we're using the service role client
+      const serviceRoleClient = this.supabase;
+
+      const { data: shipment, error: fetchError } = await serviceRoleClient
         .from('shipments')
         .select('*')
-        .eq('tracking_number', tracking_number)
-        .single();
-
-      if (fetchError || !shipment) {
-        throw new Error(`Shipment not found with tracking number ${tracking_number}`);
-      }
-
-      const updateData: Record<string, any> = {
-        updated_at: new Date().toISOString(),
-        ...updates,
-        status: updates.scheduled_pickup ? 'pickup_scheduled' : undefined
-      };
-
-      const { data: updatedShipment, error: updateError } = await this.supabase
-        .from('shipments')
-        .update(updateData)
-        .eq('id', shipment.id)
-        .select()
-        .single();
-
-      if (updateError) throw updateError;
-
-      await this.supabase
-        .from('shipment_events')
-        .insert({
-          shipment_id: shipment.id,
-          status: updateData.status || shipment.status,
-          notes: `Shipment details updated: ${Object.keys(updates).join(', ')}`,
-          created_at: new Date().toISOString(),
-          created_by: 'system'
-        });
-
-      return {
-        success: true,
-        message: `Successfully updated shipment ${tracking_number}`,
-        shipment: updatedShipment
-      };
-    } catch (error) {
-      console.error('Error updating shipment:', error);
-      return {
-        success: false,
-        message: `Failed to update shipment: ${(error as Error).message}`
-      };
-    }
-  }
-
-  private async cancelShipment(tracking_number: string): Promise<ShipmentOperationResult> {
-    try {
-      const { data: shipment, error: fetchError } = await this.supabase
-        .from('shipments')
-        .select('*')
-        .eq('tracking_number', tracking_number)
+        .ilike('tracking_number', tracking_number)
         .single();
 
       if (fetchError || !shipment) {
@@ -238,22 +188,18 @@ GUIDELINES:
         throw new Error(`Cannot cancel shipment in ${shipment.status} status`);
       }
 
-      const { error: cancelError } = await this.supabase.functions.invoke('cancel-shipment', {
-        body: { 
-          shipmentId: shipment.id,
-          notes: 'Cancelled via AI assistant'
-        }
-      });
-
-      if (cancelError) throw cancelError;
-
-      const { data: updatedShipment, error: getError } = await this.supabase
+      // Update shipment status to cancelled
+      const { data: updatedShipment, error: updateError } = await serviceRoleClient
         .from('shipments')
-        .select('*')
+        .update({
+          status: 'cancelled',
+          updated_at: new Date().toISOString()
+        })
         .eq('id', shipment.id)
+        .select()
         .single();
 
-      if (getError) throw getError;
+      if (updateError) throw updateError;
 
       return {
         success: true,
@@ -311,7 +257,7 @@ GUIDELINES:
       if (operationMatch) {
         const trackingNumber = operationMatch[1];
         if (content.includes('cancel')) {
-          operationResult = await this.cancelShipment(trackingNumber);
+          operationResult = await this.cancelShipment(trackingNumber, context.metadata?.customer?.id);
           return {
             content: operationResult.success 
               ? `✅ ${operationResult.message}. The shipment has been cancelled and all relevant parties will be notified.`
