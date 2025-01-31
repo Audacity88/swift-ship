@@ -11,6 +11,12 @@ import { createBrowserClient } from '@supabase/ssr';
 import { QuoteMetadata } from '@/types/quote';
 import { quoteMetadataService } from '@/lib/services/quote-metadata-service';
 import { shipmentService } from '@/lib/services';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
+import rehypeSanitize from 'rehype-sanitize';
+import rehypeHighlight from 'rehype-highlight';
+import hljs from 'highlight.js';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -70,6 +76,19 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
   const { user } = useAuth();
   const [customerShipments, setCustomerShipments] = useState<any[]>([]);
 
+  // Reset conversation when agent type changes
+  useEffect(() => {
+    setMessages(initialMessage ? [{
+      role: 'assistant',
+      content: initialMessage,
+      metadata: { timestamp: Date.now(), agent: agentType }
+    }] : []);
+    setInput('');
+    setIsLoading(false);
+    setQuoteMetadataState({ isQuote: agentType === 'quote' });
+    setCustomerShipments([]);
+  }, [agentType, initialMessage]);
+
   const scrollToBottom = () => {
     const viewport = document.querySelector('[data-radix-scroll-area-viewport]');
     if (viewport) {
@@ -116,6 +135,11 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
 
     void fetchShipments();
   }, [agentType, user?.id]);
+
+  // Add useEffect for highlight.js initialization
+  useEffect(() => {
+    hljs.highlightAll();
+  }, [messages]); // Re-run when messages change
 
   const simulateStreaming = async (content: string, updateMessage: (text: string) => void) => {
     const words = content.split(/(\s+)/); // Split by whitespace but keep the separators
@@ -597,66 +621,185 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
     }
   };
 
+  // Custom styles for code highlighting
+  const codeStyle = `
+    .hljs {
+      background: hsl(var(--muted));
+      color: hsl(var(--foreground));
+    }
+    .hljs-keyword { color: #c678dd; }
+    .hljs-string { color: #98c379; }
+    .hljs-number { color: #d19a66; }
+    .hljs-function { color: #61afef; }
+    .hljs-title { color: #61afef; }
+    .hljs-params { color: #abb2bf; }
+    .hljs-comment { color: #5c6370; font-style: italic; }
+    .hljs-doctag { color: #c678dd; }
+    .hljs-meta { color: #e06c75; }
+    .hljs-section { color: #e06c75; }
+    .hljs-built_in { color: #e6c07b; }
+    .hljs-literal { color: #56b6c2; }
+    .hljs-addition { color: #98c379; }
+    .hljs-deletion { color: #e06c75; }
+  `;
+
+  // Custom components for markdown rendering
+  const MarkdownComponents = {
+    // Style paragraphs
+    p: ({ children }: { children: React.ReactNode }) => (
+      <p className="mb-2 last:mb-0">{children}</p>
+    ),
+    // Style code blocks
+    code: ({ node, inline, className, children, ...props }: any) => {
+      const match = /language-(\w+)/.exec(className || '');
+      const isInline = inline || !match;
+      return isInline ? (
+        <code className="px-1 py-0.5 rounded-md bg-muted font-mono text-sm" {...props}>
+          {children}
+        </code>
+      ) : (
+        <div className="relative">
+          <div className="absolute right-2 top-2 text-xs text-muted-foreground">
+            {match[1]}
+          </div>
+          <code
+            className={cn(
+              'block p-4 rounded-lg bg-muted font-mono text-sm overflow-x-auto',
+              className
+            )}
+            {...props}
+          >
+            {children}
+          </code>
+        </div>
+      );
+    },
+    // Style links
+    a: ({ href, children }: { href?: string; children: React.ReactNode }) => (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-blue-500 hover:text-blue-600 hover:underline"
+      >
+        {children}
+      </a>
+    ),
+    // Style lists
+    ul: ({ children }: { children: React.ReactNode }) => (
+      <ul className="list-disc pl-6 mb-2 space-y-1">{children}</ul>
+    ),
+    ol: ({ children }: { children: React.ReactNode }) => (
+      <ol className="list-decimal pl-6 mb-2 space-y-1">{children}</ol>
+    ),
+    // Style headings
+    h1: ({ children }: { children: React.ReactNode }) => (
+      <h1 className="text-2xl font-bold mb-4">{children}</h1>
+    ),
+    h2: ({ children }: { children: React.ReactNode }) => (
+      <h2 className="text-xl font-bold mb-3">{children}</h2>
+    ),
+    h3: ({ children }: { children: React.ReactNode }) => (
+      <h3 className="text-lg font-bold mb-2">{children}</h3>
+    ),
+    // Style blockquotes
+    blockquote: ({ children }: { children: React.ReactNode }) => (
+      <blockquote className="border-l-4 border-primary pl-4 italic my-2">
+        {children}
+      </blockquote>
+    ),
+    // Style tables
+    table: ({ children }: { children: React.ReactNode }) => (
+      <div className="overflow-x-auto my-4">
+        <table className="min-w-full divide-y divide-border">
+          {children}
+        </table>
+      </div>
+    ),
+    th: ({ children }: { children: React.ReactNode }) => (
+      <th className="px-4 py-2 bg-muted font-medium">{children}</th>
+    ),
+    td: ({ children }: { children: React.ReactNode }) => (
+      <td className="px-4 py-2 border-t">{children}</td>
+    ),
+  };
+
   return (
-    <div className={cn("flex flex-col h-[600px] w-full max-w-2xl mx-auto border rounded-lg overflow-hidden bg-background", className)}>
-      <ScrollArea className="flex-1 p-4">
-        <div className="space-y-4">
-          {messages.map((message, index) => (
-            <div
-              key={index}
-              className={cn(
-                'flex w-full max-w-[80%] rounded-lg px-4 py-2',
-                message.role === 'user'
-                  ? 'ml-auto bg-primary text-primary-foreground'
-                  : 'bg-muted'
-              )}
-            >
-              <div className="space-y-2 w-full">
-                <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>
-                {message.metadata?.context && message.metadata.context.length > 0 && (
-                  <div className="mt-2 text-sm">
-                    <p className="text-muted-foreground mb-1">Sources:</p>
-                    <ul className="list-disc pl-4 space-y-1">
-                      {message.metadata.context.map((source, index) => (
-                        <li key={index} className="text-muted-foreground">
-                          <a 
-                            href={source.url} 
-                            className="text-blue-500 hover:text-blue-600 hover:underline"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            {source.title}
-                          </a>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
+    <>
+      <style jsx global>{codeStyle}</style>
+      <div className={cn("flex flex-col h-[600px] w-full max-w-2xl mx-auto border rounded-lg overflow-hidden bg-background", className)}>
+        <ScrollArea className="flex-1 p-4">
+          <div className="space-y-4">
+            {messages.map((message, index) => (
+              <div
+                key={index}
+                className={cn(
+                  'flex w-full max-w-[80%] rounded-lg px-4 py-2',
+                  message.role === 'user'
+                    ? 'ml-auto bg-primary text-primary-foreground'
+                    : 'bg-muted'
                 )}
+              >
+                <div className="space-y-2 w-full">
+                  <ReactMarkdown
+                    className={cn(
+                      "text-sm break-words",
+                      message.role === 'user' && "text-primary-foreground"
+                    )}
+                    remarkPlugins={[remarkGfm]}
+                    rehypePlugins={[rehypeRaw, rehypeSanitize, rehypeHighlight]}
+                    components={MarkdownComponents}
+                  >
+                    {message.content}
+                  </ReactMarkdown>
+                  {message.metadata?.context && message.metadata.context.length > 0 && (
+                    <div className="mt-2 text-sm">
+                      <p className="text-muted-foreground mb-1">Sources:</p>
+                      <ul className="list-disc pl-4 space-y-1">
+                        {message.metadata.context.map((source, index) => (
+                          <li key={index} className={cn(
+                            "text-muted-foreground",
+                            message.role === 'user' && "text-primary-foreground"
+                          )}>
+                            <a 
+                              href={source.url} 
+                              className="text-blue-500 hover:text-blue-600 hover:underline"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              {source.title}
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
-          <div ref={messagesEndRef} />
-        </div>
-      </ScrollArea>
-      <form onSubmit={handleSubmit} className="p-4 border-t bg-background">
-        <div className="flex gap-4">
-          <Textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Type your message..."
-            className="min-h-[60px]"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleSubmit(e);
-              }
-            }}
-          />
-          <Button type="submit" size="icon" disabled={isLoading}>
-            <Send className="h-4 w-4" />
-          </Button>
-        </div>
-      </form>
-    </div>
+            ))}
+            <div ref={messagesEndRef} />
+          </div>
+        </ScrollArea>
+        <form onSubmit={handleSubmit} className="p-4 border-t bg-background">
+          <div className="flex gap-4">
+            <Textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Type your message..."
+              className="min-h-[60px]"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSubmit(e);
+                }
+              }}
+            />
+            <Button type="submit" size="icon" disabled={isLoading}>
+              <Send className="h-4 w-4" />
+            </Button>
+          </div>
+        </form>
+      </div>
+    </>
   );
 } 

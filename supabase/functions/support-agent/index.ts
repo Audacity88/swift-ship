@@ -12,14 +12,9 @@ interface Message {
   metadata?: Record<string, any>;
 }
 
-interface AgentRequest {
+interface Request {
   message: string;
   conversationHistory: Message[];
-  metadata?: Record<string, any>;
-}
-
-interface AgentResponse {
-  content: string;
   metadata?: Record<string, any>;
 }
 
@@ -29,48 +24,74 @@ serve(async (req: Request) => {
   }
 
   try {
-    const body = await req.json() as AgentRequest;
-    console.log('Raw request body:', body);
-
-    const { message, conversationHistory, metadata } = body;
-
-    if (!message && (!conversationHistory || conversationHistory.length === 0)) {
+    const body = await req.json() as Request;
+    if (!body.message && (!body.conversationHistory?.length)) {
       return new Response(
         JSON.stringify({ error: 'No input provided' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const safeHistory = Array.isArray(conversationHistory) ? conversationHistory : [];
-    const allMessages = safeHistory;
-
-    if (!safeHistory.length && message) {
-      allMessages.push({ role: 'user', content: message });
+    const apiKey = Deno.env.get('OPENAI_API_KEY');
+    if (!apiKey) {
+      throw new Error('OpenAI API key not configured');
     }
 
-    const agent = new SupportAgent(Deno.env.get('OPENAI_API_KEY') ?? '');
-    const agentResponse: AgentResponse = await agent.process({
-      messages: allMessages,
-      metadata
+    const agent = new SupportAgent(apiKey);
+    const safeHistory = Array.isArray(body.conversationHistory) ? 
+      body.conversationHistory.slice(-10) : 
+      [];
+    
+    if (!safeHistory.length && body.message) {
+      safeHistory.push({ role: 'user', content: body.message });
+    }
+
+    const agentResponse = await agent.process({
+      messages: safeHistory,
+      metadata: body.metadata
     });
 
+    // Create a streaming response
     const stream = new ReadableStream({
-      start(controller) {
+      async start(controller) {
         try {
           const encodeSSE = (data: any) => {
             const jsonString = JSON.stringify(data);
+            // Split long messages into smaller chunks if needed
+            const maxChunkSize = 16384; // 16KB chunks
+            if (jsonString.length > maxChunkSize) {
+              const chunks = [];
+              for (let i = 0; i < jsonString.length; i += maxChunkSize) {
+                chunks.push(jsonString.slice(i, i + maxChunkSize));
+              }
+              return chunks.map(chunk => `data: ${chunk}\n`).join('') + '\n';
+            }
             return `data: ${jsonString}\n\n`;
           };
 
-          controller.enqueue(
-            new TextEncoder().encode(
-              encodeSSE({
-                type: 'chunk',
-                content: agentResponse.content
-              })
-            )
-          );
+          // Send the content in smaller chunks for better streaming
+          const words = agentResponse.content.split(/(\s+)/);
+          let currentChunk = '';
+          
+          for (const word of words) {
+            currentChunk += word;
+            // Send chunk when it reaches a reasonable size or at the end
+            if (currentChunk.length > 20 || word === words[words.length - 1]) {
+              controller.enqueue(
+                new TextEncoder().encode(
+                  encodeSSE({
+                    type: 'chunk',
+                    content: currentChunk
+                  })
+                )
+              );
+              currentChunk = '';
+              // Add a small delay between chunks for smoother streaming
+              await new Promise(resolve => setTimeout(resolve, 50));
+            }
+          }
 
+          // Send metadata if available
           if (agentResponse.metadata) {
             controller.enqueue(
               new TextEncoder().encode(
@@ -101,6 +122,7 @@ serve(async (req: Request) => {
         'Connection': 'keep-alive'
       }
     });
+
   } catch (error) {
     console.error('Error:', error);
     return new Response(

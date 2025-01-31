@@ -54,7 +54,10 @@ export function formatShipmentEvents(events: ShipmentEvent[]): string {
 }
 
 export function formatShipments(shipments: Shipment[]): string {
-  return shipments.map((shipment, index) => {
+  // Limit to 5 shipments
+  const limitedShipments = shipments.slice(0, 5);
+  
+  return limitedShipments.map((shipment, index) => {
     // Basic shipment details
     let details = `
 Shipment ${index + 1}:
