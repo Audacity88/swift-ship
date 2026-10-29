@@ -1,179 +1,102 @@
-import { createBrowserClient } from '@supabase/ssr'
-import { render, screen, waitFor } from '@testing-library/react'
-import { useRouter } from 'next/navigation'
+import { redirect } from 'next/navigation'
+import { getServerSupabase } from '@/lib/supabase-client'
 import { withRoleProtection } from '@/lib/auth/withRoleProtection'
 
-jest.mock('@supabase/ssr')
-jest.mock('next/navigation', () => ({
-  useRouter: jest.fn(),
-}))
-
-// Mock component for testing
-const ProtectedComponent = () => <div>Protected Content</div>
-
-// Create mock roles and permissions
-const mockRoles = {
-  ADMIN: ['manage_users', 'manage_tickets', 'manage_knowledge_base'],
-  AGENT: ['view_tickets', 'update_tickets', 'view_knowledge_base'],
-  CUSTOMER: ['view_own_tickets', 'view_knowledge_base'],
-}
+jest.mock('@/lib/supabase-client', () => ({ getServerSupabase: jest.fn() }))
+// Record destinations without Next's framework redirect exception.
+jest.mock('next/navigation', () => ({ redirect: jest.fn() }))
 
 describe('Role-Based Access Control', () => {
-  const mockRouter = {
-    push: jest.fn(),
-    replace: jest.fn(),
-  }
-  const mockSupabase = {
-    auth: {
-      getSession: jest.fn(),
-    },
-  }
+  const mockGetUser = jest.fn()
+  const mockUserRole = jest.fn()
+  const mockRole = jest.fn()
+  const mockFrom = jest.fn()
 
   beforeEach(() => {
-    (useRouter as jest.Mock).mockReturnValue(mockRouter)
-    ;(createBrowserClient as jest.Mock).mockReturnValue(mockSupabase)
-    mockRouter.replace.mockClear()
+    jest.resetAllMocks()
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'user1' } }, error: null })
+    mockUserRole.mockResolvedValue({ data: { role_id: 'role1' }, error: null })
+    mockRole.mockResolvedValue({ data: { name: 'ADMIN' }, error: null })
+    mockFrom.mockImplementation((table: string) => ({
+      select: jest.fn().mockReturnValue({
+        eq: jest.fn().mockReturnValue({
+          single: table === 'user_roles' ? mockUserRole : mockRole,
+        }),
+      }),
+    }))
+    ;(getServerSupabase as jest.Mock).mockReturnValue({
+      auth: { getUser: mockGetUser },
+      from: mockFrom,
+    })
+    jest.spyOn(console, 'error').mockImplementation(() => {})
   })
 
-  afterEach(() => {
-    jest.clearAllMocks()
+  afterEach(() => jest.restoreAllMocks())
+
+  // withRoleProtection returns an async server guard, not a React component.
+  // Await every invocation so errors belong to Jest rather than Node's
+  // unhandled-rejection handler.
+  it.each(['ADMIN', 'AGENT', 'CUSTOMER'])('allows the stored %s role', async (role) => {
+    mockRole.mockResolvedValue({ data: { name: role }, error: null })
+    const context = { req: { cookies: {} }, res: {} } as Parameters<typeof getServerSupabase>[0]
+
+    await expect(withRoleProtection([role])(context)).resolves.toBeNull()
+
+    expect(getServerSupabase).toHaveBeenCalledWith(context)
+    expect(mockGetUser).toHaveBeenCalledTimes(1)
+    expect(mockFrom.mock.calls).toEqual([['user_roles'], ['roles']])
+    expect(redirect).not.toHaveBeenCalled()
   })
 
-  describe('Admin Access', () => {
-    beforeEach(() => {
-      mockSupabase.auth.getSession.mockResolvedValue({
-        data: {
-          session: {
-            user: {
-              id: 'admin1',
-              user_metadata: { role: 'ADMIN' },
-            },
-          },
-        },
-        error: null,
-      })
-    })
+  it.each(['AGENT', 'CUSTOMER', 'INVALID_ROLE'])('rejects the stored %s role from an admin route', async (role) => {
+    mockRole.mockResolvedValue({ data: { name: role }, error: null })
 
-    it('allows admin access to protected routes', async () => {
-      const ProtectedRoute = withRoleProtection(ProtectedComponent, ['ADMIN'])
-      render(<ProtectedRoute />)
+    await withRoleProtection(['ADMIN'])(undefined)
 
-      await waitFor(() => {
-        expect(screen.getByText('Protected Content')).toBeInTheDocument()
-      })
-      expect(mockRouter.replace).not.toHaveBeenCalled()
-    })
-
-    it('allows admin access to all features', async () => {
-      const features = ['manage_users', 'manage_tickets', 'manage_knowledge_base']
-      features.forEach(async (feature) => {
-        const ProtectedFeature = withRoleProtection(ProtectedComponent, ['ADMIN'], [feature])
-        render(<ProtectedFeature />)
-
-        await waitFor(() => {
-          expect(screen.getByText('Protected Content')).toBeInTheDocument()
-        })
-      })
-    })
+    expect(redirect).toHaveBeenCalledTimes(1)
+    expect(redirect).toHaveBeenCalledWith('/')
   })
 
-  describe('Agent Access', () => {
-    beforeEach(() => {
-      mockSupabase.auth.getSession.mockResolvedValue({
-        data: {
-          session: {
-            user: {
-              id: 'agent1',
-              user_metadata: { role: 'AGENT' },
-            },
-          },
-        },
-        error: null,
-      })
-    })
+  it('redirects unauthenticated users before querying roles', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: null }, error: null })
 
-    it('prevents agent access to user management', async () => {
-      const ProtectedRoute = withRoleProtection(ProtectedComponent, ['ADMIN'])
-      render(<ProtectedRoute />)
+    await withRoleProtection(['ADMIN'])(undefined)
 
-      await waitFor(() => {
-        expect(mockRouter.replace).toHaveBeenCalledWith('/unauthorized')
-      })
-    })
+    expect(redirect).toHaveBeenCalledWith('/auth/signin')
+    expect(mockFrom).not.toHaveBeenCalled()
   })
 
-  describe('Customer Access', () => {
-    beforeEach(() => {
-      mockSupabase.auth.getSession.mockResolvedValue({
-        data: {
-          session: {
-            user: {
-              id: 'customer1',
-              user_metadata: { role: 'CUSTOMER' },
-            },
-          },
-        },
-        error: null,
-      })
-    })
+  it('handles authentication errors', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: null }, error: new Error('Auth error') })
 
-    it('prevents customer access to all tickets', async () => {
-      const ProtectedRoute = withRoleProtection(ProtectedComponent, ['ADMIN', 'AGENT'])
-      render(<ProtectedRoute />)
+    await withRoleProtection(['ADMIN'])(undefined)
 
-      await waitFor(() => {
-        expect(mockRouter.replace).toHaveBeenCalledWith('/unauthorized')
-      })
-    })
+    expect(redirect).toHaveBeenCalledWith('/auth/signin')
+    expect(mockFrom).not.toHaveBeenCalled()
   })
 
-  describe('Unauthenticated Access', () => {
-    beforeEach(() => {
-      mockSupabase.auth.getSession.mockResolvedValue({
-        data: { session: null },
-        error: null,
-      })
-    })
+  it('handles a rejected authentication request', async () => {
+    mockGetUser.mockRejectedValue(new Error('Session error'))
 
-    it('redirects to sign in for unauthenticated users', async () => {
-      const ProtectedRoute = withRoleProtection(ProtectedComponent, ['ADMIN'])
-      render(<ProtectedRoute />)
+    await withRoleProtection(['ADMIN'])(undefined)
 
-      await waitFor(() => {
-        expect(mockRouter.replace).toHaveBeenCalledWith('/auth/signin')
-      })
-    })
+    expect(redirect).toHaveBeenCalledWith('/auth/signin')
   })
 
-  describe('Error Handling', () => {
-    it('handles session error gracefully', async () => {
-      mockSupabase.auth.getSession.mockRejectedValue(new Error('Session error'))
-      const ProtectedRoute = withRoleProtection(ProtectedComponent, ['ADMIN'])
-      render(<ProtectedRoute />)
+  it('handles a missing user role', async () => {
+    mockUserRole.mockResolvedValue({ data: null, error: null })
 
-      await waitFor(() => {
-        expect(mockRouter.replace).toHaveBeenCalledWith('/auth/signin')
-      })
-    })
+    await withRoleProtection(['ADMIN'])(undefined)
 
-    it('handles invalid role gracefully', async () => {
-      mockSupabase.auth.getSession.mockResolvedValue({
-        data: {
-          session: {
-            user: {
-              id: 'user1',
-              user_metadata: { role: 'INVALID_ROLE' },
-            },
-          },
-        },
-      })
-
-      const ProtectedRoute = withRoleProtection(ProtectedComponent, ['ADMIN'])
-      render(<ProtectedRoute />)
-
-      await waitFor(() => {
-        expect(mockRouter.replace).toHaveBeenCalledWith('/unauthorized')
-      })
-    })
+    expect(redirect).toHaveBeenCalledWith('/auth/signin')
+    expect(mockRole).not.toHaveBeenCalled()
   })
-}) 
+
+  it('handles a failed role lookup', async () => {
+    mockRole.mockResolvedValue({ data: null, error: new Error('Role error') })
+
+    await withRoleProtection(['ADMIN'])(undefined)
+
+    expect(redirect).toHaveBeenCalledWith('/auth/signin')
+  })
+})
