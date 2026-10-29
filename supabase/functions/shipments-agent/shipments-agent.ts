@@ -1,6 +1,4 @@
 import { OpenAI, traceable, wrapOpenAI } from './deps.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
-import type { Context, Response, Shipment, ShipmentOperationResult, ShipmentUpdateRequest } from './types.ts';
 import { formatShipments, formatStatus } from './formatters.ts';
 
 // Ensure LangSmith environment variables are set
@@ -88,32 +86,17 @@ interface ShipmentOperationResult {
 
 export class ShipmentsAgent {
   private openai: OpenAI | null = null;
-  private static instance: ShipmentsAgent | null = null;
-  private supabase: any;
-
   private constructor(
     private apiKey: string,
-    private supabaseUrl?: string,
-    private supabaseKey?: string
+    private supabase: any,
+    private customerId: string
   ) {
-    if (!apiKey) throw new Error('OpenAI API key is required');
-    
-    const url = supabaseUrl || Deno.env.get('SUPABASE_URL');
-    const key = supabaseKey || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    
-    if (!url || !key) throw new Error('Supabase configuration is required');
-    this.supabase = createClient(url, key);
+    if (!apiKey || !supabase || !customerId) throw new Error('Authenticated caller is required');
   }
 
-  public static getInstance(
-    apiKey: string,
-    supabaseUrl?: string,
-    supabaseKey?: string
-  ): ShipmentsAgent {
-    if (!ShipmentsAgent.instance) {
-      ShipmentsAgent.instance = new ShipmentsAgent(apiKey, supabaseUrl, supabaseKey);
-    }
-    return ShipmentsAgent.instance;
+  public static getInstance(apiKey: string, supabase: any, customerId: string): ShipmentsAgent {
+    // A fresh agent prevents one request from retaining another caller's client.
+    return new ShipmentsAgent(apiKey, supabase, customerId);
   }
 
   private initializeOpenAI = traceable(
@@ -171,6 +154,7 @@ GUIDELINES:
             shipment_events (*),
             quotes:quote_id (metadata)
           `)
+          .eq('customer_id', this.customerId)
           .ilike('tracking_number', tracking_number)
           .single();
 
@@ -195,12 +179,12 @@ GUIDELINES:
   private cancelShipment = traceable(
     async (tracking_number: string, customerId?: string): Promise<ShipmentOperationResult> => {
       try {
-        // Ensure we're using the service role client
-        const serviceRoleClient = this.supabase;
+        const callerClient = this.supabase;
 
-        const { data: shipment, error: fetchError } = await serviceRoleClient
+        const { data: shipment, error: fetchError } = await callerClient
           .from('shipments')
           .select('*')
+          .eq('customer_id', this.customerId)
           .ilike('tracking_number', tracking_number)
           .single();
 
@@ -213,12 +197,13 @@ GUIDELINES:
         }
 
         // Update shipment status to cancelled
-        const { data: updatedShipment, error: updateError } = await serviceRoleClient
+        const { data: updatedShipment, error: updateError } = await callerClient
           .from('shipments')
           .update({
             status: 'cancelled',
             updated_at: new Date().toISOString()
           })
+          .eq('customer_id', this.customerId)
           .eq('id', shipment.id)
           .select()
           .single();
@@ -248,6 +233,9 @@ GUIDELINES:
           throw new Error('Invalid context: messages must be a non-empty array');
         }
 
+        // Discard caller-provided data and identity before constructing model context.
+        context = { messages: context.messages.filter(msg => ['user', 'assistant'].includes(msg.role)),
+          metadata: { userId: this.customerId } };
         await this.initializeOpenAI();
         if (!this.openai) throw new Error('Failed to initialize OpenAI client');
 
@@ -269,6 +257,7 @@ GUIDELINES:
           const { data: shipments } = await this.supabase
             .from('shipments')
             .select('*')
+            .eq('customer_id', this.customerId)
             .order('created_at', { ascending: false });
           
           if (shipments) {

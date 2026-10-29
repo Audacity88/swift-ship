@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getServerSupabase } from '@/lib/supabase-client'
+import { getRouteSupabase } from '@/lib/supabase-server'
 import type { AuditLogFilters, AuditLogSort } from '@/types/audit'
 
 interface AuditLogRequest {
@@ -13,7 +13,7 @@ interface AuditLogRequest {
 
 export async function POST(request: Request) {
   try {
-    const supabase = getServerSupabase()
+    const supabase = await getRouteSupabase()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
     if (userError || !user) {
@@ -155,7 +155,7 @@ export async function POST(request: Request) {
 
 export async function GET(request: Request) {
   try {
-    const supabase = getServerSupabase()
+    const supabase = await getRouteSupabase()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
     if (userError || !user) {
@@ -220,7 +220,7 @@ export async function GET(request: Request) {
 
 export async function PUT(request: Request) {
   try {
-    const supabase = getServerSupabase()
+    const supabase = await getRouteSupabase()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
     if (userError || !user) {

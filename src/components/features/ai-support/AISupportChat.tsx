@@ -7,7 +7,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/hooks/useAuth';
-import { createBrowserClient } from '@supabase/ssr';
 import { QuoteMetadata } from '@/types/quote';
 import { quoteMetadataService } from '@/lib/services/quote-metadata-service';
 import { shipmentService } from '@/lib/services';
@@ -198,13 +197,6 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
     e.preventDefault();
     if (!input.trim() || isLoading) return;
 
-    const supabase = createBrowserClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    );
-
-    const { data: { session } } = await supabase.auth.getSession();
-
     const userMessage: Message = {
       role: 'user',
       content: input.trim(),
@@ -225,19 +217,7 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
           id: user?.id || '',
           name: user?.email?.split('@')[0] || 'Anonymous',
           email: user?.email || 'anonymous@example.com'
-        },
-        token: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-        session: session ? {
-          ...session,
-          user: {
-            id: user?.id,
-            email: user?.email,
-            user_metadata: user?.user_metadata,
-            app_metadata: user?.app_metadata,
-            aud: user?.aud,
-            created_at: user?.created_at
-          }
-        } : undefined
+        }
       };
 
       // Add shipments to metadata if using shipments agent

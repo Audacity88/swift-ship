@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ArticleStatus } from '@/types/knowledge';
 import { Permission } from '@/types/role';
 import { checkUserPermissions } from '@/lib/auth/check-permissions';
-import { getServerSupabase } from '@/lib/supabase-client';
+import { getRouteSupabase } from '@/lib/supabase-server';
 import { z } from 'zod';
 
 const createArticleSchema = z.object({
@@ -16,7 +16,7 @@ const createArticleSchema = z.object({
 // GET /api/knowledge/articles - List articles with filtering
 export async function GET(request: NextRequest) {
   try {
-    const supabase = getServerSupabase()
+    const supabase = await getRouteSupabase()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
     if (userError || !user) {
@@ -92,7 +92,7 @@ export async function GET(request: NextRequest) {
 // POST /api/knowledge/articles - Create new article
 export async function POST(request: NextRequest) {
   try {
-    const supabase = getServerSupabase()
+    const supabase = await getRouteSupabase()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
     if (userError || !user) {

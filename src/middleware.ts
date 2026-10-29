@@ -16,7 +16,9 @@ const PUBLIC_PATHS = [
   '/auth/reset-password',
   '/auth/update-password',
   '/auth/callback',
-  '/auth/auth-error'
+  '/auth/auth-error',
+  '/portal/auth/register',
+  '/portal/auth/reset-password'
 ]
 
 export async function middleware(request: NextRequest) {

@@ -53,6 +53,8 @@ export default function UpdatePassword() {
       } catch (err) {
         console.error('[UpdatePassword] Error handling token:', err)
         setError('An error occurred')
+      } finally {
+        setLoading(false)
       }
     }
 

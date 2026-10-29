@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
-import { getServerSupabase } from '@/lib/supabase-client'
+import { getRouteSupabase } from '@/lib/supabase-server'
 
 export async function GET(request: Request, context: { params: { id: string } }) {
   try {
-    const supabase = getServerSupabase()
+    const supabase = await getRouteSupabase()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
     if (userError || !user) {
@@ -65,7 +65,7 @@ export async function GET(request: Request, context: { params: { id: string } })
 
 export async function PATCH(request: Request, context: { params: { id: string } }) {
   try {
-    const supabase = getServerSupabase()
+    const supabase = await getRouteSupabase()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
     if (userError || !user) {
@@ -129,7 +129,17 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const supabase = getServerSupabase()
+    const supabase = await getRouteSupabase()
+
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (userError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    const { data: agent, error: agentError } = await supabase
+      .from('agents').select('role').eq('id', user.id).maybeSingle()
+    if (agentError || agent?.role !== 'admin') {
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
+    }
 
     // First delete related events
     const { error: eventsError } = await supabase

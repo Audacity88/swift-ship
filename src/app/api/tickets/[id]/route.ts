@@ -1,3 +1,4 @@
+import { canAccessTicket, getTicketAgent } from '@/lib/auth/ticket-access'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createServerClient } from '@supabase/ssr'
@@ -88,7 +89,7 @@ export async function GET(
     }
 
     // Check if user has access to this ticket
-    if (user.type === 'agent' && user.role !== 'admin' && ticket.assignee_id !== user.id) {
+    if (!canAccessTicket(user.id, await getTicketAgent(supabase, user.id), ticket)) {
       return NextResponse.json(
         { error: 'You do not have permission to view this ticket' },
         { status: 403 }
@@ -154,6 +155,10 @@ export async function PATCH(
         { error: 'Ticket not found' },
         { status: 404 }
       )
+    }
+
+    if (!canAccessTicket(user.id, await getTicketAgent(supabase, user.id), ticket)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     // Update ticket

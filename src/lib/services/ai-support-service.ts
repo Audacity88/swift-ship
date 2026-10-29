@@ -6,8 +6,6 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Log the first and last 4 characters of the API key for debugging
-console.log('Using API Key:', process.env.OPENAI_API_KEY?.slice(0, 4) + '...' + process.env.OPENAI_API_KEY?.slice(-4));
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,

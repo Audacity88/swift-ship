@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getServerSupabase } from '@/lib/supabase-client'
+import { getRouteSupabase } from '@/lib/supabase-server'
 import type { CustomFieldDefinition } from '@/types/custom-field'
 
 const mockCustomFields: CustomFieldDefinition[] = [
@@ -40,7 +40,7 @@ const mockCustomFields: CustomFieldDefinition[] = [
 
 export async function GET() {
   try {
-    const supabase = getServerSupabase()
+    const supabase = await getRouteSupabase()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
     if (userError || !user) {
@@ -75,7 +75,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const supabase = getServerSupabase()
+    const supabase = await getRouteSupabase()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
     if (userError || !user) {
@@ -130,7 +130,7 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
-    const supabase = getServerSupabase()
+    const supabase = await getRouteSupabase()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
     if (userError || !user) {
@@ -173,7 +173,7 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const supabase = getServerSupabase()
+    const supabase = await getRouteSupabase()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
     if (userError || !user) {

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { TicketStatus } from '@/types/ticket'
-import { getServerSupabase } from '@/lib/supabase-client'
+import { getRouteSupabase } from '@/lib/supabase-server'
 import type { User } from '@supabase/supabase-js'
 
 interface CustomSession {
@@ -159,7 +159,7 @@ export async function GET(
   const { id } = await Promise.resolve((await context.params))
   
   try {
-    const supabase = getServerSupabase()
+    const supabase = await getRouteSupabase()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
     if (userError || !user) {
@@ -260,7 +260,7 @@ export async function POST(
   const { id } = await Promise.resolve((await context.params))
   
   try {
-    const supabase = getServerSupabase()
+    const supabase = await getRouteSupabase()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
     if (userError || !user) {

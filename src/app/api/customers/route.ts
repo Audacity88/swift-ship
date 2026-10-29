@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server'
 import { customerService } from '@/lib/services'
-import { getServerSupabase } from '@/lib/supabase-client'
+import { getRouteSupabase } from '@/lib/supabase-server'
 import type { Customer } from '@/types/customer'
 
 // GET /api/customers - List customers
 export async function GET(request: Request) {
   try {
-    const supabase = getServerSupabase()
+    const supabase = await getRouteSupabase()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
     if (userError || !user) {
@@ -78,7 +78,7 @@ export async function GET(request: Request) {
 // PUT /api/customers/[id] - Update a customer
 export async function PUT(request: Request, { params }: { params: { id: string } }) {
   try {
-    const supabase = getServerSupabase()
+    const supabase = await getRouteSupabase()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
     if (userError || !user) {

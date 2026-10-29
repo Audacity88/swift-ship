@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { safeRedirectPath } from '@/lib/auth/safe-redirect'
 
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url)
   const code = requestUrl.searchParams.get('code')
-  const next = requestUrl.searchParams.get('next') || '/'
-  const code_verifier = requestUrl.searchParams.get('code_verifier')
+  const next = safeRedirectPath(requestUrl.searchParams.get('next'))
   const type = requestUrl.searchParams.get('type')
 
   if (!code) {
@@ -14,6 +14,8 @@ export async function GET(request: Request) {
   }
 
   try {
+    const cookieStore = await cookies()
+
     // Create a response to modify its headers
     const response = NextResponse.redirect(new URL(next, requestUrl))
 
@@ -24,7 +26,7 @@ export async function GET(request: Request) {
       {
         cookies: {
           get(name: string) {
-            return cookies().get(name)?.value
+            return cookieStore.get(name)?.value
           },
           set(name: string, value: string, options: any) {
             // If the cookie is being set, add it to the response
@@ -79,7 +81,8 @@ export async function GET(request: Request) {
 
     // Check if this is a password reset flow
     if (type === 'recovery' || user.user_metadata?.force_password_reset) {
-      return NextResponse.redirect(new URL('/auth/update-password', requestUrl))
+      response.headers.set('Location', new URL('/auth/update-password', requestUrl).toString())
+      return response
     }
 
     // Clear PKCE parameters from cookies

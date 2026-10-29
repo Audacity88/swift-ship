@@ -1,10 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import OpenAI from 'https://esm.sh/openai@4'
+import { resolveCaller } from '../_shared/caller.ts'
 import { QuoteAgent } from './quote-agent.ts'
-
-// Maintain a single instance of the quote agent
-const quoteAgent = new QuoteAgent();
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -33,6 +29,7 @@ interface AgentRequest {
   conversationHistory: Message[]
   agentType: string
   metadata?: {
+    quote?: Record<string, any>
     agentType?: string
     userId?: string
     token?: string
@@ -56,39 +53,27 @@ serve(async (req: Request) => {
   }
 
   try {
-    const requestBody = await req.json() as AgentRequest;
-    console.log('Raw request body:', requestBody);
-    
-    const { message, conversationHistory, agentType, metadata } = requestBody;
-
-    // Initialize services
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    )
-
-    const openai = new OpenAI({
-      apiKey: Deno.env.get('OPENAI_API_KEY'),
-    })
-
-    // Get the last user message from the conversation history
-    console.log('Received conversation history:', conversationHistory);
-
-    if (conversationHistory === undefined) {
-      console.error('conversationHistory is undefined');
+    const caller = await resolveCaller(req);
+    if (!caller) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
+    const requestBody = await req.json() as AgentRequest;
+    const { message, conversationHistory, agentType } = requestBody;
+    const metadata = {
+      quote: requestBody.metadata?.quote,
+      agentType,
+      userId: caller.user.id,
+      session: { user: caller.user }
+    };
+    const quoteAgent = new QuoteAgent(Deno.env.get('SUPABASE_URL') ?? '', caller.token);
 
-    console.log('Received message:', message);
-
-    const lastUserMessage = conversationHistory?.length > 0 
+    const lastUserMessage = conversationHistory?.length > 0
       ? conversationHistory[conversationHistory.length - 1]
       : { role: 'user', content: message };
 
-    console.log('Debug - Values:', {
-      message,
-      conversationHistory,
-      lastUserMessage
-    });
+
 
     if (!lastUserMessage || !lastUserMessage.content) {
       throw new Error(JSON.stringify({
@@ -104,29 +89,21 @@ serve(async (req: Request) => {
     // Determine which agent to use and get response
     const isQuoteAgent = agentType === 'quote' || metadata?.agentType === 'quote'
     let response: AgentResponse;
-    
+
     if (isQuoteAgent) {
       // Use the existing QuoteAgent instance
-      console.log('Processing quote request with:', {
-        lastUserMessage,
-        conversationHistory,
-        metadata
-      });
-      
+
+
       // Safely handle messages and conversation history
-      const safeHistory = Array.isArray(conversationHistory) ? conversationHistory : [];
-      
+      const safeHistory = Array.isArray(conversationHistory) ? conversationHistory.filter(msg => ['user', 'assistant'].includes(msg.role) && typeof msg.content === 'string') : [];
+
       // Always use the full conversation history
-      const allMessages = safeHistory;
-      
-      console.log('Sending messages to quote agent:', {
-        messageCount: allMessages.length,
-        lastMessage: allMessages[allMessages.length - 1]?.content,
-        allMessages // Log the full messages array for debugging
-      });
+      const allMessages = [...safeHistory, { role: 'user', content: message }];
+
+
       response = await quoteAgent.process({ messages: allMessages, metadata });
-      console.log('Quote agent response:', response);
-      
+
+
       // Create a streaming response for the quote agent's response
       const stream = new ReadableStream({
         async start(controller) {
@@ -215,4 +192,4 @@ serve(async (req: Request) => {
       },
     )
   }
-}) 
+})

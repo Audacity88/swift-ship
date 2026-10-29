@@ -16,7 +16,7 @@ interface ResetFormData {
 }
 
 export function PasswordReset() {
-  const [formData, setFormData] = useState<ResetFormData>({ email: '' });
+  const [formData, setFormData] = useState<ResetFormData>({ email: '', password: '', confirmPassword: '' });
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -45,14 +45,14 @@ export function PasswordReset() {
         }
 
         // Update password
-        await authService.resetPassword({}, formData.password);
+        await authService.updatePassword(undefined, formData.password);
         setSuccess('Password has been reset successfully');
         setTimeout(() => {
           router.push('/auth/signin');
         }, 2000);
       } else {
         // Send reset email
-        await authService.resetPassword({}, formData.email);
+        await authService.resetPassword(undefined, formData.email);
         setSuccess('Password reset instructions have been sent to your email');
       }
     } catch (err) {

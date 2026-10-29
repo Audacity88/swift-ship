@@ -1,5 +1,6 @@
 import { serve } from './deps.ts';
 import { ShipmentsAgent } from './shipments-agent.ts';
+import { resolveCaller } from '../_shared/caller.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -12,7 +13,7 @@ interface Message {
   metadata?: Record<string, any>;
 }
 
-interface Request {
+interface AgentRequest {
   message: string;
   conversationHistory: Message[];
   metadata?: Record<string, any>;
@@ -24,12 +25,18 @@ serve(async (req: Request) => {
   }
 
   try {
+    const caller = await resolveCaller(req);
+    if (!caller) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
     const apiKey = Deno.env.get('OPENAI_API_KEY');
     if (!apiKey) {
       throw new Error('OpenAI API key not configured');
     }
 
-    const body = await req.json() as Request;
+    const body = await req.json() as AgentRequest;
     if (!body.message && (!body.conversationHistory?.length)) {
       return new Response(
         JSON.stringify({ error: 'No input provided' }),
@@ -37,18 +44,17 @@ serve(async (req: Request) => {
       );
     }
 
-    const agent = ShipmentsAgent.getInstance(apiKey);
-    const safeHistory = Array.isArray(body.conversationHistory) ? 
-      body.conversationHistory.slice(-2) : 
-      [];
+    const agent = ShipmentsAgent.getInstance(apiKey, caller.supabase, caller.user.id);
+    const safeHistory = Array.isArray(body.conversationHistory) ?
+      body.conversationHistory.filter(msg => ['user', 'assistant'].includes(msg.role) && typeof msg.content === 'string').slice(-2) : [];
     
-    if (!safeHistory.length && body.message) {
+    if (body.message) {
       safeHistory.push({ role: 'user', content: body.message });
     }
 
     const response = await agent.process({
       messages: safeHistory,
-      metadata: body.metadata
+      metadata: { userId: caller.user.id }
     });
 
     const stream = new ReadableStream({

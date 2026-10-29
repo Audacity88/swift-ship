@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { sql } from '@/lib/db'
-import { getServerSupabase } from '@/lib/supabase-client'
+import { getRouteSupabase } from '@/lib/supabase-server'
 
 // SLA configuration (could be moved to database or config file)
 const SLA_CONFIG = {
@@ -29,7 +29,7 @@ const pauseSLASchema = z.object({
 export async function GET(request: Request, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
-    const supabase = getServerSupabase()
+    const supabase = await getRouteSupabase()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
     if (userError || !user) {
@@ -57,7 +57,7 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
       FROM tickets t
       LEFT JOIN sla_states s ON t.id = s.ticket_id
       WHERE t.id = ${params.id}
-    `)
+    `, supabase)
 
     if (!result) {
       return NextResponse.json(
@@ -139,7 +139,7 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
 export async function POST(request: Request, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
-    const supabase = getServerSupabase()
+    const supabase = await getRouteSupabase()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
     if (userError || !user) {
@@ -205,7 +205,7 @@ export async function POST(request: Request, props: { params: Promise<{ id: stri
       `)
 
       return updatedState
-    })
+    }, supabase)
 
     return NextResponse.json({ data: result })
   } catch (error) {
@@ -227,7 +227,7 @@ export async function POST(request: Request, props: { params: Promise<{ id: stri
 export async function PUT(request: Request, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
-    const supabase = getServerSupabase()
+    const supabase = await getRouteSupabase()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
     if (userError || !user) {
@@ -294,7 +294,7 @@ export async function PUT(request: Request, props: { params: Promise<{ id: strin
       `)
 
       return updatedState
-    })
+    }, supabase)
 
     return NextResponse.json({ data: result })
   } catch (error) {

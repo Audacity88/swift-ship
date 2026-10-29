@@ -152,7 +152,7 @@ export class QuoteAgent {
     }
   };
 
-  constructor(baseUrl: string = 'https://dkrhdxqqkgutrnvsfhxi.supabase.co') {
+  constructor(baseUrl: string = 'https://dkrhdxqqkgutrnvsfhxi.supabase.co', private accessToken: string = '') {
     this.baseUrl = baseUrl;
     // Initialize OpenAI with tracing
     this.openai = wrapOpenAI(new OpenAI());
@@ -259,7 +259,6 @@ export class QuoteAgent {
                     'Anonymous',
               email: context.metadata?.session?.user?.email || 'anonymous@example.com'
             },
-            token: context.metadata?.token,
             destination: context.metadata?.quote?.destination || {},
             packageDetails: context.metadata?.quote?.packageDetails || {},
             selectedService: context.metadata?.quote?.selectedService || '',
@@ -425,7 +424,6 @@ export class QuoteAgent {
           agentId: 'quote',
           timestamp: Date.now(),
           userId: context.metadata?.userId,
-          token: context.metadata?.token,
           customer: context.metadata?.customer,
           debugLogs: this.debugLogs
         }
@@ -891,16 +889,11 @@ Service Details:
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'apikey': metadata.token || '',
-          'Authorization': `Bearer ${metadata.token || ''}`,
+          'apikey': Deno.env.get('SUPABASE_ANON_KEY') || '',
+          'Authorization': `Bearer ${this.accessToken}`,
           'Prefer': 'return=minimal'
         },
         body: JSON.stringify(ticketData)
-      });
-
-      this.log('Request headers:', {
-        'apikey': metadata.token ? `${metadata.token.substring(0, 10)}...` : 'none',
-        'Authorization': metadata.token ? `Bearer ${metadata.token.substring(0, 10)}...` : 'none'
       });
 
       const responseText = await response.text();

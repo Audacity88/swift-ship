@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react'
+import { SafeArticleContent } from '@/components/shared/SafeArticleContent'
 import { useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
@@ -79,6 +80,18 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({
     return true
   }
 
+  const persistArticle = async (nextArticle: Article) => {
+    if (nextArticle.id) {
+      const updated = await knowledgeService.updateArticle(undefined, nextArticle.id, nextArticle)
+      if (!updated) throw new Error('Article was not updated')
+      setArticle(prev => ({ ...prev, status: nextArticle.status }))
+    } else {
+      const created = await knowledgeService.createArticle(undefined, nextArticle)
+      if (!created?.id) throw new Error('Article was not created')
+      setArticle(prev => ({ ...prev, id: created.id, status: nextArticle.status }))
+    }
+  }
+
   const handleSave = async () => {
     if (!validateArticle()) return
 
@@ -86,7 +99,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({
     setError(null)
 
     try {
-      await knowledgeService.saveArticle(article)
+      await persistArticle(article)
     } catch (err) {
       setError('Failed to save article')
     } finally {
@@ -101,8 +114,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({
     setError(null)
 
     try {
-      await knowledgeService.publishArticle(article)
-      setArticle(prev => ({ ...prev, status: ArticleStatus.PUBLISHED }))
+      await persistArticle({ ...article, status: ArticleStatus.PUBLISHED })
     } catch (err) {
       setError('Failed to publish article')
     } finally {
@@ -220,7 +232,7 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({
           Content
         </label>
         {isPreview ? (
-          <div className="mt-1 prose max-w-none" dangerouslySetInnerHTML={{ __html: article.content }} />
+          <div className="mt-1 prose max-w-none"><SafeArticleContent content={article.content} /></div>
         ) : (
           <Textarea
             id="content"
@@ -234,13 +246,13 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({
       </div>
 
       <div className="flex gap-4">
-        <Button onClick={handleSave} disabled={isSaving}>
+        <Button type="button" onClick={handleSave} disabled={isSaving}>
           Save
         </Button>
-        <Button onClick={handlePublish} disabled={isSaving}>
+        <Button type="button" onClick={handlePublish} disabled={isSaving}>
           Publish
         </Button>
-        <Button onClick={() => setIsPreview(!isPreview)} variant="outline">
+        <Button type="button" onClick={() => setIsPreview(!isPreview)} variant="outline">
           {isPreview ? 'Edit' : 'Preview'}
         </Button>
       </div>

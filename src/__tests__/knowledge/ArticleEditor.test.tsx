@@ -1,8 +1,9 @@
 import React from 'react'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ArticleEditor from '@/components/features/knowledge/ArticleEditor'
 import { Article, ArticleStatus, Category } from '@/types/knowledge'
+import { knowledgeService } from '@/lib/services'
 
 // Mock data
 const mockArticle: Article = {
@@ -48,18 +49,24 @@ const mockCategories: Category[] = [
   },
 ]
 
-// Mock service functions
-const mockSaveArticle = jest.fn()
-const mockPublishArticle = jest.fn()
-jest.mock('@/lib/services/knowledge-service', () => ({
-  saveArticle: () => mockSaveArticle(),
-  publishArticle: () => mockPublishArticle(),
+jest.mock('@/lib/services', () => ({
+  knowledgeService: { createArticle: jest.fn(), updateArticle: jest.fn() },
 }))
 
+const mockCreateArticle = knowledgeService.createArticle as jest.Mock
+const mockUpdateArticle = knowledgeService.updateArticle as jest.Mock
+
 describe('ArticleEditor Component', () => {
+  // Radix uses these browser APIs; jsdom does not implement them.
+  beforeAll(() => {
+    HTMLElement.prototype.hasPointerCapture ??= () => false
+    HTMLElement.prototype.setPointerCapture ??= () => {}
+    HTMLElement.prototype.releasePointerCapture ??= () => {}
+    HTMLElement.prototype.scrollIntoView ??= () => {}
+  })
   beforeEach(() => {
-    mockSaveArticle.mockResolvedValue({ data: mockArticle })
-    mockPublishArticle.mockResolvedValue({ data: { ...mockArticle, status: ArticleStatus.PUBLISHED } })
+    mockCreateArticle.mockResolvedValue({ ...mockArticle, id: 'created-id' })
+    mockUpdateArticle.mockResolvedValue(true)
   })
 
   afterEach(() => {
@@ -105,7 +112,9 @@ describe('ArticleEditor Component', () => {
     // Save changes
     await userEvent.click(screen.getByRole('button', { name: /save/i }))
 
-    expect(mockSaveArticle).toHaveBeenCalled()
+    expect(mockUpdateArticle).toHaveBeenCalledWith(undefined, '1', expect.objectContaining({
+      title: 'Test Article Updated', content: '# Test Content\n\nThis is a test article. Updated',
+    }))
   })
 
   it('handles article publishing', async () => {
@@ -113,7 +122,37 @@ describe('ArticleEditor Component', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /publish/i }))
 
-    expect(mockPublishArticle).toHaveBeenCalled()
+    expect(mockUpdateArticle).toHaveBeenCalledWith(undefined, '1', expect.objectContaining({ status: ArticleStatus.PUBLISHED }))
+  })
+
+  it('creates an unsaved article once and uses its returned ID for later saves', async () => {
+    render(<ArticleEditor article={{ ...mockArticle, id: '' }} />)
+    await userEvent.click(screen.getByRole('button', { name: /save/i }))
+    expect(mockCreateArticle).toHaveBeenCalledWith(undefined, expect.objectContaining({ id: '', status: ArticleStatus.DRAFT }))
+    await userEvent.click(screen.getByRole('button', { name: /save/i }))
+    expect(mockCreateArticle).toHaveBeenCalledTimes(1)
+    expect(mockUpdateArticle).toHaveBeenCalledWith(undefined, 'created-id', expect.objectContaining({ id: 'created-id' }))
+  })
+
+  it('creates an unsaved article as published', async () => {
+    render(<ArticleEditor article={{ ...mockArticle, id: '' }} />)
+    await userEvent.click(screen.getByRole('button', { name: /publish/i }))
+    expect(mockCreateArticle).toHaveBeenCalledWith(undefined, expect.objectContaining({ status: ArticleStatus.PUBLISHED }))
+    expect(mockUpdateArticle).not.toHaveBeenCalled()
+  })
+
+  it('reports a failed creation when no article is returned', async () => {
+    mockCreateArticle.mockResolvedValueOnce(null)
+    render(<ArticleEditor article={{ ...mockArticle, id: '' }} />)
+    await userEvent.click(screen.getByRole('button', { name: /save/i }))
+    expect(await screen.findByText(/failed to save article/i)).toBeInTheDocument()
+  })
+
+  it('sanitizes HTML in preview', async () => {
+    const { container } = render(<ArticleEditor article={{ ...mockArticle, content: '<p>Safe content</p><iframe srcdoc="<script>window.audit=1</script>"></iframe>' }} />)
+    await userEvent.click(screen.getByRole('button', { name: /preview/i }))
+    expect(screen.getByText('Safe content')).toBeInTheDocument()
+    expect(container.querySelector('iframe, script, [srcdoc]')).toBeNull()
   })
 
   it('validates required fields before saving', async () => {
@@ -141,15 +180,15 @@ describe('ArticleEditor Component', () => {
 
     // Test category selection
     const categorySelect = screen.getByRole('combobox', { name: /category/i })
-    fireEvent.change(categorySelect, { target: { value: 'cat2' } })
-
-    await waitFor(() => {
-      expect(categorySelect).toHaveValue('cat2')
-    })
+    await user.click(categorySelect)
+    await user.click(screen.getByRole('option', { name: 'Category 2' }))
+    expect(categorySelect).toHaveTextContent('Category 2')
+    await user.click(screen.getByRole('button', { name: /save/i }))
+    expect(mockUpdateArticle).toHaveBeenCalledWith(undefined, '1', expect.objectContaining({ categoryId: 'cat2' }))
   })
 
   it('shows error message on save failure', async () => {
-    mockSaveArticle.mockRejectedValueOnce(new Error('Failed to save article'))
+    mockUpdateArticle.mockRejectedValueOnce(new Error('Failed to save article'))
 
     render(<ArticleEditor article={mockArticle} />)
 

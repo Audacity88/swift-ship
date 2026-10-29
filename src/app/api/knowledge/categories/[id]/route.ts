@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSupabase } from '@/lib/supabase-client';
+import { getRouteSupabase } from '@/lib/supabase-server';
 import { Permission } from '@/types/role';
 import { checkUserPermissions } from '@/lib/auth/check-permissions';
 
@@ -7,7 +7,7 @@ import { checkUserPermissions } from '@/lib/auth/check-permissions';
 export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
-    const supabase = getServerSupabase();
+    const supabase = await getRouteSupabase();
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     
     if (userError || !user) {
@@ -58,7 +58,7 @@ export async function GET(request: NextRequest, props: { params: Promise<{ id: s
 export async function PUT(request: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
-    const supabase = getServerSupabase();
+    const supabase = await getRouteSupabase();
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     
     if (userError || !user) {
@@ -161,7 +161,7 @@ export async function PUT(request: NextRequest, props: { params: Promise<{ id: s
 export async function DELETE(request: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
-    const supabase = getServerSupabase();
+    const supabase = await getRouteSupabase();
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     
     if (userError || !user) {

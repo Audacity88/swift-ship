@@ -35,16 +35,11 @@ export default function TicketsPage() {
   const fetchTickets = useCallback(async (page = 1) => {
     setState(prev => ({ ...prev, isLoading: true }));
     try {
-      const response = await customerTicketService.getTickets(page);
+      const response = await customerTicketService.getCustomerTickets(undefined, { page, limit: 10 });
       setState(prev => ({
         ...prev,
         tickets: response.tickets,
-        pagination: {
-          ...prev.pagination,
-          page,
-          total: response.total,
-          totalPages: Math.ceil(response.total / prev.pagination.limit)
-        }
+        pagination: response.pagination
       }));
     } catch (error) {
       console.error('Error fetching tickets:', error);
@@ -61,7 +56,7 @@ export default function TicketsPage() {
   const handleCreateTicket = useCallback(async (data: { description: string }) => {
     setState(prev => ({ ...prev, isLoading: true }));
     try {
-      await customerTicketService.createTicket({
+      await customerTicketService.createTicket(undefined, {
         description: data.description,
         priority: 'medium'
       });
@@ -85,7 +80,7 @@ export default function TicketsPage() {
   const handleAddComment = useCallback(async (ticketId: string, content: string) => {
     setState(prev => ({ ...prev, isLoading: true }));
     try {
-      await customerTicketService.addComment(ticketId, content);
+      await customerTicketService.addComment(undefined, ticketId, content);
       toast({
         title: 'Success',
         description: 'Comment added successfully.',
@@ -106,7 +101,12 @@ export default function TicketsPage() {
   const handleUpdateStatus = useCallback(async (ticketId: string, status: TicketStatus) => {
     setState(prev => ({ ...prev, isLoading: true }));
     try {
-      await customerTicketService.updateTicketStatus(ticketId, status);
+      const response = await fetch(`/api/tickets/${encodeURIComponent(ticketId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      if (!response.ok) throw new Error('Failed to update ticket status');
       toast({
         title: 'Success',
         description: 'Ticket status updated successfully.',

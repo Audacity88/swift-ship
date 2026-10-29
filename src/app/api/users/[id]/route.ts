@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authService, userService } from '@/lib/services'
-import { getServerSupabase } from '@/lib/supabase-client'
+import { getRouteSupabase } from '@/lib/supabase-server'
 
 export async function GET(
   request: NextRequest,
@@ -11,7 +11,7 @@ export async function GET(
     const { id } = await Promise.resolve((await context.params))
 
     // Check authentication
-    const supabase = getServerSupabase(undefined)
+    const supabase = await getRouteSupabase()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
     if (userError || !user) {
@@ -63,7 +63,7 @@ export async function PUT(
     const { id } = await Promise.resolve((await context.params))
 
     // Check authentication
-    const supabase = getServerSupabase(undefined)
+    const supabase = await getRouteSupabase()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
     if (userError || !user) {

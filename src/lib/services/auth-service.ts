@@ -26,22 +26,18 @@ export const authService = {
     }
   },
 
-  async resetPassword(context: ServerContext, emailOrPassword: string) {
+  async resetPassword(context: ServerContext, email: string) {
     const supabase = getServerSupabase(context)
-    
-    // If it looks like an email, send reset instructions
-    if (emailOrPassword.includes('@')) {
-      const { error } = await supabase.auth.resetPasswordForEmail(emailOrPassword, {
-        redirectTo: `${window.location.origin}/auth/reset-password`
-      })
-      if (error) throw error
-    } else {
-      // Otherwise update the password
-      const { error } = await supabase.auth.updateUser({
-        password: emailOrPassword
-      })
-      if (error) throw error
-    }
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/auth/callback?next=/auth/update-password`
+    })
+    if (error) throw error
+  },
+
+  async updatePassword(context: ServerContext, password: string) {
+    const supabase = getServerSupabase(context)
+    const { error } = await supabase.auth.updateUser({ password })
+    if (error) throw error
   },
 
   async registerCustomer(

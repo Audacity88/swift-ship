@@ -38,7 +38,7 @@ import { Badge } from '@/components/ui/badge'
 import TicketList from '@/components/features/tickets/TicketList'
 import { CreateTicketForm } from '@/components/features/tickets/CreateTicketForm'
 import { fetchTickets, createTicket, type TicketListItem } from '@/lib/services'
-import type { CreateTicketData } from '@/lib/services/ticket-service'
+type CreateTicketData = Parameters<typeof createTicket>[1]
 import { cn } from '@/lib/utils'
 import { useToast } from '@/components/ui/use-toast'
 
@@ -86,7 +86,7 @@ export default function TicketsOverviewPage() {
   // Fetch tickets with date range
   const { data: ticketsData, isLoading: isLoadingTickets } = useQuery({
     queryKey: ['tickets', dateRange],
-    queryFn: () => fetchTickets({
+    queryFn: () => fetchTickets(undefined, {
       filters: {
         dateFrom: dateRange.from.toISOString(),
         dateTo: dateRange.to.toISOString()
@@ -182,7 +182,7 @@ export default function TicketsOverviewPage() {
       // Log the cleaned data
       console.log('Submitting cleaned ticket data:', cleanData)
 
-      await createTicket(cleanData)
+      await createTicket(undefined, cleanData)
       
       toast({
         title: 'Success',

@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { COLORS } from '@/lib/constants'
 import { authService } from '@/lib/services'
 import { cn } from '@/lib/utils'
+import { safeRedirectPath } from '@/lib/auth/safe-redirect'
 
 export default function SignIn() {
   const [email, setEmail] = useState('')
@@ -71,8 +72,7 @@ export default function SignIn() {
         return
       }
 
-      const nextUrl = next || '/'
-      console.log('[SignIn] Redirecting to:', nextUrl)
+      const nextUrl = safeRedirectPath(next)
       router.push(nextUrl)
     } catch (err) {
       console.error('[SignIn] Error:', err)

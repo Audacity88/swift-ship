@@ -300,10 +300,11 @@ export const shipmentService = {
       type?: ShipmentType
       page?: number
       limit?: number
-    }
+    },
+    requestClient?: SupabaseClient
   ): Promise<{ data: Shipment[], total: number }> {
     try {
-      const supabase = getServerSupabase(context)
+      const supabase = requestClient ?? getServerSupabase(context)
       const { data: { user }, error: userError } = await supabase.auth.getUser()
       
       if (userError || !user) {

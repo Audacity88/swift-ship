@@ -86,7 +86,7 @@ export function CreateTicketForm({ onSubmit: externalSubmit, onSuccess }: Create
       if (externalSubmit) {
         await externalSubmit(cleanData)
       } else {
-        await createTicket(cleanData)
+        await createTicket(undefined, cleanData)
       }
 
       toast({

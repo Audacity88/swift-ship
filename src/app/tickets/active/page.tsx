@@ -48,8 +48,6 @@ export default function ActiveTicketsPage() {
       // Add sorting
       params.set('sortField', 'created_at')
       params.set('sortDirection', sortOrder)
-      // Set default type
-      params.set('type', 'ticket')
 
       console.log('Fetching tickets with params:', params.toString())
       const response = await fetch(`/api/tickets?${params.toString()}`, {

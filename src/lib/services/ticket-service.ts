@@ -1,3 +1,4 @@
+import { canAccessTicket, getTicketAgent, requireTicketAccess } from '@/lib/auth/ticket-access'
 import type { Ticket, TicketListItem, TicketStatus, TicketPriority } from '@/types/ticket'
 import type { SearchRequest } from '@/types/search'
 import { getServerSupabase, type ServerContext } from '@/lib/supabase-client'
@@ -120,7 +121,7 @@ export const ticketService = {
           *,
           customer:customers(*),
           assignee:agents!tickets_assignee_id_fkey(*),
-          ticket_tags!inner(
+          ticket_tags(
             tags(
               id,
               name,
@@ -129,10 +130,9 @@ export const ticketService = {
           )
         `, { count: 'exact' })
 
-      // If user is not an admin, only show tickets assigned to them
-      if (user.type === 'agent' && user.role !== 'admin') {
-        query = query.eq('assignee_id', user.id)
-      }
+      const agent = await getTicketAgent(supabase, user.id)
+      if (!agent) query = query.eq('customer_id', user.id)
+      else if (agent.role !== 'admin') query = query.eq('assignee_id', user.id)
 
       // Apply filters
       if (options?.filters?.status?.length) {
@@ -304,6 +304,8 @@ export const ticketService = {
         throw new Error('Unauthorized')
       }
 
+      await requireTicketAccess(supabase, user.id, ticketId)
+
       const { data, error } = await supabase
         .from('tickets')
         .update({
@@ -369,6 +371,10 @@ export const ticketService = {
         return null
       }
 
+      if (!canAccessTicket(user.id, await getTicketAgent(supabase, user.id), ticketData)) {
+        throw new Error('Forbidden')
+      }
+
       console.log('[Ticket Service] Raw ticket data:', {
         id: ticketData.id,
         ticket_tags: ticketData.ticket_tags
@@ -428,6 +434,8 @@ export const ticketService = {
       if (userError || !user) {
         throw new Error('Unauthorized')
       }
+
+      await requireTicketAccess(supabase, user.id, ticketId)
 
       const { error } = await supabase
         .from('tickets')

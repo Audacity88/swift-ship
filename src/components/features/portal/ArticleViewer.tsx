@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { SafeArticleContent } from '@/components/shared/SafeArticleContent';
 import { Article } from '@/types/knowledge';
 import { ArticleRating } from '@/types/portal';
 import { Button } from '@/components/ui/button';
@@ -129,10 +130,9 @@ export const ArticleViewer = ({
           </div>
         </div>
 
-        <div
-          className="mt-6"
-          dangerouslySetInnerHTML={{ __html: article.content }}
-        />
+        <div className="mt-6">
+          <SafeArticleContent content={article.content} />
+        </div>
 
         <div className="mt-8 border-t pt-6">
           <h3 className="text-lg font-medium mb-4">Was this article helpful?</h3>

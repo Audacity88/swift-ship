@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server'
 import { ShipmentStatus, ShipmentType } from '@/types/shipment'
-import { shipmentService } from '@/lib/services'
-import { getServerSupabase } from '@/lib/supabase-client'
+import { shipmentService } from '@/lib/services/shipment-service'
+import { getRouteSupabase } from '@/lib/supabase-server'
 import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
 
 export async function GET(request: Request) {
   try {
-    const supabase = getServerSupabase()
+    const supabase = await getRouteSupabase()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
     if (userError || !user) {
@@ -25,13 +25,13 @@ export async function GET(request: Request) {
     const limit = parseInt(searchParams.get('limit') || '10')
 
     // Fetch shipments using the service
-    const { shipments, total } = await shipmentService.listShipments(undefined, {
+    const { data: shipments, total } = await shipmentService.listShipments(undefined, {
       customerId: customerId || undefined,
-      status,
+      status: status ? [status] : undefined,
       type,
       page,
       limit
-    })
+    }, supabase)
 
     return NextResponse.json({
       shipments,
@@ -59,7 +59,6 @@ export async function POST(request: Request) {
         cookies: {
           get(name: string) {
             const cookie = cookieStore.get(name)
-            console.log('Cookie retrieved:', { name, value: cookie?.value })
             return cookie?.value
           },
           set(name: string, value: string, options: any) {

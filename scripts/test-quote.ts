@@ -118,11 +118,6 @@ Service Details:
     };
 
     console.log('Request URL:', `${baseUrl}/rest/v1/tickets`);
-    console.log('Request Headers:', {
-      'Content-Type': 'application/json',
-      'apikey': env.SUPABASE_SERVICE_ROLE_KEY?.substring(0, 10) + '...',
-      'Authorization': `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY?.substring(0, 10)}...`
-    });
     console.log('Request Body:', JSON.stringify(ticketData, null, 2));
 
     // Make the API call directly to match test-agent.ts pattern

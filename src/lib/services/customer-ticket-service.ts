@@ -97,7 +97,8 @@ export const customerTicketService = {
       }
 
       // Add sorting
-      query = query.order(sortBy, { ascending: sortOrder === 'asc' })
+      const sortColumn = { createdAt: 'created_at', updatedAt: 'updated_at', status: 'status' }[sortBy]
+      query = query.order(sortColumn, { ascending: sortOrder === 'asc' })
 
       // Add pagination
       const from = (page - 1) * limit
@@ -109,7 +110,12 @@ export const customerTicketService = {
       if (error) throw error
 
       return {
-        tickets: data || [],
+        tickets: (data || []).map((ticket: any) => ({
+          ...ticket,
+          createdAt: ticket.created_at,
+          updatedAt: ticket.updated_at,
+          customerId: ticket.customer_id,
+        })),
         pagination: {
           page,
           limit,

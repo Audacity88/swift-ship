@@ -1,3 +1,4 @@
+import { getTicketAgent } from '@/lib/auth/ticket-access'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { TicketPriority, TicketStatus } from '@/types/ticket'
@@ -46,12 +47,12 @@ const ticketFiltersSchema = z.object({
 })
 
 const paginationSchema = z.object({
-  page: z.coerce.number().min(1).default(1),
-  pageSize: z.coerce.number().min(1).max(100).default(10)
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(10)
 })
 
 const sortingSchema = z.object({
-  sortField: z.string().default('created_at'),
+  sortField: z.enum(['created_at', 'updated_at', 'title', 'status', 'priority']).default('created_at'),
   sortDirection: z.enum(['asc', 'desc']).default('desc')
 })
 
@@ -93,10 +94,10 @@ const initSupabase = async (request?: NextRequest) => {
     }
   }
   
-  // Use service role key for server-side operations
+  // Keep database operations under the authenticated caller role.
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     options
   )
 }
@@ -104,7 +105,7 @@ const initSupabase = async (request?: NextRequest) => {
 // GET /api/tickets - Get tickets with optional filters
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await initSupabase()
+    const supabase = await initSupabase(request)
     const { data: { user }, error: userError } = await supabase.auth.getUser()
 
     if (userError) {
@@ -129,7 +130,7 @@ export async function GET(request: NextRequest) {
       const filters = ticketFiltersSchema.parse({
         status: searchParams.getAll('status'),
         priority: searchParams.getAll('priority'),
-        type: searchParams.get('type'),
+        type: searchParams.get('type') ?? undefined,
         search: searchParams.get('search'),
         dateFrom: searchParams.get('dateFrom'),
         dateTo: searchParams.get('dateTo'),
@@ -151,7 +152,15 @@ export async function GET(request: NextRequest) {
           assignee:agents!tickets_assignee_id_fkey(*)
         `, { count: 'exact' })
 
+      const agent = await getTicketAgent(supabase, user.id)
+      if (!agent) query = query.eq('customer_id', user.id)
+      else if (agent.role !== 'admin') query = query.eq('assignee_id', user.id)
+
       // Apply filters
+      if (filters.type) query = query.eq('type', filters.type)
+      if (filters.search) query = query.ilike('title', `%${filters.search}%`)
+      if (filters.dateFrom) query = query.gte('created_at', filters.dateFrom)
+      if (filters.dateTo) query = query.lte('created_at', filters.dateTo)
       if (filters.status?.length) {
         console.log('Applying status filter:', filters.status)
         query = query.in('status', filters.status)
@@ -170,12 +179,20 @@ export async function GET(request: NextRequest) {
       }
 
       // Add sorting
-      const sortField = searchParams.get('sortField') || 'created_at'
+      const { sortField, sortDirection } = sortingSchema.parse({
+        sortField: searchParams.get('sortField') ?? undefined,
+        sortDirection: searchParams.get('sortDirection') ?? undefined,
+      })
+      const { page, pageSize } = paginationSchema.parse({
+        page: searchParams.get('page') ?? undefined,
+        pageSize: searchParams.get('pageSize') ?? undefined,
+      })
 
       // Execute query
       console.log('Executing query...')
       const { data: tickets, count, error: ticketsError } = await query
-        .order(sortField, { ascending: false })
+        .order(sortField, { ascending: sortDirection === 'asc' })
+        .range((page - 1) * pageSize, page * pageSize - 1)
 
       if (ticketsError) {
         console.error('Database error:', ticketsError)
@@ -195,6 +212,9 @@ export async function GET(request: NextRequest) {
     }
   } catch (error) {
     console.error('Error in GET /api/tickets:', error)
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ error: 'Invalid query parameters' }, { status: 400 })
+    }
     return NextResponse.json(
       { error: 'Failed to fetch tickets' },
       { status: 500 }

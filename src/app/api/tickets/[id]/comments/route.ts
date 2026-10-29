@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getServerSupabase } from '@/lib/supabase-client'
+import { getRouteSupabase } from '@/lib/supabase-server'
 
 // Types
 interface MessageResult {
@@ -32,7 +32,7 @@ const createCommentSchema = z.object({
 export async function POST(request: Request, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
-    const supabase = getServerSupabase()
+    const supabase = await getRouteSupabase()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
     if (userError || !user) {
@@ -59,13 +59,27 @@ export async function POST(request: Request, props: { params: Promise<{ id: stri
       )
     }
 
+    // Auth users do not carry the application's persisted agent classification.
+    const { data: agent, error: agentError } = await supabase
+      .from('agents')
+      .select('id')
+      .eq('id', user.id)
+      .maybeSingle()
+    if (agentError) {
+      return NextResponse.json({ error: 'Failed to resolve comment author' }, { status: 500 })
+    }
+    const authorType = agent ? 'agent' : 'customer'
+    if (body.isInternal && !agent) {
+      return NextResponse.json({ error: 'Agent access required for internal notes' }, { status: 403 })
+    }
+
     // Create the message
     const { data: message, error: messageError } = await supabase
       .from('messages')
       .insert({
         ticket_id: params.id,
         content: body.content,
-        author_type: user.type,
+        author_type: authorType,
         author_id: user.id,
         is_internal: body.isInternal,
         created_at: new Date().toISOString(),
@@ -90,7 +104,7 @@ export async function POST(request: Request, props: { params: Promise<{ id: stri
         entity_id: params.id,
         action: 'comment',
         actor_id: user.id,
-        actor_type: user.type,
+        actor_type: authorType,
         changes: {
           messageId: message.id,
           content: body.content,
@@ -137,7 +151,7 @@ export async function POST(request: Request, props: { params: Promise<{ id: stri
 export async function GET(request: Request, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
-    const supabase = getServerSupabase()
+    const supabase = await getRouteSupabase()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
     if (userError || !user) {
@@ -148,32 +162,32 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
     }
 
     const { searchParams } = new URL(request.url)
-    const page = parseInt(searchParams.get('page') || '1')
-    const limit = parseInt(searchParams.get('limit') || '20')
+    const page = Number(searchParams.get('page') || '1')
+    const limit = Number(searchParams.get('limit') || '20')
+    if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100 ||
+        !Number.isSafeInteger(page * limit)) {
+      return NextResponse.json({ error: 'Invalid pagination' }, { status: 400 })
+    }
     const offset = (page - 1) * limit
 
-    // Get comments with author details
-    const comments = await supabase
+    const { data: comments, count, error: commentsError } = await supabase
       .from('messages')
-      .select('*')
+      .select('*', { count: 'exact' })
       .eq('ticket_id', params.id)
       .order('created_at', { ascending: false })
-      .limit(limit)
-      .offset(offset)
-
-    // Get total count
-    const { count } = await supabase
-      .from('messages')
-      .select('COUNT(*)')
-      .eq('ticket_id', params.id)
+      .range(offset, offset + limit - 1)
+    if (commentsError) {
+      return NextResponse.json({ error: 'Failed to fetch comments' }, { status: 500 })
+    }
+    const total = count ?? 0
 
     return NextResponse.json({
       data: comments,
       pagination: {
-        total: parseInt(count),
+        total,
         page,
         limit,
-        totalPages: Math.ceil(parseInt(count) / limit)
+        totalPages: Math.ceil(total / limit)
       }
     })
   } catch (error) {

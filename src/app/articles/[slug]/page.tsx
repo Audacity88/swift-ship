@@ -8,10 +8,7 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ChevronLeft, ThumbsUp, ThumbsDown, Tag } from 'lucide-react'
 import { toast } from 'sonner'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import remarkBreaks from 'remark-breaks'
-import rehypeRaw from 'rehype-raw'
+import { SafeArticleContent } from '@/components/shared/SafeArticleContent'
 
 interface Article {
   id: string
@@ -167,9 +164,8 @@ export default function ArticlePage() {
             prose-ul:list-disc prose-ol:list-decimal
             prose-blockquote:border-l-4 prose-blockquote:border-muted
             prose-pre:bg-muted prose-pre:p-4 prose-pre:rounded-lg">
-          <ReactMarkdown 
-            remarkPlugins={[remarkGfm, remarkBreaks]}
-            rehypePlugins={[rehypeRaw]}
+          <SafeArticleContent
+            content={article.content}
             components={{
               h1: ({node, ...props}) => <h1 className="text-3xl font-bold mb-4" {...props} />,
               h2: ({node, ...props}) => <h2 className="text-2xl font-bold mt-8 mb-4" {...props} />,
@@ -179,9 +175,7 @@ export default function ArticlePage() {
               li: ({node, ...props}) => <li className="mb-1" {...props} />,
               p: ({node, ...props}) => <p className="mb-4" {...props} />
             }}
-          >
-            {article.content}
-          </ReactMarkdown>
+          />
         </div>
       </Card>
 

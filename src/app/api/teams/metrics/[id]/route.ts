@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSupabase } from '@/lib/supabase-client';
+import { getRouteSupabase } from '@/lib/supabase-server';
 import { Permission } from '@/types/role';
 import { TeamMetrics } from '@/types/team';
 import { checkUserPermissions } from '@/lib/auth/check-permissions';
@@ -8,7 +8,7 @@ import { checkUserPermissions } from '@/lib/auth/check-permissions';
 export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   try {
-    const supabase = getServerSupabase();
+    const supabase = await getRouteSupabase();
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     
     if (userError || !user) {
@@ -88,7 +88,7 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
     }
 
     // Check if team exists
-    const { data: team, error: teamError } = await getServerSupabase()
+    const { data: team, error: teamError } = await (await getRouteSupabase())
       .from('teams')
       .select('id')
       .eq('id', params.id)
@@ -102,14 +102,14 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
     }
 
     // Store current metrics in history
-    const { data: currentMetrics } = await getServerSupabase()
+    const { data: currentMetrics } = await (await getRouteSupabase())
       .from('team_metrics')
       .select('*')
       .eq('team_id', params.id)
       .single();
 
     if (currentMetrics) {
-      await getServerSupabase()
+      await (await getRouteSupabase())
         .from('team_metrics_history')
         .insert({
           team_id: params.id,
@@ -119,7 +119,7 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
     }
 
     // Update team metrics
-    const { data: updatedMetrics, error: updateError } = await getServerSupabase()
+    const { data: updatedMetrics, error: updateError } = await (await getRouteSupabase())
       .from('team_metrics')
       .upsert({
         team_id: params.id,

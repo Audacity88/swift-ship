@@ -1,4 +1,5 @@
 import { getServerSupabase } from '@/lib/supabase-client'
+import { getRouteSupabase } from '@/lib/supabase-server'
 import type { ServerContext } from '@/lib/supabase-client'
 import { Permission } from '@/types/role';
 
@@ -13,7 +14,7 @@ interface PermissionCheckResult {
 
 export async function checkUserPermissions(requiredPermission: Permission): Promise<PermissionCheckResult> {
   try {
-    const supabase = getServerSupabase(context)
+    const supabase = await getRouteSupabase()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
     if (userError || !user) {
@@ -63,7 +64,7 @@ export async function checkPermissions(
   requiredPermissions: string[]
 ): Promise<boolean> {
   try {
-    const supabase = getServerSupabase(context)
+    const supabase = context?.req ? getServerSupabase(context) : await getRouteSupabase()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
     if (userError || !user) {
