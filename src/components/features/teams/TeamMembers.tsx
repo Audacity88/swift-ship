@@ -68,7 +68,7 @@ export const TeamMembers = ({ teamId, onUpdate }: TeamMembersProps) => {
   useEffect(() => {
     const loadMembers = async () => {
       try {
-        const teamMembers = await teamService.getTeamMembers(teamId);
+        const teamMembers = await teamService.getTeamMembers(undefined, teamId);
         setMembers(teamMembers);
         setError(null);
       } catch (err) {
@@ -102,11 +102,11 @@ export const TeamMembers = ({ teamId, onUpdate }: TeamMembersProps) => {
         joinedAt: new Date(),
       };
 
-      const success = await teamService.addTeamMember(newMember);
+      const success = await teamService.addTeamMember(undefined, teamId, newMember);
 
       if (success) {
         // Reload members list
-        const updatedMembers = await teamService.getTeamMembers(teamId);
+        const updatedMembers = await teamService.getTeamMembers(undefined, teamId);
         setMembers(updatedMembers);
         setIsAddingMember(false);
         setNewMemberId('');
@@ -125,7 +125,7 @@ export const TeamMembers = ({ teamId, onUpdate }: TeamMembersProps) => {
 
   const handleRemoveMember = async (userId: string) => {
     try {
-      const success = await teamService.removeTeamMember(teamId, userId);
+      const success = await teamService.removeTeamMember(undefined, teamId, userId);
       if (success) {
         setMembers(members.filter(m => m.userId !== userId));
         onUpdate?.();

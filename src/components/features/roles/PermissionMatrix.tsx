@@ -1,8 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { RoleType, Permission } from '@/types/role';
-import { roleService } from '@/lib/services/role-service';
+import { RoleType, Permission, DEFAULT_ROLE_PERMISSIONS } from '@/types/role';
 import {
   Table,
   TableBody,
@@ -49,7 +48,9 @@ export const PermissionMatrix = ({
 
   useEffect(() => {
     const loadMatrix = async () => {
-      const permissionMatrix = roleService.generatePermissionMatrix();
+      const permissionMatrix = Object.fromEntries(Object.values(RoleType).map(role => [
+        role, Object.fromEntries(Object.values(Permission).map(permission => [permission, DEFAULT_ROLE_PERMISSIONS[role].includes(permission)]))
+      ])) as Record<RoleType, Record<Permission, boolean>>;
       setMatrix(permissionMatrix);
       setLoading(false);
     };
@@ -69,7 +70,7 @@ export const PermissionMatrix = ({
       // Notify parent of changes for the selected role
       if (role === selectedRole) {
         const activePermissions = Object.entries(newMatrix[role])
-          .filter(([_, isActive]) => isActive)
+          .filter((entry) => entry[1])
           .map(([perm]) => perm as Permission);
         onPermissionsChange?.(activePermissions);
       }
@@ -79,7 +80,7 @@ export const PermissionMatrix = ({
   };
 
   const getPermissionDescription = (permission: Permission): string => {
-    const descriptions: Record<Permission, string> = {
+    const descriptions: Partial<Record<Permission, string>> = {
       [Permission.VIEW_USERS]: 'Can view user profiles',
       [Permission.MANAGE_USERS]: 'Can manage user accounts',
       [Permission.VIEW_ROLES]: 'Can view role assignments',
@@ -93,7 +94,7 @@ export const PermissionMatrix = ({
       [Permission.MANAGE_TICKETS]: 'Can manage tickets',
       [Permission.ASSIGN_TICKETS]: 'Can assign tickets',
       [Permission.CREATE_TICKETS]: 'Can create tickets',
-      [Permission.EDIT_TICKETS]: 'Can edit tickets',
+      [Permission.UPDATE_TICKETS]: 'Can edit tickets',
       [Permission.VIEW_KNOWLEDGE_BASE]: 'Can view knowledge base',
       [Permission.MANAGE_KNOWLEDGE_BASE]: 'Can manage knowledge base',
       [Permission.VIEW_PORTAL]: 'Can view customer portal',

@@ -16,15 +16,6 @@ interface TeamMetricsProps {
   teamId: string;
 }
 
-interface TeamMember {
-  user_id: string;
-}
-
-interface TeamData {
-  schedule: WeeklySchedule;
-  timezone?: string;
-}
-
 export function TeamMetrics({ teamId }: TeamMetricsProps) {
   const [metrics, setMetrics] = useState<TeamMetricsType | null>(null);
   const [agentMetrics, setAgentMetrics] = useState<AgentMetrics[]>([]);
@@ -46,27 +37,22 @@ export function TeamMetrics({ teamId }: TeamMetricsProps) {
           teamMembers,
           teamData
         ] = await Promise.all([
-          metricsService.getTeamMetrics(teamId, period),
-          teamService.getTeamMembers(teamId),
-          teamService.getTeamById(teamId)
+          metricsService.getTeamMetrics(undefined, teamId, period),
+          teamService.getTeamMembers(undefined, teamId),
+          teamService.getTeamById(undefined, teamId)
         ]);
 
         setMetrics(teamMetrics);
 
         // Load agent metrics if we have team members
-        if (teamMembers) {
-          const agentMetricsData = await metricsService.getTeamAgentMetrics(
-            teamId,
-            teamMembers.map((m: TeamMember) => m.user_id),
-            period
-          );
-          setAgentMetrics(agentMetricsData);
-        }
+        setAgentMetrics(await Promise.all(teamMembers.map(member =>
+          metricsService.getAgentMetrics(undefined, member.userId, period)
+        )));
 
         // Set schedule data
         if (teamData) {
           setSchedule(teamData.schedule);
-          setTimezone(teamData.timezone || 'UTC');
+          setTimezone('UTC');
         }
 
       } catch (err) {
@@ -169,7 +155,7 @@ export function TeamMetrics({ teamId }: TeamMetricsProps) {
             <div className="flex items-baseline justify-between">
               <div className="text-2xl font-bold">
                 {Math.round((metrics.current.resolved_tickets / 
-                  (metrics.current.resolved_tickets + metrics.current.open_tickets)) * 100)}%
+                  Math.max(1, metrics.current.resolved_tickets + metrics.current.open_tickets)) * 100)}%
               </div>
               <div className="text-xs text-muted-foreground">
                 {metrics.current.resolved_tickets} / {metrics.current.resolved_tickets + metrics.current.open_tickets}

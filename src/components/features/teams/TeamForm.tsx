@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import type { Team, TeamCreationData, TeamUpdateData } from '@/types/team';
+import type { TeamCreationData, TeamUpdateData, DaySchedule, WeeklySchedule } from '@/types/team';
 import { teamService } from '@/lib/services/team-service';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,13 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2 } from 'lucide-react';
 import { RoleType } from '@/types/role';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+
 
 interface TeamFormProps {
   teamId?: string;
@@ -62,11 +56,11 @@ export const TeamForm = ({
       }
 
       try {
-        const team = await teamService.getTeamById(teamId);
+        const team = await teamService.getTeamById(undefined, teamId);
         if (team) {
           setName(team.name);
           setDescription(team.description || '');
-          const lead = team.members.find(m => m.role === UserRole.MANAGER);
+          const lead = team.members.find(m => m.role === RoleType.SUPERVISOR);
           if (lead) {
             setTeamLead(lead.userId);
           }
@@ -107,7 +101,7 @@ export const TeamForm = ({
           name,
           description: description || undefined,
         };
-        success = await teamService.updateTeam(updateData);
+        success = await teamService.updateTeam(undefined, updateData);
       } else {
         // Create new team
         const creationData: TeamCreationData = {
@@ -115,18 +109,16 @@ export const TeamForm = ({
           description: description || undefined,
           schedule: defaultWeeklySchedule,
         };
-        const team = await teamService.createTeam(creationData);
+        const team = await teamService.createTeam(undefined, creationData);
         success = !!team;
 
         // If team was created and team lead is specified, add them as a member
         if (success && team && teamLead) {
-          await teamService.addTeamMember({
-            teamId: team.id,
+          await teamService.addTeamMember(undefined, team.id, {
             userId: teamLead,
-            role: UserRole.MANAGER,
+            role: RoleType.SUPERVISOR,
             schedule: defaultWeeklySchedule,
             skills: [],
-            joinedAt: new Date(),
           });
         }
       }

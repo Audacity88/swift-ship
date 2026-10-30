@@ -14,6 +14,7 @@ import {
 export default function TeamsPage() {
   const router = useRouter();
   const [isCreatingTeam, setIsCreatingTeam] = useState(false);
+  const [listVersion, setListVersion] = useState(0);
 
   const handleCreateTeam = () => {
     setIsCreatingTeam(true);
@@ -22,6 +23,7 @@ export default function TeamsPage() {
   const handleTeamCreated = (success: boolean) => {
     if (success) {
       setIsCreatingTeam(false);
+      setListVersion(value => value + 1);
       router.refresh();
     }
   };
@@ -49,6 +51,7 @@ export default function TeamsPage() {
       </div>
 
       <TeamList
+        key={listVersion}
         onCreateTeam={handleCreateTeam}
         onEditTeam={handleEditTeam}
         onViewMembers={handleViewMembers}

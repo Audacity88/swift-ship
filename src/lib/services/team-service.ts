@@ -1,6 +1,16 @@
-import type { Team, TeamCreationData, TeamUpdateData, TeamMember } from '@/types/team'
-import { UserRole } from '@/types/role'
+import type { Team, TeamCreationData, TeamUpdateData, TeamMember, TeamMemberUpdate, TeamSchedule } from '@/types/team'
+import type { UserRole } from '@/types/role'
 import { getServerSupabase, type ServerContext } from '@/lib/supabase-client'
+
+interface TeamMemberRow {
+  team_id: string; user_id: string; role: UserRole; joined_at: string;
+  skills?: string[]; schedule?: TeamMember['schedule'];
+}
+interface TeamRow {
+  id: string; name: string; description?: string; is_active: boolean;
+  created_at: string; updated_at: string; members?: TeamMemberRow[];
+  schedule?: Team['schedule']; skills?: Team['skills']; metrics?: Team['metrics'];
+}
 
 export const teamService = {
   async getAllTeams(context: ServerContext): Promise<Team[]> {
@@ -39,11 +49,11 @@ export const teamService = {
         throw error
       }
 
-      return (data || []).map((t: any) => ({
+      return (data || []).map((t: TeamRow) => ({
         id: t.id,
         name: t.name,
         description: t.description,
-        members: (t.members || []).map((m: any) => ({
+        members: (t.members || []).map((m: TeamMemberRow) => ({
           teamId: m.team_id,
           userId: m.user_id,
           role: m.role as UserRole,
@@ -54,9 +64,12 @@ export const teamService = {
         schedule: t.schedule || {},
         skills: t.skills || [],
         metrics: t.metrics || {
-          responseTime: 0,
-          resolutionRate: 0,
-          customerSatisfaction: 0
+          averageResponseTime: 0,
+          averageResolutionTime: 0,
+          openTickets: 0,
+          resolvedTickets: 0,
+          customerSatisfactionScore: 0,
+          updatedAt: new Date()
         },
         isActive: t.is_active,
         createdAt: new Date(t.created_at),
@@ -99,7 +112,7 @@ export const teamService = {
           )
         `)
         .eq('id', id)
-        .single()
+        .maybeSingle()
 
       if (error) {
         console.error('Failed to get team:', error)
@@ -112,7 +125,7 @@ export const teamService = {
         id: data.id,
         name: data.name,
         description: data.description,
-        members: (data.members || []).map((m: any) => ({
+        members: (data.members || []).map((m: TeamMemberRow) => ({
           teamId: m.team_id,
           userId: m.user_id,
           role: m.role as UserRole,
@@ -123,9 +136,12 @@ export const teamService = {
         schedule: data.schedule || {},
         skills: data.skills || [],
         metrics: data.metrics || {
-          responseTime: 0,
-          resolutionRate: 0,
-          customerSatisfaction: 0
+          averageResponseTime: 0,
+          averageResolutionTime: 0,
+          openTickets: 0,
+          resolvedTickets: 0,
+          customerSatisfactionScore: 0,
+          updatedAt: new Date()
         },
         isActive: data.is_active,
         createdAt: new Date(data.created_at),
@@ -137,7 +153,7 @@ export const teamService = {
     }
   },
 
-  async createTeam(context: ServerContext, payload: TeamCreationData): Promise<Team | null> {
+  async createTeam(context: ServerContext, payload: TeamCreationData & { members?: Omit<TeamMember, 'teamId' | 'joinedAt'>[] }): Promise<Team | null> {
     try {
       const supabase = getServerSupabase(context)
       const { data: { user }, error: userError } = await supabase.auth.getUser()
@@ -154,9 +170,12 @@ export const teamService = {
           schedule: payload.schedule || {},
           skills: payload.skills || [],
           metrics: {
-            responseTime: 0,
-            resolutionRate: 0,
-            customerSatisfaction: 0
+            averageResponseTime: 0,
+            averageResolutionTime: 0,
+            openTickets: 0,
+            resolvedTickets: 0,
+            customerSatisfactionScore: 0,
+            updatedAt: new Date()
           },
           is_active: true,
           created_by: user.id,
@@ -370,9 +389,9 @@ export const teamService = {
     }
   },
 
-  async updateTeamMember(update: { teamId: string; userId: string; role?: UserRole; schedule?: any; skills?: string[] }): Promise<boolean> {
+  async updateTeamMember(update: TeamMemberUpdate): Promise<boolean> {
     try {
-      const supabase = getServerSupabase(context)
+      const supabase = getServerSupabase(undefined)
       const { data: { user }, error: userError } = await supabase.auth.getUser()
       
       if (userError || !user) {
@@ -401,7 +420,8 @@ export const teamService = {
     }
   },
 
-  async getTeamSchedule(teamId: string): Promise<any> {
+  async getTeamSchedule(teamId: string): Promise<Partial<TeamSchedule>> {
+    const supabase = getServerSupabase(undefined)
     // In this example, we store schedule on the teams table or in a separate table. We'll assume it's on `teams`.
     const { data, error } = await supabase
       .from('teams')
@@ -419,7 +439,8 @@ export const teamService = {
     }
   },
 
-  async updateTeamSchedule(teamId: string, schedule: any): Promise<boolean> {
+  async updateTeamSchedule(teamId: string, schedule: TeamSchedule): Promise<boolean> {
+    const supabase = getServerSupabase(undefined)
     // Update schedule field in teams table
     const { error } = await supabase
       .from('teams')
