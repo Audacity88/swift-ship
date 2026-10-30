@@ -1,0 +1,2 @@
+-- Agent identities must correspond to real auth users.
+-- Run pnpm create-admin to create the first administrator; no fake agents are seeded.

@@ -18,7 +18,7 @@ CREATE TABLE articles (
   excerpt TEXT,
   content TEXT NOT NULL,
   category_id UUID NOT NULL REFERENCES categories(id),
-  author_id UUID NOT NULL REFERENCES agents(id),
+  author_id UUID REFERENCES agents(id),
   status TEXT NOT NULL CHECK (status IN ('draft', 'published', 'archived')),
   tags TEXT[] DEFAULT ARRAY[]::TEXT[],
   metadata JSONB NOT NULL DEFAULT '{
@@ -38,7 +38,7 @@ CREATE TABLE article_versions (
   article_id UUID NOT NULL REFERENCES articles(id),
   version INTEGER NOT NULL,
   changes JSONB NOT NULL,
-  author_id UUID NOT NULL REFERENCES agents(id),
+  author_id UUID REFERENCES agents(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(article_id, version)
 );

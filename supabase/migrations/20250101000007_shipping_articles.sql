@@ -1,6 +1,7 @@
 -- Insert shipping category
-INSERT INTO categories (name, slug, description)
+INSERT INTO categories (id, name, slug, description)
 VALUES (
+  '9145394c-3e4e-40ea-9f5e-ea8efc40547d',
   'Shipping',
   'shipping',
   'Information about shipping services, rates, packaging guidelines, and international shipping.'
@@ -10,7 +11,7 @@ VALUES (
 DO $$
 DECLARE
   shipping_category_id UUID;
-  system_user_id UUID := 'e41ce3d6-0e65-4a83-87d4-7c83a9820c8e';
+  system_user_id UUID := NULL;
 BEGIN
   -- Get the shipping category ID
   SELECT id INTO shipping_category_id FROM categories WHERE slug = 'shipping';

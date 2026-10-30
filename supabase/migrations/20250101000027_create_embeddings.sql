@@ -38,14 +38,3 @@ as $$
   limit match_count;
 $$;
 
--- Create down migration
-create or replace function revert_20240328_create_embeddings()
-returns void
-language plpgsql
-as $$
-begin
-  drop function if exists match_embeddings;
-  drop table if exists embeddings;
-  drop extension if exists vector;
-end;
-$$; 
