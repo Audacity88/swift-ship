@@ -1,22 +1,9 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { TicketPriority, TicketStatus } from '@/types/ticket'
-import { createServerClient } from '@supabase/ssr'
+import { createServerClient, type CookieOptions, type CookieMethodsServerDeprecated } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import type { NextRequest } from 'next/server'
-
-// Types
-interface CreateTicketResult {
-  id: string
-  title: string
-  description: string
-  status: TicketStatus
-  priority: TicketPriority
-  customer_id: string
-  assignee_id: string | null
-  created_at: string
-  updated_at: string
-}
 
 // Validation schema for creating a ticket
 const createTicketSchema = z.object({
@@ -45,35 +32,25 @@ const ticketFiltersSchema = z.object({
   assignedToMe: z.boolean().optional()
 })
 
-const paginationSchema = z.object({
-  page: z.coerce.number().min(1).default(1),
-  pageSize: z.coerce.number().min(1).max(100).default(10)
-})
-
-const sortingSchema = z.object({
-  sortField: z.string().default('created_at'),
-  sortDirection: z.enum(['asc', 'desc']).default('desc')
-})
-
 const initSupabase = async (request?: NextRequest) => {
   const cookieStore = await cookies()
   
-  const options: any = {
+  const options: { cookies: CookieMethodsServerDeprecated; global?: { headers: { Authorization: string } } } = {
     cookies: {
       get(name: string) {
         return cookieStore.get(name)?.value
       },
-      set(name: string, value: string, options: any) {
+      set(name: string, value: string, options: CookieOptions) {
         try {
           cookieStore.set({ name, value, ...options })
-        } catch (error) {
+        } catch {
           // Handle cookie setting error
         }
       },
-      remove(name: string, options: any) {
+      remove(name: string, options: CookieOptions) {
         try {
           cookieStore.set({ name, value: '', ...options })
-        } catch (error) {
+        } catch {
           // Handle cookie removal error
         }
       },

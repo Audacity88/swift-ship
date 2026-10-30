@@ -1,5 +1,5 @@
 import { BaseAgent, AgentContext, AgentMessage } from './base-agent';
-import { supabase } from '@/lib/supabase/client';
+import { createClient } from '@/lib/supabase/client';
 
 export class DocsAgent extends BaseAgent {
   constructor() {
@@ -34,8 +34,8 @@ Remember: Provide accurate, documented information and maintain Swift Ship's bra
 
   private async searchDocs(query: string): Promise<string[]> {
     try {
-      const { data: documents, error } = await supabase.rpc('match_documents', {
-        query_embedding: await this.getEmbedding(query),
+      const { data: documents, error } = await createClient().rpc('match_documents', {
+        query_embedding: await this.generateEmbedding(query),
         match_threshold: 0.7,
         match_count: 5
       });
@@ -45,14 +45,14 @@ Remember: Provide accurate, documented information and maintain Swift Ship's bra
         return [];
       }
 
-      return documents.map(doc => doc.content);
+      return (documents || []).map((doc: { content: string }) => doc.content);
     } catch (error) {
       console.error('Error in vector search:', error);
       return [];
     }
   }
 
-  private formatResponse(docs: string[], query: string): string {
+  private formatResponse(docs: string[]): string {
     if (docs.length === 0) {
       return "I don't have specific documentation about that topic. Please contact our support team at support@swiftship.com for more information.";
     }
@@ -99,7 +99,7 @@ Remember: Provide accurate, documented information and maintain Swift Ship's bra
       const docs = await this.searchDocs(query);
 
       // Format response based on available documentation
-      let response = this.formatResponse(docs, query);
+      let response = this.formatResponse(docs);
 
       // For service-related queries, always include contact information
       if (topic.trim() === 'SERVICES') {

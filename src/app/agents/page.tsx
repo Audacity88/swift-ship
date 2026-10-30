@@ -1,12 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { UserCog, Mail, Shield } from 'lucide-react'
-import Image from 'next/image'
-import { agentService } from '@/lib/services/agent-service'
-import { COLORS } from '@/lib/constants'
 import { AddAgentButton } from '@/components/features/agents/AddAgentButton'
 import { EditAgentDialog } from '@/components/features/agents/EditAgentDialog'
+import { COLORS } from '@/lib/constants'
+import { Mail,Shield } from 'lucide-react'
+import Image from 'next/image'
+import { useEffect,useState } from 'react'
 
 interface Agent {
   id: string

@@ -33,25 +33,11 @@ const nextConfig = {
         // Configure any specific rules for Turbopack
       },
     },
-    serverActions: {
-      enabled: true
-    }
   },
   // Move serverExternalPackages to root level
   serverExternalPackages: ['@aws-sdk'],
   // Optimize production build
   productionBrowserSourceMaps: false,
-  typescript: {
-    // !! WARN !!
-    // Dangerously allow production builds to successfully complete even if
-    // your project has type errors.
-    ignoreBuildErrors: true,
-  },
-  eslint: {
-    // Warning: This allows production builds to successfully complete even if
-    // your project has ESLint errors.
-    ignoreDuringBuilds: true,
-  },
   webpack: (config, { isServer }) => {
     // Handle punycode deprecation for both client and server
     config.resolve.fallback = {

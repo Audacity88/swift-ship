@@ -29,7 +29,7 @@ export async function POST(request: Request) {
       )
     }
 
-    const setupData = await request.json()
+    await request.json()
 
     // Create default roles
     const { data: roles, error: rolesError } = await supabase

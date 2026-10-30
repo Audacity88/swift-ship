@@ -14,7 +14,7 @@ export interface RadarAddress {
 export interface QuoteDestination {
   from: {
     address: string
-    coordinates: {
+    coordinates?: {
       latitude: number
       longitude: number
     }
@@ -23,7 +23,7 @@ export interface QuoteDestination {
   }
   to: {
     address: string
-    coordinates: {
+    coordinates?: {
       latitude: number
       longitude: number
     }
@@ -45,6 +45,7 @@ export interface PackageDetails {
 }
 
 export interface QuoteRequest {
+  is_archived?: boolean
   id: string
   title: string
   customer: {
@@ -58,6 +59,7 @@ export interface QuoteRequest {
     selectedService?: string
     quotedPrice?: number
     estimatedPrice?: number
+    estimatedDelivery?: string
   }
   status: string
   created_at: string

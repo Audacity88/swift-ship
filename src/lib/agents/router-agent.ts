@@ -71,7 +71,7 @@ export class RouterAgent extends BaseAgent {
       // Validate JSON response
       JSON.parse(response);
       return this.createMessage(response);
-    } catch (e) {
+    } catch {
       // Fallback if response isn't valid JSON
       return this.createMessage(JSON.stringify({
         agent: 'DOCS_AGENT',

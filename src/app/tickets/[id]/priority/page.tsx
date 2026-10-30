@@ -1,9 +1,8 @@
 'use client'
 
-import { useState } from 'react'
-import { useParams } from 'next/navigation'
-import { AlertTriangle, ArrowUp, ArrowDown, Check } from 'lucide-react'
 import { TicketPriority } from '@/types/ticket'
+import { AlertTriangle,ArrowDown,ArrowUp,Check } from 'lucide-react'
+import { useState } from 'react'
 
 interface PriorityOption {
   priority: TicketPriority
@@ -50,8 +49,6 @@ const priorityOptions: PriorityOption[] = [
 ]
 
 export default function TicketPriorityPage() {
-  const params = useParams()
-  const ticketId = params?.id as string
   const [selectedPriority, setSelectedPriority] = useState<TicketPriority>(TicketPriority.MEDIUM)
   const [isUpdating, setIsUpdating] = useState(false)
 
@@ -193,4 +190,4 @@ export default function TicketPriorityPage() {
       </div>
     </div>
   )
-} 
+}

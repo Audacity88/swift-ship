@@ -1,6 +1,6 @@
 import { BaseAgent, AgentContext } from './base-agent';
 import { QuoteRequest, PackageDetails, QuoteDestination } from '@/types/quote';
-import { TicketPriority, TicketStatus } from '@/types/ticket';
+import { TicketPriority } from '@/types/ticket';
 
 interface AgentMessage {
   role: 'system' | 'user' | 'assistant';
@@ -88,11 +88,6 @@ const SERVICE_RATES = {
     description: 'Eco Freight (5-7 Business Days)',
   }
 };
-
-interface ExtendedAgentMessage extends Omit<AgentMessage, 'content'> {
-  content: string;
-  metadata: AgentMessageMetadata;
-}
 
 const QUOTE_MESSAGES = {
   START_QUOTE: "I'll help you create a shipping quote. First, I need some details about your shipment:\n\n" +
@@ -469,7 +464,13 @@ Our team will review your quote and you'll receive a confirmation email shortly.
               pickupTimeSlot: details.destination.pickupTimeSlot
             },
             selectedService: details.selectedService,
-            quotedPrice: details.selectedService ? this.calculatePrices(details as any)[details.selectedService] : undefined
+            quotedPrice: details.selectedService ? this.calculatePrices({
+              step: 'confirmation', packageDetails: details.packageDetails,
+              destination: {
+                pickup: { address: details.destination.from.address, city: '', state: '' },
+                delivery: { address: details.destination.to.address, city: '', state: '' }
+              }
+            })[details.selectedService] : undefined
           }
         })
       });

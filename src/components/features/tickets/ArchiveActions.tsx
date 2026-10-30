@@ -37,6 +37,7 @@ export function ArchiveActions({
 
     try {
       const archivedTicket = await archiveService.archiveTicket(
+        undefined,
         ticket,
         currentAgent,
         archiveReason
@@ -56,7 +57,7 @@ export function ArchiveActions({
     setIsLoading(true)
 
     try {
-      const restoredTicket = await archiveService.restoreTicket(ticket, currentAgent)
+      const restoredTicket = await archiveService.restoreTicket(undefined, ticket, currentAgent)
       onUpdate(restoredTicket)
     } catch (err) {
       setError('Failed to restore ticket')
@@ -71,7 +72,7 @@ export function ArchiveActions({
     setIsLoading(true)
 
     try {
-      const ticketSnapshots = await archiveService.getTicketSnapshots(ticket.id)
+      const ticketSnapshots = await archiveService.getTicketSnapshots(undefined, ticket.id)
       setSnapshots(ticketSnapshots)
       setShowSnapshotsDialog(true)
     } catch (err) {
@@ -88,6 +89,7 @@ export function ArchiveActions({
 
     try {
       const restoredTicket = await archiveService.restoreSnapshot(
+        undefined,
         ticket,
         snapshotId,
         currentAgent

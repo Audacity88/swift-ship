@@ -1,9 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { COLORS } from '@/lib/constants'
 import { createBrowserClient } from '@supabase/ssr'
 import Link from 'next/link'
-import { COLORS } from '@/lib/constants'
+import { useState } from 'react'
 
 export default function ResetPassword() {
   const [email, setEmail] = useState('')
@@ -32,7 +32,7 @@ export default function ResetPassword() {
       }
 
       setSuccess(true)
-    } catch (err) {
+    } catch {
       setError('An unexpected error occurred')
     } finally {
       setLoading(false)

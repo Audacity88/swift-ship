@@ -60,7 +60,7 @@ export async function GET(
     }
 
     // Format the content with proper HTML structure
-    if (article.content) {
+    if (typeof article.content === 'string') {
       const formattedContent = article.content
         .replace(/^# (.*$)/gm, '<h1>$1</h1>')  // Main headings
         .replace(/^## (.*$)/gm, '<h2>$1</h2>')  // Sub headings

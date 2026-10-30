@@ -1,60 +1,16 @@
 import { roleService } from '@/lib/services'
 import { getServerSupabase } from '@/lib/supabase-client'
-import type { ServerContext } from '@/lib/supabase-client'
-import type { Permission } from '@/types/role'
+import { Permission, DEFAULT_ROLE_PERMISSIONS, RoleType } from '@/types/role'
 
-// Cache interface
-interface PermissionCache {
-  permissions: Permission[];
-  role: string;
-  timestamp: number;
-}
-
-// Cache duration in milliseconds (5 minutes)
-const CACHE_DURATION = 5 * 60 * 1000;
-
-// In-memory cache
-const permissionCache = new Map<string, PermissionCache>();
-
-function getCachedPermissions(userId: string): Permission[] | null {
-  const cached = permissionCache.get(userId);
-  if (!cached) return null;
-
-  // Check if cache is expired
-  if (Date.now() - cached.timestamp > CACHE_DURATION) {
-    permissionCache.delete(userId);
-    return null;
-  }
-
-  return cached.permissions;
-}
-
-function cachePermissions(userId: string, permissions: Permission[], role: string) {
-  permissionCache.set(userId, {
-    permissions,
-    role,
-    timestamp: Date.now(),
-  });
-}
-
-interface AuthUser {
-  role: string;
-  type: 'agent' | 'customer';
-}
+// Kept for callers that invalidate permission state after role updates.
+const permissionCache = new Map<string, Permission[]>();
 
 export async function getUserPermissions(userId: string): Promise<string[]> {
   try {
     const supabase = getServerSupabase()
     const { data: agent, error: agentError } = await supabase
       .from('agents')
-      .select(`
-        role,
-        role_id(
-          permissions:role_permissions(
-            permission_id(*)
-          )
-        )
-      `)
+      .select('role, role_id')
       .eq('id', userId)
       .single()
 
@@ -68,7 +24,7 @@ export async function getUserPermissions(userId: string): Promise<string[]> {
     }
 
     // Extract permissions from role
-    const permissions = agent.role_id?.permissions?.map(p => p.permission_id.name) || []
+    const permissions = agent.role_id ? await roleService.getRolePermissions(undefined, agent.role_id) : []
 
     // Add admin permissions if user is admin
     if (agent.role === 'admin') {
@@ -143,11 +99,18 @@ const ROLE_HIERARCHY: Record<string, string[]> = {
 
 // Get all permissions for a role including inherited ones
 export async function getAllPermissionsForRole(role: string): Promise<Permission[]> {
-  const basePermissions = await roleService.getPermissionsForRole(role);
+  const fetchPermissions = async (name: string): Promise<Permission[]> => {
+    const roles = await roleService.listRoles(undefined);
+    const configuredRole = roles.find(item => item.name === name);
+    if (!configuredRole) return DEFAULT_ROLE_PERMISSIONS[name as RoleType] || [];
+    const assigned = await roleService.getRolePermissions(undefined, configuredRole.id);
+    return [...(configuredRole.permissions || []), ...assigned];
+  };
+  const basePermissions = await fetchPermissions(role);
   const inheritedRoles = ROLE_HIERARCHY[role] || [];
   
   const inheritedPermissionsPromises = inheritedRoles.map(inheritedRole => 
-    roleService.getPermissionsForRole(inheritedRole)
+    fetchPermissions(inheritedRole)
   );
 
   const inheritedPermissions = await Promise.all(inheritedPermissionsPromises);
@@ -220,7 +183,10 @@ function getPermissionsForRoute(pathname: string): Permission[] {
 }
 
 export async function isAuthorizedForRoute(pathname: string): Promise<boolean> {
-  const user = await getUserRole();
+  const supabase = getServerSupabase();
+  const { data: { user: identity }, error } = await supabase.auth.getUser();
+  if (error || !identity) return false;
+  const user = await getUserRole(identity.id);
   
   if (!user) {
     return false;
@@ -238,7 +204,7 @@ export async function isAuthorizedForRoute(pathname: string): Promise<boolean> {
     return true;
   }
 
-  return hasAnyPermission(user, requiredPermissions);
+  return hasAnyPermission(identity.id, requiredPermissions);
 }
 
 // Clear cache for a user (useful for testing and role updates)

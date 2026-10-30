@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSupabase } from '@/lib/supabase-client';
-import { Permission } from '@/types/role';
-import { checkUserPermissions } from '@/lib/auth/check-permissions';
 import { z } from 'zod';
 
 const scheduleSchema = z.object({

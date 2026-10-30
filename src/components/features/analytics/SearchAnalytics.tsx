@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { SearchAnalytics as SearchAnalyticsType, FailedSearch } from '@/types/search';
+import { FailedSearch } from '@/types/search';
 import { searchService } from '@/lib/services';
 import {
   LineChart,
@@ -35,10 +35,10 @@ export const SearchAnalytics = () => {
       try {
         // Get analytics data using the search service
         const [analytics, topTerms, searchesByDay, failedSearches] = await Promise.all([
-          searchService.getSearchAnalytics(timeRange),
-          searchService.getTopSearchTerms(timeRange),
-          searchService.getSearchesByDay(timeRange),
-          searchService.getFailedSearches(timeRange)
+          searchService.getSearchAnalytics(undefined, timeRange),
+          searchService.getTopSearchTerms(undefined, timeRange, 10),
+          searchService.getSearchesByDay(undefined, timeRange),
+          searchService.getFailedSearches(undefined, timeRange)
         ]);
 
         setMetrics({
@@ -58,11 +58,6 @@ export const SearchAnalytics = () => {
 
     fetchMetrics();
   }, [timeRange]);
-
-  const getTimeRangeInMs = (range: '7d' | '30d' | '90d') => {
-    const days = parseInt(range);
-    return days * 24 * 60 * 60 * 1000;
-  };
 
   if (isLoading) {
     return (

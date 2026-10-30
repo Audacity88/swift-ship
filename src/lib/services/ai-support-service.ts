@@ -41,7 +41,7 @@ export class AISupportService {
     return AISupportService.instance;
   }
 
-  async searchKnowledgeBase(query: string): Promise<any[]> {
+  async searchKnowledgeBase(query: string): Promise<{ id: string; title: string; content: string }[]> {
     const { data: articles, error } = await supabase
       .from('articles')
       .select('title, content, id')

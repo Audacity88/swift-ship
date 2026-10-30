@@ -1,5 +1,5 @@
 import type { Ticket, TicketListItem, TicketStatus, TicketPriority } from '@/types/ticket'
-import type { SearchRequest } from '@/types/search'
+import { RoleType } from '@/types/role'
 import { getServerSupabase, type ServerContext } from '@/lib/supabase-client'
 
 export interface TicketRelationship {
@@ -49,17 +49,17 @@ export const createTicket = async (
     customerId: string
     assigneeId?: string
     tags?: string[]
-    metadata?: Record<string, any>
+    metadata?: Record<string, unknown>
   }
-): Promise<any> => {
+) => {
   return ticketService.createTicket(context, payload)
 }
 
 export const updateTicket = async (
   context: ServerContext,
   ticketId: string,
-  updates: Record<string, any>
-): Promise<any> => {
+  updates: Record<string, unknown>
+) => {
   return ticketService.updateTicket(context, ticketId, updates)
 }
 
@@ -161,7 +161,7 @@ export const ticketService = {
         throw error
       }
 
-      const result = (data || []).map((ticket: any) => ({
+      const result = (data || []).map((ticket) => ({
         id: ticket.id,
         title: ticket.title,
         status: ticket.status,
@@ -180,7 +180,7 @@ export const ticketService = {
           email: ticket.assignee.email,
           role: ticket.assignee.role
         } : undefined,
-        tags: ticket.ticket_tags.map((tt: any) => ({
+        tags: ticket.ticket_tags.map((tt: { tags: { id: string; name: string; color: string | null } }) => ({
           id: tt.tags.id,
           name: tt.tags.name,
           color: tt.tags.color || '#666666'
@@ -203,9 +203,9 @@ export const ticketService = {
       customerId: string
       assigneeId?: string
       tags?: string[]
-      metadata?: Record<string, any>
+      metadata?: Record<string, unknown>
     }
-  ): Promise<any> {
+  ) {
     try {
       const supabase = getServerSupabase(context)
       const { data: { user }, error: userError } = await supabase.auth.getUser()
@@ -277,8 +277,8 @@ export const ticketService = {
   async updateTicket(
     context: ServerContext,
     ticketId: string,
-    updates: Record<string, any>
-  ): Promise<any> {
+    updates: Record<string, unknown>
+  ) {
     try {
       const supabase = getServerSupabase(context)
       const { data: { user }, error: userError } = await supabase.auth.getUser()
@@ -381,15 +381,22 @@ export const ticketService = {
         customer: {
           id: ticketData.customer?.id,
           name: ticketData.customer?.name,
-          email: ticketData.customer?.email
+          email: ticketData.customer?.email,
+          role: RoleType.CUSTOMER,
+          isActive: true,
+          createdAt: ticketData.customer?.created_at || ticketData.created_at,
+          updatedAt: ticketData.customer?.updated_at || ticketData.updated_at
         },
         assignee: ticketData.assignee ? {
           id: ticketData.assignee.id,
           name: ticketData.assignee.name,
           email: ticketData.assignee.email,
-          role: ticketData.assignee.role
+          role: ticketData.assignee.role,
+          isActive: true,
+          createdAt: ticketData.assignee.created_at,
+          updatedAt: ticketData.assignee.updated_at
         } : undefined,
-        tags: (ticketData.ticket_tags || []).map((tt: any) => ({
+        tags: (ticketData.ticket_tags || []).map((tt: { tags: { id: string; name: string; color: string | null } }) => ({
           id: tt.tags.id,
           name: tt.tags.name,
           color: tt.tags.color || '#666666'

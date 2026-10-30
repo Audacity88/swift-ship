@@ -22,6 +22,7 @@ export const Editor = ({
     content: value,
     editorProps: {
       attributes: {
+        'aria-label': placeholder || 'Rich text editor',
         class: cn(
           'prose prose-sm max-w-none focus:outline-none min-h-[100px] p-3',
           className

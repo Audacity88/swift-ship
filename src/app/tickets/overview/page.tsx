@@ -1,44 +1,44 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { useQuery } from '@tanstack/react-query'
-import { subDays } from 'date-fns'
-import { 
-  BarChart3, 
-  Clock, 
-  MessageSquare, 
-  Users,
-  Download,
-  RefreshCw,
-  Plus
-} from 'lucide-react'
+import { CreateTicketForm } from '@/components/features/tickets/CreateTicketForm'
+import TicketList from '@/components/features/tickets/TicketList'
+import { Button } from '@/components/ui/button'
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger
+Dialog,
+DialogContent,
+DialogDescription,
+DialogHeader,
+DialogTitle,
+DialogTrigger
 } from "@/components/ui/dialog"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
+Popover,
+PopoverContent,
+PopoverTrigger,
 } from '@/components/ui/popover'
-import { Button } from '@/components/ui/button'
-import TicketList from '@/components/features/tickets/TicketList'
-import { CreateTicketForm } from '@/components/features/tickets/CreateTicketForm'
-import { fetchTickets, createTicket } from '@/lib/services'
-import type { CreateTicketData } from '@/lib/services/ticket-service'
+import {
+Select,
+SelectContent,
+SelectItem,
+SelectTrigger,
+SelectValue,
+} from '@/components/ui/select'
 import { useToast } from '@/components/ui/use-toast'
+import { createTicket,fetchTickets } from '@/lib/services'
+import { useQuery } from '@tanstack/react-query'
+import { subDays } from 'date-fns'
+import {
+BarChart3,
+Clock,
+Download,
+MessageSquare,
+Plus,
+RefreshCw,
+Users
+} from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { useState } from 'react'
+type CreateTicketData = Parameters<typeof createTicket>[1]
 
 interface DateRange {
   from: Date

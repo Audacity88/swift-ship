@@ -1,4 +1,3 @@
-import type { TicketStatus, TicketPriority, Tag } from './ticket'
 
 export type SearchOperator = 
   | 'equals' 
@@ -40,7 +39,7 @@ export interface SearchCondition {
   operator: SearchOperator
   value: string | number | boolean | null | string[]
   valueEnd?: string | number | boolean | null
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 }
 
 export interface SearchGroup {
@@ -168,7 +167,8 @@ export const buildSearchQuery = (group: SearchGroup): string => {
 }
 
 export const parseSearchQuery = (query: string): SearchGroup => {
-  // TODO: Implement query string parsing
+  // TODO: Implement nonempty query parsing; empty input has no conditions.
+  if (!query.trim()) return { type: 'and', conditions: [] }
   return { type: 'and', conditions: [] }
 }
 

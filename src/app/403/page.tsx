@@ -1,13 +1,13 @@
 'use client'
 
-import { useSearchParams } from 'next/navigation'
 import { AlertTriangle } from 'lucide-react'
-import { Suspense } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
+import { Suspense } from 'react'
 
 function ForbiddenContent() {
   const searchParams = useSearchParams()
-  const path = searchParams.get('path')
+  const path = searchParams?.get('path')
 
   return (
     <div className="text-center">

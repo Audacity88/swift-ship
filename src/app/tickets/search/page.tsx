@@ -1,13 +1,13 @@
 'use client'
 
-import { Suspense, useEffect, useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
-import { useQuery } from '@tanstack/react-query'
-import { fetchTickets } from '@/lib/services/ticket-service'
-import { useDebounce } from '@/lib/hooks/useDebounce'
 import TicketList from '@/components/features/tickets/TicketList'
 import { Input } from '@/components/ui/input'
-import { TicketStatus, TicketPriority } from '@/types/enums'
+import { useDebounce } from '@/lib/hooks/useDebounce'
+import { fetchTickets } from '@/lib/services/ticket-service'
+import { TicketPriority,TicketStatus } from '@/types/enums'
+import { useQuery } from '@tanstack/react-query'
+import { useRouter,useSearchParams } from 'next/navigation'
+import { Suspense,useEffect,useState } from 'react'
 
 function SearchTicketsContent() {
   const router = useRouter()

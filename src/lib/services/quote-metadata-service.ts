@@ -118,7 +118,7 @@ export const quoteMetadataService = {
 
     const dateMatch = content.match(/next\s+(\w+)\s+at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
     if (dateMatch) {
-      const [_, day, hour, minute, ampm] = dateMatch;
+      const [, day, hour, minute, ampm] = dateMatch;
       const today = new Date();
       const daysOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
       const targetDay = daysOfWeek.findIndex(d => d.toLowerCase().startsWith(day.toLowerCase()));

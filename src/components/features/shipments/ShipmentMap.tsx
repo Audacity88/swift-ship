@@ -106,6 +106,9 @@ export function ShipmentMap({ origin, destination, currentLocation }: ShipmentMa
   useEffect(() => {
     if (!map.current || !mapLoaded || !coordinates.origin || !coordinates.destination) return
 
+    const currentMap = map.current
+    const originPoint = coordinates.origin
+    const destinationPoint = coordinates.destination
     const abortController = new AbortController()
 
     const updateMap = async () => {
@@ -117,14 +120,14 @@ export function ShipmentMap({ origin, destination, currentLocation }: ShipmentMa
         markersRef.current = []
 
         // Clear existing route
-        if (map.current?.getSource('route')) {
-          map.current.removeLayer('route')
-          map.current.removeSource('route')
+        if (currentMap?.getSource('route')) {
+          currentMap.removeLayer('route')
+          currentMap.removeSource('route')
         }
 
         // Add markers for origin and destination
-        const originMarker = addMarker(coordinates.origin, 'origin')
-        const destMarker = addMarker(coordinates.destination, 'destination')
+        const originMarker = addMarker(originPoint, 'origin')
+        const destMarker = addMarker(destinationPoint, 'destination')
         markersRef.current.push(originMarker, destMarker)
 
         // If we have a current location, add that marker too
@@ -135,32 +138,32 @@ export function ShipmentMap({ origin, destination, currentLocation }: ShipmentMa
 
         // Fit bounds to show all points
         const bounds = new maplibregl.LngLatBounds()
-        bounds.extend(coordinates.origin)
-        bounds.extend(coordinates.destination)
+        bounds.extend(originPoint)
+        bounds.extend(destinationPoint)
         if (coordinates.current) {
           bounds.extend(coordinates.current)
         }
 
-        map.current.fitBounds(bounds, {
+        currentMap.fitBounds(bounds, {
           padding: 50,
           duration: 1000
         })
 
         // Add a simple line between points
-        if (map.current) {
-          map.current.addSource('route', {
+        if (currentMap) {
+          currentMap.addSource('route', {
             type: 'geojson',
             data: {
               type: 'Feature',
               properties: {},
               geometry: {
                 type: 'LineString',
-                coordinates: [coordinates.origin, coordinates.destination]
+                coordinates: [originPoint, destinationPoint]
               }
             }
           })
 
-          map.current.addLayer({
+          currentMap.addLayer({
             id: 'route',
             type: 'line',
             source: 'route',

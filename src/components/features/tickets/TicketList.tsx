@@ -1,25 +1,10 @@
 'use client'
 
 import { formatTicketStatus } from '@/lib/ticket-labels'
-import React, { useEffect, useState, useCallback } from 'react'
-import { fetchTickets, type TicketListItem } from '@/lib/services'
+import React, { useState } from 'react';
+import { type TicketListItem } from '@/lib/services';
 import { format, isValid } from 'date-fns'
-import {
-  Clock,
-  Tag,
-  User,
-  AlertCircle,
-  ChevronDown,
-  ChevronUp,
-  Filter,
-  RefreshCcw,
-  Archive,
-  MoreHorizontal,
-  Download,
-  Trash,
-  CheckSquare
-} from 'lucide-react'
-import { Button } from '@/components/ui/button'
+
 import { Badge } from '@/components/ui/badge'
 import {
   Table,
@@ -29,33 +14,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+
 import { Checkbox } from '@/components/ui/checkbox'
-import { SLAIndicator } from '@/components/features/tickets/SLAIndicator'
-import { TagList } from '@/components/features/tags/TagList'
-import type { TicketListItem as TicketListItemType } from '@/types/ticket'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { Input } from '@/components/ui/input'
-import {
-  Pagination,
-  PaginationContent,
-  PaginationEllipsis,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from '@/components/ui/pagination'
 
 interface TicketListProps {
   tickets: TicketListItem[]
@@ -65,7 +25,6 @@ interface TicketListProps {
 
 export const TicketList: React.FC<TicketListProps> = ({ 
   tickets,
-  viewMode = 'list',
   onTicketClick
 }) => {
   const [selectedTickets, setSelectedTickets] = useState<string[]>([])

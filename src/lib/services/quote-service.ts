@@ -1,7 +1,5 @@
 import type { QuoteRequest } from '@/types/quote'
 import { getServerSupabase, type ServerContext } from '@/lib/supabase-client'
-import { SupabaseClient } from '@supabase/supabase-js'
-import { tagService } from './tag-service'
 
 export const quoteService = {
   async fetchQuotes(
@@ -41,7 +39,7 @@ export const quoteService = {
         query = query.eq('status', options.status)
       }
 
-      const { data, error } = await query
+      const { data, error } = await query.returns<QuoteRequest[]>()
 
       if (error) throw error
 
@@ -58,7 +56,7 @@ export const quoteService = {
         .filter(ticket => {
           const metadata = ticket.metadata || {}
           return metadata.destination && metadata.packageDetails
-        }) as QuoteRequest[]
+        })
     } catch (error) {
       console.error('Error in fetchQuotes:', error)
       throw error
@@ -71,7 +69,7 @@ export const quoteService = {
       title: string
       description: string
       customerId: string
-      metadata: any
+      metadata: QuoteRequest['metadata']
     }
   ): Promise<QuoteRequest> {
     const supabase = getServerSupabase(context)
@@ -79,7 +77,7 @@ export const quoteService = {
     try {
       // Determine priority based on delivery time and shipment type
       let priority = 'medium'
-      if (data.metadata?.packageDetails?.type === 'eco-freight') {
+      if (data.metadata?.selectedService === 'eco_freight') {
         priority = 'low'
       } else if (data.metadata?.destination?.pickupDate) {
         const pickupDate = new Date(data.metadata.destination.pickupDate)

@@ -1,16 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getServerSupabase } from '@/lib/supabase-client';
-import { Permission } from '@/types/role';
-import { checkUserPermissions } from '@/lib/auth/check-permissions';
-import { z } from 'zod';
 
-const createRoleSchema = z.object({
-  name: z.string().min(1),
-  description: z.string().optional(),
-  permissions: z.array(z.nativeEnum(Permission))
-});
-
-export async function GET(request: Request) {
+export async function GET() {
   try {
     const supabase = getServerSupabase();
     const { data: { user }, error: userError } = await supabase.auth.getUser();

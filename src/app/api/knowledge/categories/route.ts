@@ -1,14 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getServerSupabase } from '@/lib/supabase-client';
-import { z } from 'zod';
 
-const createCategorySchema = z.object({
-  name: z.string().min(1),
-  description: z.string().optional(),
-  parentId: z.string().uuid().optional()
-});
-
-export async function GET(request: Request) {
+export async function GET() {
   try {
     const supabase = getServerSupabase()
     const { data: { user }, error: userError } = await supabase.auth.getUser()

@@ -1,18 +1,21 @@
 'use client'
 
-import { useState } from 'react'
-import { 
-  User, Bell, Shield, CreditCard, Globe
-} from 'lucide-react'
-import Image from 'next/image'
-import { cn } from '@/lib/utils'
-import { useTheme } from '@/lib/hooks/useTheme'
-import { useAuth } from '@/lib/hooks/useAuth'
-import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
+import { useAuth } from '@/lib/hooks/useAuth'
+import { useTheme } from '@/lib/hooks/useTheme'
+import { cn } from '@/lib/utils'
 import { USER_ROLE_LABELS } from '@/types/role'
+import {
+Bell,
+CreditCard,Globe,
+Shield,
+User
+} from 'lucide-react'
+import Image from 'next/image'
+import { useState } from 'react'
 
 type SettingsSection = 'profile' | 'notifications' | 'security' | 'billing' | 'preferences'
 
@@ -209,7 +212,7 @@ export default function SettingsPage() {
                     id="phone"
                     type="tel"
                     placeholder="+1 (555) 000-0000"
-                    defaultValue={user.phone}
+                    defaultValue={user.phone || ''}
                   />
                 </div>
 
@@ -219,7 +222,7 @@ export default function SettingsPage() {
                     id="company"
                     type="text"
                     placeholder="Company Name"
-                    defaultValue={user.company}
+                    defaultValue={user.company || ''}
                   />
                 </div>
 

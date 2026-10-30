@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+import { createClient } from '@/lib/supabase/server'
+
+function assigneeChange(value: unknown) {
+  if (!value || typeof value !== 'object' || !('assignee_id' in value)) return null
+  return value
+}
 
 export async function GET(
   request: NextRequest,
@@ -8,33 +12,7 @@ export async function GET(
 ) {
   try {
     // Create Supabase client with proper cookie handling
-    const cookieStore = await cookies()
-    
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get(name: string) {
-            return cookieStore.get(name)?.value
-          },
-          set(name: string, value: string, options: Record<string, unknown>) {
-            try {
-              cookieStore.set(name, value, { ...options })
-            } catch (error) {
-              // Handle cookie setting error silently
-            }
-          },
-          remove(name: string, options: Record<string, unknown>) {
-            try {
-              cookieStore.delete(name)
-            } catch (error) {
-              // Handle cookie removal error silently
-            }
-          },
-        },
-      }
-    )
+    const supabase = await createClient()
 
     const { data: { session }, error: sessionError } = await supabase.auth.getSession()
 
@@ -68,8 +46,7 @@ export async function GET(
 
     // Filter logs that have assignee_id changes
     const assignmentHistory = history?.filter(entry => {
-      const changes = entry.changes as Record<string, any>
-      return changes && 'assignee_id' in changes
+      return assigneeChange(entry.changes) !== null
     })
 
     if (historyError) {
@@ -89,8 +66,8 @@ export async function GET(
     const agentIds = new Set<string>()
     assignmentHistory.forEach(entry => {
       if (entry.actor_id) agentIds.add(entry.actor_id)
-      const changes = entry.changes as Record<string, any>
-      if (changes.assignee_id) agentIds.add(changes.assignee_id)
+      const changes = assigneeChange(entry.changes)
+      if (typeof changes?.assignee_id === 'string') agentIds.add(changes.assignee_id)
     })
 
     // Get all agent details in a single query
@@ -113,8 +90,8 @@ export async function GET(
     // Format the history data to match UI expectations
     const formattedHistory = assignmentHistory?.map(entry => {
       const actor = agentMap.get(entry.actor_id)
-      const assigneeId = (entry.changes as Record<string, any>).assignee_id
-      const assignee = agentMap.get(assigneeId)
+      const assigneeId = assigneeChange(entry.changes)?.assignee_id
+      const assignee = typeof assigneeId === 'string' ? agentMap.get(assigneeId) : undefined
 
       return {
         id: entry.id,

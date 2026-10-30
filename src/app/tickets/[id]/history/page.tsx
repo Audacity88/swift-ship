@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useParams } from 'next/navigation'
-import { Clock, Filter, ChevronDown, MessageSquare, Tag, AlertCircle, User } from 'lucide-react'
+import { AlertCircle,ChevronDown,Clock,Filter,MessageSquare,Tag,User } from 'lucide-react'
 import Image from 'next/image'
+import { useParams } from 'next/navigation'
+import { useEffect,useState } from 'react'
 
 interface HistoryEvent {
   id: string
@@ -56,7 +56,7 @@ export default function TicketHistoryPage() {
         })
         const json = await response.json()
         const logs = json.data || []
-        const mapped = logs.map((log:any) => ({
+        const mapped = logs.map((log: { id: string; action: string; actor?: { name?: string; email?: string }; created_at: string; changes?: HistoryEvent['details'] }) => ({
           id: log.id,
           type: 'comment',
           action: log.action,

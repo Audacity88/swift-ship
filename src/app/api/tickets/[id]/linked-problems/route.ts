@@ -1,6 +1,6 @@
+import { errorMessage, errorStatus } from '@/app/api/_errors'
 import { NextRequest, NextResponse } from 'next/server'
 import { ticketService } from '@/lib/services'
-import type { TicketRelationship } from '@/lib/services/ticket-service'
 import { getServerSupabase } from '@/lib/supabase-client'
 
 // GET /api/tickets/[id]/linked-problems - Get all linked problem tickets
@@ -25,11 +25,11 @@ export async function GET(
     // Get linked problems for the ticket
     const linkedProblems = await ticketService.getLinkedProblems(undefined, id)
     return NextResponse.json(linkedProblems)
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error in GET /api/tickets/[id]/linked-problems:', error)
     return NextResponse.json(
-      { error: error.message || 'Internal server error' },
-      { status: error.status || 500 }
+      { error: errorMessage(error, 'Internal server error') },
+      { status: errorStatus(error) }
     )
   }
 }
@@ -64,11 +64,11 @@ export async function POST(
     // Link the problem ticket
     await ticketService.linkProblem(undefined, id, problemTicketId)
     return NextResponse.json({ success: true })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error in POST /api/tickets/[id]/linked-problems:', error)
     return NextResponse.json(
-      { error: error.message || 'Internal server error' },
-      { status: error.status || 500 }
+      { error: errorMessage(error, 'Internal server error') },
+      { status: errorStatus(error) }
     )
   }
 }
@@ -104,11 +104,11 @@ export async function DELETE(
     // Unlink the problem ticket
     await ticketService.unlinkProblem(undefined, id, problemTicketId)
     return NextResponse.json({ success: true })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error in DELETE /api/tickets/[id]/linked-problems:', error)
     return NextResponse.json(
-      { error: error.message || 'Internal server error' },
-      { status: error.status || 500 }
+      { error: errorMessage(error, 'Internal server error') },
+      { status: errorStatus(error) }
     )
   }
 } 

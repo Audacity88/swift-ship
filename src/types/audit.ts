@@ -10,9 +10,9 @@ export interface AuditLogActor {
 }
 
 export interface AuditLogChanges {
-  old?: Record<string, any>
-  new?: Record<string, any>
-  changed_fields?: Record<string, any>
+  old?: Record<string, unknown>
+  new?: Record<string, unknown>
+  changed_fields?: Record<string, unknown>
 }
 
 export interface AuditLogMetadata {

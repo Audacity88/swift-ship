@@ -11,7 +11,9 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-export interface AgentMessage extends ChatCompletionMessageParam {
+export interface AgentMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
   metadata?: {
     agentId: string;
     timestamp: number;
@@ -28,7 +30,10 @@ export interface AgentMessage extends ChatCompletionMessageParam {
 
 export interface AgentContext {
   messages: AgentMessage[];
-  metadata?: Record<string, any>;
+  metadata?: {
+    userId?: string; token?: string; agentType?: string; agent?: string;
+    customer?: { id: string; name: string; email: string };
+  };
 }
 
 export abstract class BaseAgent {
@@ -47,9 +52,7 @@ export abstract class BaseAgent {
     };
   }
 
-  protected async processMessage(message: AgentMessage, context: AgentContext): Promise<string> {
-    throw new Error('processMessage must be implemented by derived class');
-  }
+
 
   protected async generateEmbedding(text: string): Promise<number[]> {
     const response = await openai.embeddings.create({
@@ -67,7 +70,7 @@ export abstract class BaseAgent {
     });
 
     if (error) throw error;
-    return matches;
+    return (matches || []) as { content: string; metadata: { title?: string; resolution?: string } }[];
   }
 
   protected async getCompletion(

@@ -1,4 +1,3 @@
-import { User } from './user';
 import { Article } from './knowledge';
 import { Ticket } from './ticket';
 
@@ -36,7 +35,7 @@ export interface ArticleInteraction {
   userId: string;
   articleId: string;
   type: 'view' | 'bookmark' | 'share';
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   createdAt: Date;
 }
 
@@ -131,7 +130,7 @@ export interface SearchHistory {
   id: string;
   userId: string;
   query: string;
-  filters?: Record<string, any>;
+  filters?: Record<string, unknown>;
   resultCount: number;
   createdAt: Date;
 }

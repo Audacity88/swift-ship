@@ -1,27 +1,24 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { ShipmentMap } from '@/components/features/shipments/ShipmentMap'
+import { useAuth } from '@/lib/hooks/useAuth'
+import { shipmentService } from '@/lib/services'
+import type { ShipmentWithEvents } from '@/types/shipment'
 import { format } from 'date-fns'
 import {
-  Package,
-  Truck,
-  MapPin,
-  Calendar,
-  Clock,
-  AlertCircle,
-  CheckCircle2,
-  CircleDot,
-  ArrowLeft,
-  Loader2,
-  Box,
-  Info
+AlertCircle,
+ArrowLeft,
+CheckCircle2,
+CircleDot,
+Clock,
+Info,
+Loader2,
+MapPin,
+Package,
+Truck
 } from 'lucide-react'
-import { COLORS } from '@/lib/constants'
-import { shipmentService } from '@/lib/services'
-import { useAuth } from '@/lib/hooks/useAuth'
-import type { ShipmentWithEvents } from '@/types/shipment'
-import { ShipmentMap } from '@/components/features/shipments/ShipmentMap'
+import { useParams,useRouter } from 'next/navigation'
+import { useEffect,useState } from 'react'
 
 const statusColors = {
   quote_requested: { bg: 'bg-blue-50', text: 'text-blue-700', icon: CircleDot },
@@ -52,11 +49,11 @@ export default function ShipmentDetailsPage() {
 
   useEffect(() => {
     const fetchShipment = async () => {
-      if (!user || !params.id) return
+      if (!user || !params?.id) return
       
       try {
         setIsLoading(true)
-        const fetchedShipment = await shipmentService.getShipmentWithEvents(undefined, params.id as string)
+        const fetchedShipment = await shipmentService.getShipmentWithEvents(undefined, params?.id as string)
         setShipment(fetchedShipment)
       } catch (error) {
         console.error('Error fetching shipment:', error)
@@ -67,7 +64,7 @@ export default function ShipmentDetailsPage() {
     }
 
     void fetchShipment()
-  }, [user, params.id])
+  }, [user, params?.id])
 
   if (isLoading) {
     return (

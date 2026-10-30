@@ -56,6 +56,7 @@ export const teamService = {
             schedule
           )
         `)
+        .returns<TeamRow[]>()
 
       if (error) {
         console.error('Failed to get all teams:', error)
@@ -128,6 +129,7 @@ export const teamService = {
           )
         `)
         .eq('id', id)
+        .returns<TeamRow[]>()
         .maybeSingle()
 
       if (error) {
@@ -329,6 +331,7 @@ export const teamService = {
           schedule
         `)
         .eq('team_id', teamId)
+        .returns<TeamMemberRow[]>()
 
       if (error) {
         console.error('Failed to get team members:', error)

@@ -1,18 +1,17 @@
 'use client'
 
-import React from 'react'
-import { useEffect, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
-import Link from 'next/link'
-import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { ChevronLeft, ThumbsUp, ThumbsDown, Tag } from 'lucide-react'
-import { toast } from 'sonner'
+import { Card } from '@/components/ui/card'
+import { ChevronLeft,Tag,ThumbsDown,ThumbsUp } from 'lucide-react'
+import Link from 'next/link'
+import { useParams,useRouter } from 'next/navigation'
+import { useEffect,useState } from 'react'
 import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import remarkBreaks from 'remark-breaks'
 import rehypeRaw from 'rehype-raw'
 import rehypeSanitize from 'rehype-sanitize'
+import remarkBreaks from 'remark-breaks'
+import remarkGfm from 'remark-gfm'
+import { toast } from 'sonner'
 
 interface Article {
   id: string
@@ -48,7 +47,7 @@ export default function ArticlePage() {
   useEffect(() => {
     const fetchArticle = async () => {
       try {
-        const response = await fetch(`/api/articles/${params.slug}`, {
+        const response = await fetch(`/api/articles/${params?.slug}`, {
           credentials: 'include'
         })
         
@@ -66,10 +65,10 @@ export default function ArticlePage() {
       }
     }
 
-    if (params.slug) {
+    if (params?.slug) {
       fetchArticle()
     }
-  }, [params.slug])
+  }, [params?.slug])
 
   const handleVote = async (isHelpful: boolean) => {
     if (!article || hasVoted) {
@@ -78,7 +77,7 @@ export default function ArticlePage() {
     }
 
     try {
-      const response = await fetch(`/api/articles/${params.slug}/feedback`, {
+      const response = await fetch(`/api/articles/${params?.slug}/feedback`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ isHelpful }),

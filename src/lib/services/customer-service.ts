@@ -1,5 +1,6 @@
 import { getServerSupabase, type ServerContext } from '@/lib/supabase-client'
-import type { Customer } from '@/types/customer'
+import type { Customer } from '@/types/ticket'
+export type { Customer } from '@/types/ticket'
 
 interface ListCustomersParams {
   page?: number

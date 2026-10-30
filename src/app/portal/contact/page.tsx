@@ -14,7 +14,7 @@ export default function ContactSupportPage() {
       </div>
 
       <div className="flex-1 p-6">
-        <AISupportChat />
+        <AISupportChat agentType="support" />
       </div>
     </div>
   )

@@ -1,18 +1,17 @@
 'use client'
 
-import { useState, useEffect, use } from 'react'
-import { useRouter } from 'next/navigation'
-import { useToast } from '@/components/ui/use-toast'
+import { AddressAutocomplete } from '@/components/features/quotes/AddressAutocomplete'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card } from '@/components/ui/card'
-import { ArrowLeft } from 'lucide-react'
+import { useToast } from '@/components/ui/use-toast'
 import { ticketService } from '@/lib/services'
+import type { QuoteRequest,RadarAddress } from '@/types/quote'
 import { TIME_SLOTS } from '@/types/time-slots'
-import type { QuoteRequest } from '@/types/quote'
-import { AddressAutocomplete } from '@/components/features/quotes/AddressAutocomplete'
-import type { RadarAddress } from '@/types/quote'
+import { ArrowLeft } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { use,useEffect,useState } from 'react'
 
 interface PackageDetails {
   type: 'full_truckload' | 'less_than_truckload' | 'sea_container' | 'bulk_freight'
@@ -79,7 +78,15 @@ export default function EditQuotePage({ params }: { params: Promise<{ id: string
   useEffect(() => {
     const fetchQuote = async () => {
       try {
-        const data = await ticketService.getTicket({}, resolvedParams.id)
+        const data = await ticketService.getTicket(undefined, resolvedParams.id)
+        if (!data || !data.metadata.packageDetails || !data.metadata.destination) {
+          throw new Error('Quote not found or missing package/destination details')
+        }
+        const metadata: QuoteRequest['metadata'] = {
+          ...data.metadata,
+          packageDetails: data.metadata.packageDetails,
+          destination: data.metadata.destination
+        }
         // Transform ticket to quote format
         const quoteData: QuoteRequest = {
           id: data.id,
@@ -90,37 +97,21 @@ export default function EditQuotePage({ params }: { params: Promise<{ id: string
             name: data.customer.name,
             email: data.customer.email
           },
-          metadata: data.metadata,
-          created_at: data.created_at
+          metadata,
+          created_at: data.createdAt
         }
         setQuote(quoteData)
-        setPackageDetails(data.metadata.packageDetails)
+        setPackageDetails(metadata.packageDetails)
 
-        // Handle both old and new address formats
-        const destinationData = data.metadata.destination
-        if (typeof destinationData.from === 'string') {
-          // Convert old format to new format
-          setDestination({
-            from: {
-              address: destinationData.from,
-              coordinates: undefined,
-              formattedAddress: undefined,
-              placeDetails: undefined
-            },
-            to: {
-              address: destinationData.to,
-              coordinates: undefined,
-              formattedAddress: undefined,
-              placeDetails: undefined
-            },
-            pickupDate: destinationData.pickupDate,
-            pickupTimeSlot: destinationData.pickupTimeSlot || ''
-          })
-        } else {
-          // New format, use as is
-          setDestination(destinationData)
-        }
-        
+        // Preserve legacy string endpoints and the current structured format.
+        const endpointData = metadata.destination
+        setDestination({
+          ...endpointData,
+          from: typeof endpointData.from === 'string' ? { address: endpointData.from } : endpointData.from,
+          to: typeof endpointData.to === 'string' ? { address: endpointData.to } : endpointData.to,
+          pickupTimeSlot: endpointData.pickupTimeSlot || ''
+        })
+
         setSelectedService(data.metadata.selectedService || '')
       } catch (error) {
         console.error('Error fetching quote:', error)
@@ -143,7 +134,7 @@ export default function EditQuotePage({ params }: { params: Promise<{ id: string
 
     try {
       setIsSaving(true)
-      await ticketService.updateTicket({}, quote.id, {
+      await ticketService.updateTicket(undefined, quote.id, {
         metadata: {
           ...quote.metadata,
           packageDetails,
@@ -211,7 +202,7 @@ export default function EditQuotePage({ params }: { params: Promise<{ id: string
                 <select
                   id="type"
                   value={packageDetails.type}
-                  onChange={(e) => setPackageDetails({ ...packageDetails, type: e.target.value as any })}
+                  onChange={(e) => setPackageDetails({ ...packageDetails, type: e.target.value as PackageDetails['type'] })}
                   className="w-full p-2 border border-gray-200 rounded-lg"
                 >
                   <option value="full_truckload">Full Truckload (FTL)</option>
@@ -259,7 +250,7 @@ export default function EditQuotePage({ params }: { params: Promise<{ id: string
                   <select
                     id="containerSize"
                     value={packageDetails.containerSize}
-                    onChange={(e) => setPackageDetails({ ...packageDetails, containerSize: e.target.value as any })}
+                    onChange={(e) => setPackageDetails({ ...packageDetails, containerSize: e.target.value as PackageDetails['containerSize'] })}
                     className="w-full p-2 border border-gray-200 rounded-lg"
                   >
                     <option value="20ft">20ft Standard</option>
@@ -290,7 +281,7 @@ export default function EditQuotePage({ params }: { params: Promise<{ id: string
                 <AddressAutocomplete
                   value={destination.from.address}
                   onChange={(address, details) => {
-                    setDestination(prev => ({
+                    setDestination(prev => prev ? ({
                       ...prev,
                       from: {
                         address,
@@ -301,7 +292,7 @@ export default function EditQuotePage({ params }: { params: Promise<{ id: string
                         formattedAddress: details?.formattedAddress,
                         placeDetails: details
                       }
-                    }))
+                    }) : prev)
                   }}
                   placeholder="Enter pickup address"
                 />
@@ -312,7 +303,7 @@ export default function EditQuotePage({ params }: { params: Promise<{ id: string
                 <AddressAutocomplete
                   value={destination.to.address}
                   onChange={(address, details) => {
-                    setDestination(prev => ({
+                    setDestination(prev => prev ? ({
                       ...prev,
                       to: {
                         address,
@@ -323,7 +314,7 @@ export default function EditQuotePage({ params }: { params: Promise<{ id: string
                         formattedAddress: details?.formattedAddress,
                         placeDetails: details
                       }
-                    }))
+                    }) : prev)
                   }}
                   placeholder="Enter delivery address"
                 />

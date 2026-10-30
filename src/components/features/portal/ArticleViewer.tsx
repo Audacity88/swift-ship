@@ -4,37 +4,13 @@ import { useState } from 'react';
 import { Article } from '@/types/knowledge';
 import { ArticleRating } from '@/types/portal';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
-import { ScrollArea } from '@/components/ui/scroll-area';
+
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
-import {
-  BookmarkIcon,
-  ChevronLeft,
-  Eye,
-  MessageSquare,
-  Share2,
-  Star,
-  ThumbsDown,
-  ThumbsUp,
-} from 'lucide-react';
+import { BookmarkIcon, ChevronLeft, Eye, Share2, Star, ThumbsDown, ThumbsUp } from 'lucide-react';
 
 interface ArticleViewerProps {
   article: Article;

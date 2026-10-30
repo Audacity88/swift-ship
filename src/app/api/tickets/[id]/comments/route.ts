@@ -2,26 +2,6 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getServerSupabase } from '@/lib/supabase-client'
 
-// Types
-interface MessageResult {
-  id: string
-  ticket_id: string
-  content: string
-  author_type: 'customer' | 'agent'
-  author_id: string
-  is_internal: boolean
-  created_at: string
-  updated_at: string
-  author: {
-    id: string
-    name: string
-    email: string
-    avatar: string | null
-    type: 'customer' | 'agent'
-    role?: 'agent' | 'admin'
-  }
-}
-
 // Validation schema for creating a comment
 const createCommentSchema = z.object({
   content: z.string().min(1),
@@ -59,13 +39,17 @@ export async function POST(request: Request, props: { params: Promise<{ id: stri
       )
     }
 
+    const { data: agent, error: agentError } = await supabase.from('agents').select('id').eq('id', user.id).maybeSingle()
+    if (agentError) throw agentError
+    const authorType = agent ? 'agent' : 'customer'
+
     // Create the message
     const { data: message, error: messageError } = await supabase
       .from('messages')
       .insert({
         ticket_id: params.id,
         content: body.content,
-        author_type: user.type,
+        author_type: authorType,
         author_id: user.id,
         is_internal: body.isInternal,
         created_at: new Date().toISOString(),
@@ -90,7 +74,7 @@ export async function POST(request: Request, props: { params: Promise<{ id: stri
         entity_id: params.id,
         action: 'comment',
         actor_id: user.id,
-        actor_type: user.type,
+        actor_type: authorType,
         changes: {
           messageId: message.id,
           content: body.content,
@@ -148,32 +132,30 @@ export async function GET(request: Request, props: { params: Promise<{ id: strin
     }
 
     const { searchParams } = new URL(request.url)
-    const page = parseInt(searchParams.get('page') || '1')
-    const limit = parseInt(searchParams.get('limit') || '20')
+    const pagination = z.object({
+      page: z.coerce.number().int().min(1).default(1),
+      limit: z.coerce.number().int().min(1).max(100).default(20)
+    }).safeParse({ page: searchParams.get('page') || undefined, limit: searchParams.get('limit') || undefined })
+    if (!pagination.success) return NextResponse.json({ error: 'Invalid pagination' }, { status: 400 })
+    const { page, limit } = pagination.data
     const offset = (page - 1) * limit
 
     // Get comments with author details
-    const comments = await supabase
+    const { data: comments, count, error: commentsError } = await supabase
       .from('messages')
-      .select('*')
+      .select('*', { count: 'exact' })
       .eq('ticket_id', params.id)
       .order('created_at', { ascending: false })
-      .limit(limit)
-      .offset(offset)
-
-    // Get total count
-    const { count } = await supabase
-      .from('messages')
-      .select('COUNT(*)')
-      .eq('ticket_id', params.id)
+      .range(offset, offset + limit - 1)
+    if (commentsError) throw commentsError
 
     return NextResponse.json({
       data: comments,
       pagination: {
-        total: parseInt(count),
+        total: count ?? 0,
         page,
         limit,
-        totalPages: Math.ceil(parseInt(count) / limit)
+        totalPages: Math.ceil((count ?? 0) / limit)
       }
     })
   } catch (error) {

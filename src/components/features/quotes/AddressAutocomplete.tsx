@@ -77,13 +77,7 @@ export function AddressAutocomplete({
       console.log('Geocoding result:', details)
       
       if (details) {
-        onChange(suggestion, {
-          ...details,
-          coordinates: {
-            latitude: details.latitude,
-            longitude: details.longitude
-          }
-        })
+        onChange(suggestion, details)
       } else {
         console.error('No geocoding results found for:', suggestion)
         onChange(suggestion)

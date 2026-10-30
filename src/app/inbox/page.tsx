@@ -1,30 +1,15 @@
 'use client'
 
-import { formatTicketStatus } from '@/lib/ticket-labels'
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import Image from 'next/image'
-import { Search, Filter, Star, MessageSquare, Phone, Mail, Plus } from 'lucide-react'
-import { COLORS } from '@/lib/constants'
-import { conversationService } from '@/lib/services'
 import { ConversationView } from '@/components/features/inbox/ConversationView'
-import { format } from 'date-fns'
 import { useAuth } from '@/lib/hooks/useAuth'
+import { conversationService } from '@/lib/services'
+import { formatTicketStatus } from '@/lib/ticket-labels'
 import { cn } from '@/lib/utils'
+import { format } from 'date-fns'
+import { useCallback,useEffect,useState } from 'react'
 
 // We assume: The "messages" table is joined to "tickets" for the conversation thread.
 // We'll fetch: all messages for the logged in user, either as the ticket's customer or as message author.
-
-interface InboxMessage {
-  id: string
-  ticketId: string
-  content: string
-  authorId: string
-  authorType: 'agent' | 'customer'
-  createdAt: string
-  ticketTitle: string
-  ticketCustomerId: string
-}
 
 interface Ticket {
   id: string
@@ -49,12 +34,11 @@ export default function InboxPage() {
   const { user } = useAuth()
   const [searchQuery, setSearchQuery] = useState('')
   const [isLoading, setIsLoading] = useState(true)
-  const [messages, setMessages] = useState<InboxMessage[]>([])
   const [error, setError] = useState<string | null>(null)
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null)
-  const [tickets, setTickets] = useState<any[]>([])
+  const [tickets, setTickets] = useState<Array<{ id: string; subject: string; status: string; createdAt: string; customer: Ticket['customer']; latestMessage?: Ticket['messages'][number] }>>([])
 
-  const loadMessages = async () => {
+  const loadMessages = useCallback(async () => {
     if (!user) return // Don't load if we don't have a user yet
     
     setIsLoading(true)
@@ -76,13 +60,13 @@ export default function InboxPage() {
         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
 
       setTickets(mappedTickets)
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error loading messages:', err)
-      setError(err.message)
+      setError(err instanceof Error ? err.message : 'Unable to load messages.')
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [user])
 
   // Load messages when user changes
   useEffect(() => {
@@ -92,16 +76,11 @@ export default function InboxPage() {
       setError('Not authenticated')
       setIsLoading(false)
     }
-  }, [user])
+  }, [user, loadMessages])
 
-  // Filter messages in memory
-  const filteredMessages = messages.filter(msg => {
-    if (!searchQuery) return true
-    const q = searchQuery.toLowerCase()
-    return (
-      msg.ticketTitle.toLowerCase().includes(q) ||
-      msg.content.toLowerCase().includes(q)
-    )
+  const filteredTickets = tickets.filter(ticket => {
+    const query = searchQuery.toLowerCase()
+    return ticket.subject.toLowerCase().includes(query) || ticket.latestMessage?.content.toLowerCase().includes(query)
   })
 
   if (isLoading) {
@@ -146,7 +125,7 @@ export default function InboxPage() {
           />
         </div>
         <div className="divide-y divide-border">
-          {tickets.map((ticket) => (
+          {filteredTickets.map((ticket) => (
             <div
               key={ticket.id}
               onClick={() => setSelectedTicketId(ticket.id)}

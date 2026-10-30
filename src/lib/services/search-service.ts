@@ -1,7 +1,8 @@
 import { getServerSupabase, type ServerContext } from '@/lib/supabase-client'
+import type { FailedSearch } from '@/types/search'
 
 export const searchService = {
-  async getSearchAnalytics(context: ServerContext, timeRange: string): Promise<any> {
+  async getSearchAnalytics(context: ServerContext, timeRange: string): Promise<{ total_searches: number; avg_response_time: number; failure_rate: number }> {
     try {
       const supabase = getServerSupabase(context)
       const { data: { user }, error: userError } = await supabase.auth.getUser()
@@ -77,7 +78,7 @@ export const searchService = {
     }
   },
 
-  async getFailedSearches(context: ServerContext, timeRange: string): Promise<any[]> {
+  async getFailedSearches(context: ServerContext, timeRange: string): Promise<FailedSearch[]> {
     try {
       const supabase = getServerSupabase(context)
       const { data: { user }, error: userError } = await supabase.auth.getUser()
@@ -104,7 +105,10 @@ export const searchService = {
         throw error
       }
 
-      return data || []
+      return (data || []).map(row => ({
+        query: row.query, searcherId: row.searcher_id, searcherType: row.searcher_type,
+        filters: row.filters || {}, errorMessage: row.error_message, createdAt: new Date(row.created_at)
+      }))
     } catch (error) {
       console.error('Error in getFailedSearches:', error)
       return []
@@ -120,7 +124,7 @@ export const searchService = {
         throw new Error('Unauthorized')
       }
 
-      // ... rest of the function ...
+      void query // Search implementation is still pending.
     } catch (error) {
       console.error('Error in searchArticles:', error)
       throw error
@@ -136,7 +140,7 @@ export const searchService = {
         throw new Error('Unauthorized')
       }
 
-      // ... rest of the function ...
+      void query // Search implementation is still pending.
     } catch (error) {
       console.error('Error in searchTickets:', error)
       throw error
@@ -152,7 +156,7 @@ export const searchService = {
         throw new Error('Unauthorized')
       }
 
-      // ... rest of the function ...
+      void query // Search implementation is still pending.
     } catch (error) {
       console.error('Error in searchCustomers:', error)
       throw error
@@ -168,7 +172,7 @@ export const searchService = {
         throw new Error('Unauthorized')
       }
 
-      // ... rest of the function ...
+      void query // Search implementation is still pending.
     } catch (error) {
       console.error('Error in searchAll:', error)
       throw error

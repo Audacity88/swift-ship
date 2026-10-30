@@ -1,25 +1,25 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { AddressAutocomplete } from '@/components/features/quotes/AddressAutocomplete'
+import { QuoteDetailView } from '@/components/features/quotes/QuoteDetailView'
+import { COLORS } from '@/lib/constants'
+import { useAuth } from '@/lib/hooks/useAuth'
+import { quoteService,ticketService } from '@/lib/services'
+import { quoteCalculationService,SERVICE_RATES,type ServiceOption,type ServiceType } from '@/lib/services/quote-calculation-service'
+import { radarService,type RouteInfo } from '@/lib/services/radar-service'
+import type { QuoteRequest,RadarAddress } from '@/types/quote'
+import { TIME_SLOTS } from '@/types/time-slots'
 import { format } from 'date-fns'
 import {
-  ArrowRight,
-  ArrowLeft,
-  Plus,
-  Package,
-  Clock,
-  X
+ArrowLeft,
+ArrowRight,
+Clock,
+Package,
+Plus,
+X
 } from 'lucide-react'
-import { COLORS } from '@/lib/constants'
-import { quoteService, ticketService } from '@/lib/services'
-import { useAuth } from '@/lib/hooks/useAuth'
-import { QuoteDetailView } from '@/components/features/quotes/QuoteDetailView'
-import { TIME_SLOTS } from '@/types/time-slots'
-import { AddressAutocomplete } from '@/components/features/quotes/AddressAutocomplete'
-import type { RadarAddress } from '@/types/quote'
-import { radarService, type RouteInfo } from '@/lib/services/radar-service'
-import { quoteCalculationService, type ServiceOption } from '@/lib/services/quote-calculation-service'
+import { useRouter } from 'next/navigation'
+import { useEffect,useState } from 'react'
 
 type Step = 'package' | 'destination' | 'service' | 'summary' | 'done'
 
@@ -68,45 +68,6 @@ interface Quote {
     estimatedDelivery?: string
     estimatedPrice?: number
   }
-}
-
-interface QuoteRequest {
-  id: string
-  title: string
-  status: string
-  customer: {
-    id: string
-    name: string
-    email: string
-  }
-  metadata: {
-    packageDetails: PackageDetails
-    destination: {
-      from: {
-        address: string
-        coordinates?: {
-          latitude: number
-          longitude: number
-        }
-        formattedAddress?: string
-        placeDetails?: RadarAddress
-      }
-      to: {
-        address: string
-        coordinates?: {
-          latitude: number
-          longitude: number
-        }
-        formattedAddress?: string
-        placeDetails?: RadarAddress
-      }
-      pickupDate: string
-      pickupTimeSlot: string
-    }
-    selectedService: string
-    quotedPrice?: number
-  }
-  created_at: string
 }
 
 interface ValidationErrors {
@@ -440,7 +401,8 @@ export default function QuotePage() {
 
   // Helper function to calculate estimated delivery based on service type
   const calculateEstimatedDelivery = (pickupDate: string, serviceId: string): string => {
-    return quoteCalculationService.calculateEstimatedDelivery(pickupDate, serviceId)
+    if (!(serviceId in SERVICE_RATES)) throw new Error('Choose a supported shipping service.')
+    return quoteCalculationService.calculateEstimatedDelivery(pickupDate, serviceId as ServiceType)
   }
 
   // Transform quote to QuoteRequest type

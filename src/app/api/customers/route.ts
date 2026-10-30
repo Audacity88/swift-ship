@@ -1,7 +1,7 @@
+import { errorMessage, errorStatus } from '@/app/api/_errors'
 import { NextResponse } from 'next/server'
 import { customerService } from '@/lib/services'
 import { getServerSupabase } from '@/lib/supabase-client'
-import type { Customer } from '@/types/customer'
 
 // GET /api/customers - List customers
 export async function GET(request: Request) {
@@ -66,17 +66,18 @@ export async function GET(request: Request) {
     })
 
     return NextResponse.json(result)
-  } catch (error: any) {
+  } catch (error) {
     console.error('Failed to process customer request:', error)
     return NextResponse.json(
-      { error: error.message || 'Failed to process customer request' },
-      { status: error.status || 500 }
+      { error: errorMessage(error, 'Failed to process customer request') },
+      { status: errorStatus(error) }
     )
   }
 }
 
 // PUT /api/customers/[id] - Update a customer
-export async function PUT(request: Request, { params }: { params: { id: string } }) {
+export async function PUT(request: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params
   try {
     const supabase = getServerSupabase()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
@@ -100,11 +101,11 @@ export async function PUT(request: Request, { params }: { params: { id: string }
 
     const customer = await customerService.updateCustomer(undefined, params.id, updates)
     return NextResponse.json(customer)
-  } catch (error: any) {
+  } catch (error) {
     console.error('Failed to update customer:', error)
     return NextResponse.json(
-      { error: error.message || 'Failed to update customer' },
-      { status: error.status || 500 }
+      { error: errorMessage(error, 'Failed to update customer') },
+      { status: errorStatus(error) }
     )
   }
 }

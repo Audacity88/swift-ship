@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Article, Category, SearchFilters, SearchResult } from '@/types/knowledge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+
 import {
   Select,
   SelectContent,
@@ -92,7 +92,7 @@ export const SearchInterface = ({
     }
   }, [searchQuery, handleSearch]);
 
-  const handleFilterChange = (key: keyof SearchFilters, value: any) => {
+  const handleFilterChange = <K extends keyof SearchFilters,>(key: K, value: SearchFilters[K]) => {
     setFilters(prev => ({
       ...prev,
       [key]: value,
@@ -253,7 +253,7 @@ export const SearchInterface = ({
                 </p>
                 {result.highlights.map((highlight, i) => (
                   <Badge key={i} variant="secondary" className="ml-2">
-                    {highlight}
+                    {highlight.snippet}
                   </Badge>
                 ))}
               </CardContent>

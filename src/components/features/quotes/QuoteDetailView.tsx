@@ -177,7 +177,7 @@ export function QuoteDetailView({
             <Button
               onClick={() => onCreateShipment(quote.id)}
               className="w-full mt-4 bg-green-600 hover:bg-green-700 text-white"
-              variant="success"
+              variant="default"
             >
               <Truck className="w-4 h-4 mr-2" />
               Create Shipment

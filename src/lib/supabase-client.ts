@@ -1,7 +1,7 @@
 import { createServerClient, createBrowserClient } from '@supabase/ssr'
 import type { GetServerSidePropsContext } from 'next'
 import type { NextApiRequest, NextApiResponse } from 'next'
-import type { Database } from '@/types/supabase'
+import type { CookieOptions } from '@supabase/ssr'
 
 export type ServerContext = GetServerSidePropsContext | { req: NextApiRequest; res: NextApiResponse } | undefined
 
@@ -14,7 +14,7 @@ const COOKIE_OPTIONS = {
 }
 
 export const getBrowserSupabase = () => {
-  return createBrowserClient<Database>(
+  return createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
@@ -29,7 +29,7 @@ export const getBrowserSupabase = () => {
 
 export const getServerSupabase = (context?: ServerContext) => {
   if (context?.req) {
-    return createServerClient<Database>(
+    return createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
@@ -42,7 +42,7 @@ export const getServerSupabase = (context?: ServerContext) => {
           get(name: string) {
             return context.req.cookies[name]
           },
-          set(name: string, value: string, options: any) {
+          set(name: string, value: string, options: CookieOptions) {
             if (context.res) {
               context.res.setHeader(
                 'Set-Cookie',
@@ -55,7 +55,7 @@ export const getServerSupabase = (context?: ServerContext) => {
               )
             }
           },
-          remove(name: string, options: any) {
+          remove(name: string, options: CookieOptions) {
             if (context.res) {
               context.res.setHeader(
                 'Set-Cookie',

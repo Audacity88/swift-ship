@@ -1,19 +1,12 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getServerSupabase } from '@/lib/supabase-client';
-import { Permission } from '@/types/role';
-import { checkUserPermissions } from '@/lib/auth/check-permissions';
-import { z } from 'zod';
-
-const createFeedbackSchema = z.object({
-  helpful: z.boolean(),
-  comment: z.string().optional()
-});
 
 // POST /api/portal/articles/[id]/feedback - Submit article feedback
 export async function POST(
   request: Request,
-  { params }: { params: { id: string } }
+  props: { params: Promise<{ id: string }> }
 ) {
+  const params = await props.params
   try {
     const supabase = getServerSupabase();
     const { data: { user }, error: userError } = await supabase.auth.getUser();

@@ -47,29 +47,27 @@ export function EditAgentDialog({ open, onOpenChange, agentId }: EditAgentDialog
   const [showDeleteAlert, setShowDeleteAlert] = useState(false)
 
   useEffect(() => {
-    if (open && agentId) {
-      fetchAgent()
-    }
-  }, [open, agentId])
-
-  const fetchAgent = async () => {
-    try {
-      const response = await fetch(`/api/agents/${agentId}`)
-      if (!response.ok) {
-        throw new Error('Failed to fetch agent')
+    const fetchAgent = async () => {
+      try {
+        const response = await fetch(`/api/agents/${agentId}`)
+        if (!response.ok) {
+          throw new Error('Failed to fetch agent')
+        }
+        const data = await response.json()
+        setAgent(data)
+      } catch (error) {
+        console.error('Error fetching agent:', error)
+        toast({
+          title: 'Error',
+          description: 'Failed to fetch agent details. Please try again.',
+          variant: 'destructive',
+        })
+        onOpenChange(false)
       }
-      const data = await response.json()
-      setAgent(data)
-    } catch (error) {
-      console.error('Error fetching agent:', error)
-      toast({
-        title: 'Error',
-        description: 'Failed to fetch agent details. Please try again.',
-        variant: 'destructive',
-      })
-      onOpenChange(false)
     }
-  }
+
+    if (open && agentId) void fetchAgent()
+  }, [open, agentId, onOpenChange, toast])
 
   const handleEditAgent = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -157,7 +155,7 @@ export function EditAgentDialog({ open, onOpenChange, agentId }: EditAgentDialog
           <DialogHeader>
             <DialogTitle>Edit Agent</DialogTitle>
             <DialogDescription>
-              Update the agent's information.
+              Update the agent&apos;s information.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleEditAgent} className="space-y-4">

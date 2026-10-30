@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { createServerClient } from '@supabase/ssr'
+import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
 // Validation schema for updating a ticket
@@ -23,10 +23,10 @@ const createClient = async () => {
         get(name: string) {
           return cookieStore.get(name)?.value
         },
-        set(name: string, value: string, options: any) {
+        set(name: string, value: string, options: CookieOptions) {
           cookieStore.set({ name, value, ...options })
         },
-        remove(name: string, options: any) {
+        remove(name: string, options: CookieOptions) {
           cookieStore.delete({ name, ...options })
         },
       },
@@ -88,7 +88,9 @@ export async function GET(
     }
 
     // Check if user has access to this ticket
-    if (user.type === 'agent' && user.role !== 'admin' && ticket.assignee_id !== user.id) {
+    const { data: agent, error: agentError } = await supabase.from('agents').select('role').eq('id', user.id).maybeSingle()
+    if (agentError) throw agentError
+    if (agent && agent.role !== 'admin' && ticket.assignee_id !== user.id) {
       return NextResponse.json(
         { error: 'You do not have permission to view this ticket' },
         { status: 403 }
@@ -98,7 +100,7 @@ export async function GET(
     // Transform ticket tags into the expected format
     const transformedTicket = {
       ...ticket,
-      tags: ticket.ticket_tags.map((tt: any) => ({
+      tags: ticket.ticket_tags.map((tt: { tags: { id: string; name: string; color: string | null } }) => ({
         id: tt.tags.id,
         name: tt.tags.name,
         color: tt.tags.color || '#666666'

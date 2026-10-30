@@ -1,19 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getServerSupabase } from '@/lib/supabase-client';
-import { Permission } from '@/types/role';
-import { checkUserPermissions } from '@/lib/auth/check-permissions';
-import { z } from 'zod';
-
-const updateTeamSchema = z.object({
-  name: z.string().min(1).optional(),
-  description: z.string().optional(),
-  status: z.enum(['active', 'inactive']).optional()
-});
 
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  props: { params: Promise<{ id: string }> }
 ) {
+  const params = await props.params
   try {
     const supabase = getServerSupabase();
     const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -74,8 +66,9 @@ export async function GET(
 
 export async function PUT(
   request: Request,
-  { params }: { params: { id: string } }
+  props: { params: Promise<{ id: string }> }
 ) {
+  const params = await props.params
   try {
     const supabase = getServerSupabase();
     const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -162,8 +155,9 @@ export async function PUT(
 
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  props: { params: Promise<{ id: string }> }
 ) {
+  const params = await props.params
   try {
     const supabase = getServerSupabase();
     const { data: { user }, error: userError } = await supabase.auth.getUser();

@@ -1,4 +1,5 @@
-import type { Ticket, TicketStatus, TicketComment } from '@/types/ticket'
+import type { Ticket, TicketStatus } from '@/types/ticket'
+import type { Message } from './conversation-service'
 import { getServerSupabase, type ServerContext } from '@/lib/supabase-client'
 
 interface CreateTicketData {
@@ -127,7 +128,7 @@ export const customerTicketService = {
     }
   },
 
-  async addComment(context: ServerContext, ticketId: string, content: string): Promise<TicketComment> {
+  async addComment(context: ServerContext, ticketId: string, content: string): Promise<Message> {
     try {
       const supabase = getServerSupabase(context)
       const { data: { user }, error: userError } = await supabase.auth.getUser()
@@ -171,7 +172,7 @@ export const customerTicketService = {
     }
   },
 
-  async getTicketComments(context: ServerContext, ticketId: string): Promise<TicketComment[]> {
+  async getTicketComments(context: ServerContext, ticketId: string): Promise<Message[]> {
     try {
       const supabase = getServerSupabase(context)
       const { data: { user }, error: userError } = await supabase.auth.getUser()
@@ -196,6 +197,7 @@ export const customerTicketService = {
         .from('messages')
         .select(`
           id,
+          ticket_id,
           content,
           created_at,
           updated_at,
@@ -204,6 +206,7 @@ export const customerTicketService = {
         `)
         .eq('ticket_id', ticketId)
         .order('created_at', { ascending: true })
+        .returns<Message[]>()
 
       if (error) throw error
 
