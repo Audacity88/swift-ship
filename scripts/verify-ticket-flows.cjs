@@ -1,6 +1,8 @@
 // Local integration smoke for the actual ticket services. Does not edit Jest tests.
 // Credentials and passwords stay in process memory. Temporary fixtures are removed after the smoke check.
 const { execFileSync } = require('node:child_process')
+const { requireTool } = require('./local-toolchain.cjs')
+const supabaseBin = requireTool('supabase', 'SUPABASE_BIN')
 const { randomUUID } = require('node:crypto')
 const { resolve } = require('node:path')
 const fs = require('node:fs')
@@ -13,8 +15,21 @@ let activeClient
 let service
 const users = []
 const tickets = []
+const teams = []
+const clients = []
+const subscriptions = []
 const check = (value, label) => { if (!value) throw new Error(label) }
 const pass = label => console.log(`PASS ${label}`)
+const expectLive = async (events, predicate, startedAt, label) => {
+  while (Date.now() - startedAt < 10000) {
+    if (events.some(event => predicate(event.row) && event.receivedAt - startedAt < 10000)) {
+      pass(label)
+      return
+    }
+    await new Promise(resolve => setTimeout(resolve, 25))
+  }
+  throw new Error('App realtime helper did not deliver within 10 seconds')
+}
 const originalResolve = Module._resolveFilename
 const originalTS = require.extensions['.ts']
 const adapterId = resolve('.tmp-service-adapter.cjs')
@@ -30,7 +45,7 @@ require.extensions['.ts'] = (mod, file) => {
 }
 
 async function main() {
-  const status = JSON.parse(execFileSync('/opt/homebrew/bin/supabase', ['status', '-o', 'json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }))
+  const status = JSON.parse(execFileSync(supabaseBin, ['status', '-o', 'json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }))
   check(['localhost', '127.0.0.1'].includes(new URL(status.API_URL).hostname), 'Local stack only')
   service = createClient(status.API_URL, status.SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
   const password = randomUUID() + 'aA1!'
@@ -40,6 +55,7 @@ async function main() {
       getAll: () => [...jar].map(([name, value]) => ({ name, value })),
       setAll: values => values.forEach(({ name, value }) => jar.set(name, value)),
     } })
+    clients.push(client)
     return { client, headers: () => ({ Cookie: [...jar].map(([name, value]) => `${name}=${value}`).join('; '), 'Content-Type': 'application/json' }) }
   }
   stage = 'customer fixture'
@@ -70,6 +86,17 @@ async function main() {
   const ticket = await customerTicketService.createTicket(undefined, { title: 'Cyclops local smoke', description: 'Original customer description', priority: 'medium' })
   tickets.push(ticket.id)
   pass('customer service creates a ticket without an invalid welcome agent')
+  stage = 'app conversation realtime subscriptions'
+  const customerMessages = []
+  const staffMessages = []
+  const customerTickets = []
+  const capture = events => row => events.push({ row, receivedAt: Date.now() })
+  subscriptions.push(await conversationService.subscribeToMessages(undefined, ticket.id, capture(customerMessages)))
+  subscriptions.push(await conversationService.subscribeToTicket(undefined, ticket.id, capture(customerTickets)))
+  activeClient = admin.client
+  subscriptions.push(await conversationService.subscribeToMessages(undefined, ticket.id, capture(staffMessages)))
+  activeClient = customer.client
+  pass('app conversation helpers authenticate and wait for PostgreSQL readiness on three unique channels')
   stage = 'customer ticket list'
   const list = await customerTicketService.getCustomerTickets(undefined, { page: 1 })
   check(list.tickets.some(t => t.id === ticket.id && t.createdAt) && list.pagination.total >= 1, 'Ticket list omitted created ticket')
@@ -79,7 +106,9 @@ async function main() {
   check(thread[0]?.content === 'Original customer description', 'Original description absent')
   pass('customer conversation begins with original description')
   stage = 'customer reply'
-  await customerTicketService.addComment(undefined, ticket.id, 'Customer follow-up')
+  const customerSentAt = Date.now()
+  const customerReply = await customerTicketService.addComment(undefined, ticket.id, 'Customer follow-up')
+  await expectLive(staffMessages, row => row.id === customerReply.id, customerSentAt, 'app message helper delivers customer reply to staff within 10 seconds')
   activeClient = admin.client
   stage = 'admin ticket list'
   const staffList = await ticketService.fetchTickets(undefined)
@@ -88,22 +117,46 @@ async function main() {
   stage = 'agent replies'
   thread = await conversationService.getMessages(undefined, ticket.id)
   check(thread[0]?.content === 'Original customer description' && thread.some(m => m.content === 'Customer follow-up'), 'Agent thread missing customer messages')
+  const agentSentAt = Date.now()
   const reply = await conversationService.addMessage(undefined, ticket.id, 'Saved agent reply', 'agent')
   check(reply.id && reply.content === 'Saved agent reply', 'Reply service failed to return saved message')
-  pass('agent conversation includes original description and reply returns immediately without realtime')
-  await conversationService.addMessage(undefined, ticket.id, 'Private agent note', 'agent', undefined, true)
+  pass('agent conversation includes original description and reply returns saved data')
+  await expectLive(customerMessages, row => row.id === reply.id, agentSentAt, 'app message helper delivers staff reply to customer within 10 seconds')
+  const internalSentAt = Date.now()
+  const internalReply = await conversationService.addMessage(undefined, ticket.id, 'Private agent note', 'agent', undefined, true)
+  await expectLive(staffMessages, row => row.id === internalReply.id, internalSentAt, 'app message helper delivers internal note to staff')
   stage = 'status workflow'
   const transitions = await statusWorkflow.getAvailableTransitions(undefined, ticket.id, 'open')
   check(transitions.some(t => t.toStatus === 'in_progress'), 'Menu missing In Progress')
+  const statusChangedAt = Date.now()
   await statusWorkflow.executeTransition(undefined, ticket.id, 'open', 'in_progress', { id: adminId, name: 'Admin', email: adminEmail, role: 'admin' })
   const updated = await admin.client.from('tickets').select('status').eq('id', ticket.id).maybeSingle()
   check(!updated.error && updated.data?.status === 'in_progress', 'Transition did not persist')
   pass('offered open to in_progress transition persists through shared workflow RPC')
+  await expectLive(customerTickets, row => row.id === ticket.id && row.status === 'in_progress', statusChangedAt, 'app ticket helper delivers customer status change within 10 seconds')
+  check(!customerMessages.some(event => event.row.id === internalReply.id), 'App helper disclosed internal note to customer')
+  pass('app customer message helper excludes internal notes')
   activeClient = customer.client
   stage = 'customer reply visibility'
   thread = await conversationService.getMessages(undefined, ticket.id)
   check(thread.some(m => m.id === reply.id) && !thread.some(m => m.content === 'Private agent note'), 'Reply or internal note RLS failed')
   pass('customer sees saved replies and cannot see internal notes')
+
+  activeClient = admin.client
+  stage = 'team agent picker and member names'
+  const { teamService } = require('../src/lib/services/team-service.ts')
+  const availableAgents = await teamService.getAvailableAgents(undefined)
+  check(availableAgents.some(agent => agent.id === adminId && agent.name === 'Ticket admin' && agent.email === adminEmail), 'Agent picker omitted name or email')
+  const createdTeam = await teamService.createTeam(undefined, { name: 'Cyclops team smoke', schedule: {}, members: [{ userId: adminId, role: 'supervisor', schedule: {}, skills: [] }] })
+  check(createdTeam?.id, 'Team service creation failed')
+  teams.push(createdTeam.id)
+  const memberLists = [
+    await teamService.getTeamMembers(undefined, createdTeam.id),
+    (await teamService.getTeamById(undefined, createdTeam.id))?.members,
+    (await teamService.getAllTeams(undefined)).find(team => team.id === createdTeam.id)?.members,
+  ]
+  check(memberLists.every(members => members?.some(member => member.userId === adminId && member.name === 'Ticket admin' && member.email === adminEmail && member.role === 'supervisor')), 'Team queries omitted lead name or email')
+  pass('team picker and all member/lead queries return agent names and emails')
 
   activeClient = admin.client
   stage = 'empty team and agent metrics'
@@ -140,11 +193,18 @@ async function main() {
     check(anon.status === 401, 'Anon AI endpoint access')
     pass('anonymous AI requests are rejected')
   }
-  await customer.client.auth.signOut()
-  await admin.client.auth.signOut()
 }
 
 main().catch(() => { console.error(`FAIL ticket smoke at ${stage}. Sensitive details suppressed.`); process.exitCode = 1 }).finally(async () => {
+  for (const unsubscribe of subscriptions) unsubscribe()
+  let channelsRemoved = true
+  for (const client of clients) {
+    await client.removeAllChannels()
+    channelsRemoved &&= client.getChannels().length === 0
+    await client.auth.signOut()
+  }
+  if (!channelsRemoved) { console.error('FAIL app subscription cleanup'); process.exitCode = 1 }
+  else if (subscriptions.length) pass('app subscription cleanup removes channels before signing out')
   Module._resolveFilename = originalResolve
   if (originalTS) require.extensions['.ts'] = originalTS
   else delete require.extensions['.ts']
@@ -157,6 +217,11 @@ main().catch(() => { console.error(`FAIL ticket smoke at ${stage}. Sensitive det
     }
     const result = await service.from('tickets').delete().eq('id', id)
     failed ||= !!result.error
+  }
+  for (const id of teams) {
+    const members = await service.from('team_members').delete().eq('team_id', id)
+    const team = await service.from('teams').delete().eq('id', id)
+    failed ||= !!members.error || !!team.error
   }
   for (const id of users.reverse()) {
     const a = await service.from('agents').delete().eq('id', id)

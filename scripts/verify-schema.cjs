@@ -3,6 +3,8 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
+const { requireTool } = require('./local-toolchain.cjs')
+const dockerBin = requireTool('docker', 'DOCKER_BIN')
 
 function filesUnder(dir) {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
@@ -13,7 +15,7 @@ function filesUnder(dir) {
 }
 const refs = { from: new Map(), rpc: new Map() }
 for (const file of [...filesUnder('src'), ...filesUnder('supabase/functions')]) {
-  const source = fs.readFileSync(file, 'utf8')
+  const source = fs.readFileSync(file, 'utf8').replace(/\.storage\s*\.from\(/g, '.storageBucket(')
   for (const [, kind, name] of source.matchAll(/\.(from|rpc)\(\s*['"]([^'"]+)['"]/g)) {
     if (!refs[kind].has(name)) refs[kind].set(name, [])
     refs[kind].get(name).push(file)
@@ -24,9 +26,9 @@ const sql = `SELECT json_build_object(
   'functions',(SELECT json_agg(json_build_object('name',p.proname,'definer',p.prosecdef,'config',p.proconfig,'anon_execute',has_function_privilege('anon',p.oid,'execute'))) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public'),
   'private_anon_grants',(SELECT count(*) FROM information_schema.table_privileges WHERE grantee='anon' AND table_schema='public' AND table_name NOT IN ('articles','categories','knowledge_articles','knowledge_categories'))
 );`
-const result = spawnSync('docker', ['exec', '-i', 'supabase_db_zendesk-clone', 'psql', '-U', 'postgres', '-d', 'postgres', '-At', '-v', 'ON_ERROR_STOP=1'], { input: sql, encoding: 'utf8' })
+const result = spawnSync(dockerBin, ['exec', '-i', 'supabase_db_zendesk-clone', 'psql', '-U', 'postgres', '-d', 'postgres', '-At', '-v', 'ON_ERROR_STOP=1'], { input: sql, encoding: 'utf8' })
 if (result.status !== 0) {
-  console.error('FAIL: local Supabase catalog query failed. Start the zendesk-clone stack first.')
+  console.error('FAIL: local Supabase catalog query failed. Start the zendesk-clone stack first and check Docker access and DOCKER_HOST.')
   process.exit(1)
 }
 const catalog = JSON.parse(result.stdout.trim())

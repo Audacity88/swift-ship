@@ -2,6 +2,8 @@
 // Local-only smoke. Keys and random passwords remain in process memory.
 // Start Supabase first. Add --app-url http://localhost:3000 to check the app API.
 const { execFileSync } = require('node:child_process')
+const { requireTool } = require('./local-toolchain.cjs')
+const supabaseBin = requireTool('supabase', 'SUPABASE_BIN')
 const { randomUUID } = require('node:crypto')
 const { createClient } = require('@supabase/supabase-js')
 const { createServerClient } = require('@supabase/ssr')
@@ -14,7 +16,7 @@ const check = (condition, message) => { if (!condition) throw new Error(message)
 const pass = message => console.log(`PASS ${message}`)
 
 async function main() {
-  const status = JSON.parse(execFileSync('/opt/homebrew/bin/supabase', ['status', '-o', 'json'], {
+  const status = JSON.parse(execFileSync(supabaseBin, ['status', '-o', 'json'], {
     encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
   }))
   check(['localhost', '127.0.0.1'].includes(new URL(status.API_URL).hostname), 'This smoke only runs against local Supabase')
