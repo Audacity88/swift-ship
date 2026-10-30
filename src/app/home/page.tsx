@@ -1,7 +1,10 @@
 'use client'
 
 import Link from 'next/link'
-import { Package, ArrowRight, Truck, Quote, MessageSquare, Clock } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import type { Shipment } from '@/types/shipment'
+import { Package, Quote, MessageSquare, Clock } from 'lucide-react'
 import { ROUTES } from '@/lib/constants'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { cn } from '@/lib/utils'
@@ -30,25 +33,28 @@ const quickLinks = [
   }
 ]
 
-const recentShipments = [
-  {
-    id: 'SHP001',
-    destination: 'New York, USA',
-    status: 'In Transit',
-    date: '2024-01-19',
-    eta: '2024-01-21',
-  },
-  {
-    id: 'SHP002',
-    destination: 'London, UK',
-    status: 'Delivered',
-    date: '2024-01-18',
-    eta: '2024-01-20',
-  },
-]
-
 export default function HomePage() {
   const { user } = useAuth()
+  const [recentShipments, setRecentShipments] = useState<Shipment[]>([])
+  const [shipmentsError, setShipmentsError] = useState(false)
+  const [shipmentsLoading, setShipmentsLoading] = useState(true)
+
+  useEffect(() => {
+    if (!user?.id) return
+    let active = true
+    const load = async () => {
+      const { data, error } = await createClient()
+        .from('shipments').select('*').eq('customer_id', user.id)
+        .order('created_at', { ascending: false }).limit(5)
+      if (active) {
+        setRecentShipments(data || [])
+        setShipmentsError(!!error)
+        setShipmentsLoading(false)
+      }
+    }
+    void load()
+    return () => { active = false }
+  }, [user?.id])
 
   return (
     <div className={cn(
@@ -112,25 +118,25 @@ export default function HomePage() {
               View All
             </Link>
           </div>
-          {recentShipments.length > 0 ? (
+          {shipmentsLoading ? <p className="text-muted-foreground">Loading shipments...</p> : shipmentsError ? <p role="alert">Could not load shipments. Open Shipments to retry.</p> : recentShipments.length > 0 ? (
             <div className="space-y-4">
               {recentShipments.map((shipment) => (
                 <div
                   key={shipment.id}
                   className={cn(
-                    "flex items-center justify-between p-4 rounded-lg",
+                    "flex flex-wrap gap-2 items-center justify-between p-4 rounded-lg",
                     "border border-border",
                     "hover:bg-muted/50"
                   )}
                 >
                   <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{shipment.id}</span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium">{shipment.tracking_number || shipment.id.slice(0, 8)}</span>
                       <span className="text-sm text-muted-foreground">• {shipment.destination}</span>
                     </div>
                     <div className="flex items-center gap-2 text-sm">
                       <Clock className="w-4 h-4 text-muted-foreground" />
-                      <span className="text-muted-foreground">ETA: {shipment.eta}</span>
+                      <span className="text-muted-foreground">ETA: {shipment.estimated_delivery ? new Date(shipment.estimated_delivery).toLocaleDateString() : 'Not scheduled'}</span>
                     </div>
                   </div>
                   <span className="text-sm font-medium text-primary">{shipment.status}</span>
@@ -153,30 +159,7 @@ export default function HomePage() {
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-lg font-semibold">Company Updates</h2>
           </div>
-          <div className="prose prose-sm max-w-none space-y-4 dark:prose-invert">
-            <div className={cn(
-              "p-4 rounded-lg",
-              "bg-blue-100 dark:bg-blue-900",
-              "text-blue-900 dark:text-blue-100"
-            )}>
-              <h3 className="font-medium mb-2">New Route Optimization</h3>
-              <p>
-                We&apos;ve enhanced our delivery network with AI-powered route optimization, 
-                resulting in 15% faster delivery times across all major routes.
-              </p>
-            </div>
-            <div className={cn(
-              "p-4 rounded-lg",
-              "bg-green-100 dark:bg-green-900",
-              "text-green-900 dark:text-green-100"
-            )}>
-              <h3 className="font-medium mb-2">Sustainable Shipping Initiative</h3>
-              <p>
-                Join our eco-friendly shipping program and help reduce carbon emissions 
-                while enjoying premium shipping services.
-              </p>
-            </div>
-          </div>
+          <p className="text-sm text-muted-foreground">No company updates have been published.</p>
         </section>
       </div>
     </div>

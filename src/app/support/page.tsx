@@ -42,9 +42,9 @@ export default function SupportDashboard() {
   if (!user) return null
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
+    <div className="container mx-auto py-4 sm:p-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Support Dashboard</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400">View and manage your support tickets</p>
@@ -120,7 +120,7 @@ export default function SupportDashboard() {
             tickets.map((ticket) => (
               <div key={ticket.id} className="p-6 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                 <Link href={`/tickets/${ticket.id}`} className="block">
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <h3 className="text-sm font-medium text-gray-900 dark:text-white">{ticket.title}</h3>
                       <p className="text-sm text-gray-500 dark:text-gray-400">

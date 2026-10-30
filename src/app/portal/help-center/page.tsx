@@ -9,33 +9,31 @@ import {
   Search,
   MessageCircle,
   Book,
-  Phone,
-  Mail,
   ChevronDown,
   ChevronUp,
 } from 'lucide-react'
 
-// Mock data - replace with real data from your backend
+// Guidance for the local app workflows.
 const faqs = [
   {
     question: 'How do I track my shipment?',
-    answer: 'You can track your shipment by entering your tracking number in the tracking section of our platform. Real-time updates are provided for all shipments.',
+    answer: 'Open Shipments to view your shipments and any recorded tracking events. If an update is missing, create a support ticket with your tracking number.',
   },
   {
     question: 'What shipping methods are available?',
-    answer: 'We offer various shipping methods including Standard Ground, Express, and Next-Day delivery. The available options will be shown during checkout.',
+    answer: 'The quote form supports full truckload, less than truckload, sea container, and bulk freight. Route estimates require the optional Radar configuration.',
   },
   {
     question: 'How do I change my shipping address?',
-    answer: 'You can update your shipping address in your account settings or during the checkout process. For active shipments, please contact support.',
+    answer: 'You can edit pickup and delivery details on an open quote. For a shipment that is already in progress, create a support ticket to request a change.',
   },
   {
     question: 'What should I do if my package is delayed?',
-    answer: 'If your package is delayed, first check the tracking information for updates. If there are no updates for 24 hours, please contact our support team.',
+    answer: 'Check the recorded events on your shipment, then create a support ticket with the tracking number and a description of the delay.',
   },
   {
     question: 'How can I request a refund?',
-    answer: 'To request a refund, please contact our support team with your order number and reason for the refund. We will process your request within 2-3 business days.',
+    answer: 'Create a support ticket with the relevant shipment or quote number and explain your billing question. This app does not process refunds or define a refund policy.',
   },
 ]
 
@@ -47,22 +45,22 @@ const quickLinks = [
     href: '/portal/knowledge-base',
   },
   {
-    title: 'Live Chat',
+    title: 'Create a Support Ticket',
     icon: MessageCircle,
-    description: 'Chat with our support team',
-    href: '/portal/contact',
+    description: 'Describe an issue for the support team',
+    href: '/portal/tickets/new',
   },
   {
-    title: 'Phone Support',
-    icon: Phone,
-    description: 'Call us at 1-800-SHIP-NOW',
-    href: 'tel:1-800-SHIP-NOW',
+    title: 'Your Support Tickets',
+    icon: MessageCircle,
+    description: 'View your requests and replies',
+    href: '/portal/tickets',
   },
   {
-    title: 'Email Support',
-    icon: Mail,
-    description: 'Email our support team',
-    href: 'mailto:support@swiftship.com',
+    title: 'Search Articles',
+    icon: Search,
+    description: 'Search published knowledge base articles',
+    href: '/portal/search',
   },
 ]
 
@@ -128,14 +126,14 @@ export default function HelpCenterPage() {
           <Card key={index} className="p-4">
             <Button
               variant="ghost"
-              className="w-full flex justify-between items-center"
+              className="h-auto w-full whitespace-normal flex justify-between items-center gap-3"
               onClick={() => toggleFaq(index)}
             >
               <span className="text-left font-medium">{faq.question}</span>
               {expandedFaqs.includes(index) ? (
-                <ChevronUp className="h-5 w-5" />
+                <ChevronUp className="h-5 w-5 shrink-0" />
               ) : (
-                <ChevronDown className="h-5 w-5" />
+                <ChevronDown className="h-5 w-5 shrink-0" />
               )}
             </Button>
             {expandedFaqs.includes(index) && (
@@ -158,11 +156,9 @@ export default function HelpCenterPage() {
       <div className="mt-8 p-6 bg-primary/5 rounded-lg">
         <h3 className="font-semibold mb-2">Still need help?</h3>
         <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
-          If you couldn't find what you're looking for, our support team is here to help.
+          If the articles do not answer your question, create a support ticket.
         </p>
-        <Link href="/portal/contact">
-          <Button>Contact Support</Button>
-        </Link>
+        <Button asChild><Link href="/portal/tickets/new">Contact Support</Link></Button>
       </div>
     </div>
   )

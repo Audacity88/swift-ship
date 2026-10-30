@@ -1,276 +1,66 @@
-'use client';
+'use client'
 
-import { useState } from 'react';
-import { Article, ArticleStatus, Category } from '@/types/knowledge';
-import { knowledgeService } from '@/lib/services';
-import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  LineChart,
-  Line,
-} from 'recharts';
-import { format, subDays } from 'date-fns';
-import {
-  BookOpen,
-  TrendingUp,
-  Users,
-  Star,
-  FileText,
-  Archive,
-  PenTool,
-} from 'lucide-react';
+import { useEffect, useState } from 'react'
+import Link from 'next/link'
+import { createClient } from '@/lib/supabase/client'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
-interface DashboardMetrics {
-  totalArticles: number;
-  publishedArticles: number;
-  draftArticles: number;
-  archivedArticles: number;
-  totalViews: number;
-  averageRating: number;
-  totalAuthors: number;
-  categoryDistribution: {
-    categoryId: string;
-    categoryName: string;
-    count: number;
-  }[];
-  viewsOverTime: {
-    date: string;
-    views: number;
-  }[];
-  popularArticles: Article[];
+interface ArticleMetric {
+  id: string
+  title: string
+  slug: string
+  status: string
+  author_id: string | null
+  metadata: { views?: number; helpfulCount?: number; notHelpfulCount?: number } | null
 }
 
 export default function KnowledgeBaseDashboard() {
-  const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d'>('30d');
-  const [metrics, setMetrics] = useState<DashboardMetrics>({
-    totalArticles: 0,
-    publishedArticles: 0,
-    draftArticles: 0,
-    archivedArticles: 0,
-    totalViews: 0,
-    averageRating: 0,
-    totalAuthors: 0,
-    categoryDistribution: [],
-    viewsOverTime: [],
-    popularArticles: [],
-  });
+  const [articles, setArticles] = useState<ArticleMetric[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
 
-  // In a real app, this would fetch actual data from the KnowledgeService
-  // For now, we'll use mock data
-  const mockData = {
-    totalArticles: 156,
-    publishedArticles: 124,
-    draftArticles: 18,
-    archivedArticles: 14,
-    totalViews: 15678,
-    averageRating: 4.2,
-    totalAuthors: 12,
-    categoryDistribution: [
-      { categoryId: '1', categoryName: 'Getting Started', count: 25 },
-      { categoryId: '2', categoryName: 'Features', count: 45 },
-      { categoryId: '3', categoryName: 'Troubleshooting', count: 30 },
-      { categoryId: '4', categoryName: 'API Reference', count: 35 },
-      { categoryId: '5', categoryName: 'Best Practices', count: 21 },
-    ],
-    viewsOverTime: Array.from({ length: 30 }, (_, i) => ({
-      date: format(subDays(new Date(), 29 - i), 'MMM dd'),
-      views: Math.floor(Math.random() * 200) + 100,
-    })),
-    popularArticles: Array.from({ length: 5 }, (_, i) => ({
-      id: `article-${i + 1}`,
-      title: `Popular Article ${i + 1}`,
-      excerpt: 'This is a popular article that gets a lot of views...',
-      metadata: {
-        views: Math.floor(Math.random() * 1000) + 500,
-        helpfulCount: Math.floor(Math.random() * 100) + 50,
-      },
-      status: ArticleStatus.PUBLISHED,
-      updatedAt: new Date(),
-    } as Article)),
-  };
+  useEffect(() => {
+    let active = true
+    const load = async () => {
+      const { data, error } = await createClient().from('articles')
+        .select('id,title,slug,status,author_id,metadata').order('title')
+      if (active) {
+        setArticles(data || [])
+        setError(!!error)
+        setLoading(false)
+      }
+    }
+    void load()
+    return () => { active = false }
+  }, [])
+
+  const published = articles.filter(article => article.status === 'published')
+  const views = articles.reduce((total, article) => total + Number(article.metadata?.views || 0), 0)
+  const helpful = articles.reduce((total, article) => total + Number(article.metadata?.helpfulCount || 0), 0)
+  const unhelpful = articles.reduce((total, article) => total + Number(article.metadata?.notHelpfulCount || 0), 0)
+  const metrics = [
+    { label: 'Total Articles', value: articles.length, note: `${published.length} published` },
+    { label: 'Total Views', value: views.toLocaleString(), note: 'Recorded article views' },
+    { label: 'Helpful Feedback', value: helpful + unhelpful > 0 ? `${Math.round(100 * helpful / (helpful + unhelpful))}%` : 'No feedback yet', note: `${helpful + unhelpful} responses` },
+    { label: 'Authors', value: new Set(articles.map(article => article.author_id).filter(Boolean)).size, note: 'Authors with articles' }
+  ]
 
   return (
-    <div className="container mx-auto py-8 space-y-8">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Knowledge Base Dashboard</h1>
-          <p className="text-muted-foreground">
-            Monitor your knowledge base performance and content metrics
-          </p>
-        </div>
-        <Select
-          value={timeRange}
-          onValueChange={(value) => setTimeRange(value as typeof timeRange)}
-        >
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="Select time range" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="7d">Last 7 days</SelectItem>
-            <SelectItem value="30d">Last 30 days</SelectItem>
-            <SelectItem value="90d">Last 90 days</SelectItem>
-          </SelectContent>
-        </Select>
+    <div className="container mx-auto space-y-8 py-8">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <h1 className="text-3xl font-bold">Knowledge Base Dashboard</h1>
+        <Link className="text-primary hover:underline" href="/admin/knowledge/articles">Manage articles</Link>
       </div>
-
+      {error && <p role="alert" className="text-destructive">Knowledge metrics could not be loaded. Refresh to retry.</p>}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Articles</CardTitle>
-            <FileText className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{mockData.totalArticles}</div>
-            <div className="flex space-x-4 text-sm text-muted-foreground">
-              <span>{mockData.publishedArticles} published</span>
-              <span>{mockData.draftArticles} drafts</span>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Views</CardTitle>
-            <BookOpen className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{mockData.totalViews.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground">
-              +12% from last month
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Average Rating</CardTitle>
-            <Star className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{mockData.averageRating.toFixed(1)}/5.0</div>
-            <p className="text-xs text-muted-foreground">
-              Based on {mockData.totalViews} ratings
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Authors</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{mockData.totalAuthors}</div>
-            <p className="text-xs text-muted-foreground">
-              Contributors this month
-            </p>
-          </CardContent>
-        </Card>
+        {metrics.map(metric => <Card key={metric.label}><CardHeader><CardTitle className="text-sm">{metric.label}</CardTitle></CardHeader><CardContent><p className="text-2xl font-bold">{loading ? 'Loading...' : metric.value}</p><p className="mt-2 text-sm text-muted-foreground">{metric.note}</p></CardContent></Card>)}
       </div>
-
-      <Tabs defaultValue="overview" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="categories">Categories</TabsTrigger>
-          <TabsTrigger value="popular">Popular Articles</TabsTrigger>
-        </TabsList>
-        <TabsContent value="overview" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Views Over Time</CardTitle>
-              <CardDescription>Daily article views for the selected period</CardDescription>
-            </CardHeader>
-            <CardContent className="h-[400px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={mockData.viewsOverTime}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
-                  <YAxis />
-                  <Tooltip />
-                  <Line
-                    type="monotone"
-                    dataKey="views"
-                    stroke="#2563eb"
-                    strokeWidth={2}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        </TabsContent>
-        <TabsContent value="categories" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Category Distribution</CardTitle>
-              <CardDescription>Number of articles per category</CardDescription>
-            </CardHeader>
-            <CardContent className="h-[400px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={mockData.categoryDistribution}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="categoryName" />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="count" fill="#2563eb" />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        </TabsContent>
-        <TabsContent value="popular" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Most Popular Articles</CardTitle>
-              <CardDescription>Articles with the highest view counts</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {mockData.popularArticles.map((article) => (
-                  <div
-                    key={article.id}
-                    className="flex items-center justify-between p-4 border rounded-lg"
-                  >
-                    <div className="space-y-1">
-                      <h3 className="font-medium">{article.title}</h3>
-                      <div className="flex space-x-4 text-sm text-muted-foreground">
-                        <span className="flex items-center">
-                          <BookOpen className="mr-1 h-4 w-4" />
-                          {article.metadata.views} views
-                        </span>
-                        <span className="flex items-center">
-                          <Star className="mr-1 h-4 w-4" />
-                          {article.metadata.helpfulCount} helpful
-                        </span>
-                      </div>
-                    </div>
-                    <Button variant="ghost" size="sm">
-                      View Details
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+      <Card>
+        <CardHeader><CardTitle>Published articles</CardTitle></CardHeader>
+        <CardContent>
+          {published.length === 0 && !loading ? <p className="text-muted-foreground">No published articles yet.</p> : <ul className="space-y-3">{published.map(article => <li key={article.id}><Link className="text-primary hover:underline" href={`/articles/${article.slug}`}>{article.title}</Link></li>)}</ul>}
+        </CardContent>
+      </Card>
     </div>
-  );
-} 
+  )
+}

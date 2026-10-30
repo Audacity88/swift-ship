@@ -17,9 +17,10 @@ export async function GET(
         author:agents(id, name)
       `)
       .eq('slug', slug)
-      .single()
+      .eq('status', 'published')
+      .maybeSingle()
 
-    if (error) {
+    if (error || !article) {
       console.error('Error fetching article:', error)
       return NextResponse.json(
         { error: 'Article not found' },

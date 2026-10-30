@@ -12,6 +12,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
 import rehypeRaw from 'rehype-raw'
+import rehypeSanitize from 'rehype-sanitize'
 
 interface Article {
   id: string
@@ -124,7 +125,7 @@ export default function ArticlePage() {
       <div className="container py-8">
         <div className="text-center">
           <p className="text-gray-500 dark:text-gray-400">Article not found or unavailable</p>
-          <Link href="/articles">
+          <Link href="/portal/knowledge-base">
             <Button variant="link" className="mt-4">
               Return to Articles
             </Button>
@@ -149,12 +150,12 @@ export default function ArticlePage() {
         <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground mb-6">
           <span className="flex items-center gap-2">
             <Tag className="h-4 w-4" />
-            {article.category.name}
+            {article.category?.name || 'General'}
           </span>
           <span className="mx-2">•</span>
           <span>Updated {new Date(article.updated_at).toLocaleDateString()}</span>
           <span className="mx-2">•</span>
-          <span>By {article.author.name}</span>
+          <span>By {article.author?.name || 'Swift Ship support'}</span>
         </div>
       </div>
 
@@ -169,16 +170,8 @@ export default function ArticlePage() {
             prose-pre:bg-muted prose-pre:p-4 prose-pre:rounded-lg">
           <ReactMarkdown 
             remarkPlugins={[remarkGfm, remarkBreaks]}
-            rehypePlugins={[rehypeRaw]}
-            components={{
-              h1: ({node, ...props}) => <h1 className="text-3xl font-bold mb-4" {...props} />,
-              h2: ({node, ...props}) => <h2 className="text-2xl font-bold mt-8 mb-4" {...props} />,
-              h3: ({node, ...props}) => <h3 className="text-xl font-bold mt-6 mb-3" {...props} />,
-              ul: ({node, ...props}) => <ul className="list-disc pl-6 mb-4" {...props} />,
-              ol: ({node, ...props}) => <ol className="list-decimal pl-6 mb-4" {...props} />,
-              li: ({node, ...props}) => <li className="mb-1" {...props} />,
-              p: ({node, ...props}) => <p className="mb-4" {...props} />
-            }}
+            rehypePlugins={[rehypeRaw, rehypeSanitize]}
+
           >
             {article.content}
           </ReactMarkdown>
@@ -211,7 +204,7 @@ export default function ArticlePage() {
         <div className="mt-8 p-4 bg-muted rounded-lg">
           <p className="text-sm text-muted-foreground">
             Still need help?{' '}
-            <Link href="/contact" className="text-primary hover:underline font-medium">
+            <Link href="/portal/tickets/new" className="text-primary hover:underline font-medium">
               Contact our support team
             </Link>
           </p>

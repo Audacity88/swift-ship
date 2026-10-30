@@ -78,6 +78,7 @@ export default function TicketFollowersPage() {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <p role="status" className="rounded border p-4 text-sm text-muted-foreground lg:col-span-3">Demo only. Followers and notification preferences on this page use sample data. Changes are not saved.</p>
       {/* Current Followers */}
       <div className="lg:col-span-2 space-y-6">
         <div className="bg-white border border-gray-200 rounded-lg p-6">
