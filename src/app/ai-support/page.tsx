@@ -1,3 +1,2 @@
-import { redirect } from 'next/navigation'
-
-export default function AISupportAlias() { redirect('/portal/ai-support') }
+// Share the canonical AI screen without a render-time navigation.
+export { default, metadata } from '../portal/ai-support/page'

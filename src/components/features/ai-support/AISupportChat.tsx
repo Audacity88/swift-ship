@@ -15,7 +15,6 @@ import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize from 'rehype-sanitize';
 import rehypeHighlight from 'rehype-highlight';
-import hljs from 'highlight.js';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -70,7 +69,7 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [quoteMetadataState, setQuoteMetadataState] = useState<QuoteMetadata>({ isQuote: true });
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [customerShipments, setCustomerShipments] = useState<any[]>([]);
 
   // Reset conversation when agent type changes
@@ -133,11 +132,6 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
     void fetchShipments();
   }, [agentType, user?.id]);
 
-  // Add useEffect for highlight.js initialization
-  useEffect(() => {
-    hljs.highlightAll();
-  }, [messages]); // Re-run when messages change
-
   const simulateStreaming = async (content: string, updateMessage: (text: string) => void) => {
     const words = content.split(/(\s+)/); // Split by whitespace but keep the separators
     let currentText = '';
@@ -193,7 +187,7 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || isLoading) return;
+    if (!input.trim() || isLoading || authLoading || !user) return;
 
 
 
@@ -488,14 +482,11 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
       console.error('Error in request:', error);
       setMessages(prev => {
         const newMessages = [...prev];
-        newMessages[newMessages.length - 1] = {
+        newMessages.push({
           role: 'assistant',
           content: error instanceof Error ? error.message : 'AI support is unavailable. Please try again or create a support ticket.',
-          metadata: {
-            timestamp: Date.now(),
-            agent: agentType
-          },
-        };
+          metadata: { timestamp: Date.now(), agent: agentType },
+        });
         return newMessages;
       });
     } finally {
@@ -766,6 +757,8 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
             <Textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
+              aria-label="Message AI support"
+              disabled={authLoading || !user || isLoading}
               placeholder="Type your message..."
               className="min-h-[60px]"
               onKeyDown={(e) => {
@@ -775,7 +768,7 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
                 }
               }}
             />
-            <Button type="submit" size="icon" disabled={isLoading}>
+            <Button type="submit" size="icon" aria-label="Send AI message" disabled={isLoading || authLoading || !user || !input.trim()}>
               <Send className="h-4 w-4" />
             </Button>
           </div>
