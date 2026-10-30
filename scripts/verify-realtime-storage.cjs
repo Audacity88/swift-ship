@@ -29,7 +29,7 @@ async function main() {
   const sql = `SELECT json_build_object(
     'published',(SELECT json_agg(tablename) FROM pg_publication_tables WHERE pubname='supabase_realtime' AND schemaname='public'),
     'identity',(SELECT json_agg(json_build_object('name',relname,'identity',relreplident)) FROM pg_class WHERE oid IN ('public.messages'::regclass,'public.tickets'::regclass)),
-    'bucket',(SELECT json_build_object('public',public,'limit',file_size_limit) FROM storage.buckets WHERE id='ticket-attachments'),
+    'bucket',(SELECT json_build_object('public',public,'limit',file_size_limit,'types',allowed_mime_types) FROM storage.buckets WHERE id='ticket-attachments'),
     'attachments',(SELECT data_type FROM information_schema.columns WHERE table_schema='public' AND table_name='messages' AND column_name='attachments')
   );`
   const query = spawnSync(dockerBin, ['exec', '-i', 'supabase_db_zendesk-clone', 'psql', '-U', 'postgres', '-d', 'postgres', '-At', '-v', 'ON_ERROR_STOP=1'], { input: sql, encoding: 'utf8' })
@@ -41,7 +41,8 @@ async function main() {
   pass('messages and tickets use REPLICA IDENTITY FULL')
   check(catalog.bucket?.public === false && catalog.bucket.limit > 0 && catalog.bucket.limit <= 10 * 1024 * 1024, 'Private bucket or size limit missing')
   check(catalog.attachments === 'jsonb', 'Message attachment metadata missing')
-  pass('ticket-attachments is private with a size limit; messages store jsonb attachment metadata')
+  check(catalog.bucket.types?.includes('image/png') && catalog.bucket.types.includes('text/plain') && !catalog.bucket.types.includes('text/html'), 'Bucket MIME allowlist missing')
+  pass('ticket-attachments is private with size/MIME limits; messages store jsonb attachment metadata')
 
   stage = 'local status'
   const status = JSON.parse(execFileSync(supabaseBin, ['status', '-o', 'json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }))
@@ -152,18 +153,40 @@ async function main() {
   pass('staff and customer PNG uploads persist with attachment metadata on messages')
   for (const account of [admin, customer]) {
     for (const objectPath of account === admin ? [staffPath, customerPath, internalPath] : [staffPath, customerPath]) {
-      const signed = await account.client.storage.from(bucket).createSignedUrl(objectPath, 60)
+      const signed = await account.client.storage.from(bucket).createSignedUrl(objectPath, 60, { download: objectPath.split('/').pop() })
       check(!signed.error && signed.data?.signedUrl, 'Signed download denied')
       const download = await fetch(signed.data.signedUrl)
+      check(/^attachment;/i.test(download.headers.get('content-disposition') || ''), 'Download must use attachment disposition')
       check(download.ok && (await download.arrayBuffer()).byteLength === png.length, 'Signed PNG download failed')
     }
   }
   pass('staff downloads all attachments; owning customer downloads public attachments via signed URLs')
+  stage = 'attachment MIME and metadata rejection'
+  for (const mime of ['text/html', 'image/svg+xml', 'application/javascript', 'application/x-msdownload', 'text/xml']) {
+    const objectPath = `${ticket}/public/${randomUUID()}/blocked.html`
+    const denied = await customer.client.storage.from(bucket).upload(objectPath, Buffer.from('blocked'), { contentType: mime })
+    if (!denied.error) paths.push(objectPath)
+    check(!!denied.error && /mime|type.*not.*supported|not.*allowed/i.test(denied.error.message), 'Bucket accepted a forbidden MIME type')
+  }
+  for (const name of ['bad.html', 'bad.htm', 'bad.svg', 'bad.js', 'bad.mjs', 'bad.exe', 'bad.sh', 'bad.bat', 'bad.msi', 'bad.xml', 'bad.xhtml', 'bad.png.html', 'bad.unknown']) {
+    // Spoof a harmless MIME as well: metadata must check names independently.
+    const result = await customer.client.from('messages').insert({ ticket_id: ticket, content: 'Rejected attachment probe', author_id: customer.id, author_type: 'customer', attachments: [{ name, type: 'image/png', path: staffPath, size: png.length }] })
+    check(!!result.error && /attachment metadata/i.test(result.error.message), 'Metadata accepted a forbidden filename')
+  }
+  for (const attachment of [
+    { name: 'safe.png', type: 'text/html', path: staffPath, size: png.length },
+    { name: 'safe.png', type: 'text/plain', path: staffPath, size: png.length },
+    { name: 'safe.png', type: 'image/png', path: `${ticket}/public/bad.exe`, size: png.length },
+  ]) {
+    const result = await customer.client.from('messages').insert({ ticket_id: ticket, content: 'Rejected MIME/path probe', author_id: customer.id, author_type: 'customer', attachments: [attachment] })
+    check(!!result.error && /attachment metadata/i.test(result.error.message), 'Metadata accepted a mismatched MIME/path')
+  }
+  pass('bucket rejects forbidden MIME types; metadata rejects forbidden names, mismatches and disguised paths')
   stage = 'storage isolation'
   const anon = createClient(status.API_URL, status.ANON_KEY, options)
   clients.push(anon)
   for (const [client, objectPath] of [[other.client, staffPath], [customer.client, internalPath], [anon, staffPath]]) {
-    const denied = await client.storage.from(bucket).createSignedUrl(objectPath, 60)
+    const denied = await client.storage.from(bucket).createSignedUrl(objectPath, 60, { download: objectPath.split('/').pop() })
     check(!!denied.error && !denied.data?.signedUrl, 'Unauthorized signed download allowed')
   }
   for (const [client, objectPath] of [

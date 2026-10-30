@@ -79,13 +79,40 @@ async function main() {
 
   const { customerTicketService } = require('../src/lib/services/customer-ticket-service.ts')
   const { ticketService } = require('../src/lib/services/ticket-service.ts')
-  const { conversationService } = require('../src/lib/services/conversation-service.ts')
+  const { conversationService, validateAttachments, ATTACHMENT_TYPES } = require('../src/lib/services/conversation-service.ts')
+  for (const [extension, mimes] of Object.entries(ATTACHMENT_TYPES)) {
+    for (const type of mimes) validateAttachments([new File(['local fixture'], `allowed.${extension}`, { type })])
+  }
+  for (const name of ['blocked.html', 'blocked.htm', 'blocked.svg', 'blocked.js', 'blocked.mjs', 'blocked.exe', 'blocked.sh', 'blocked.bat', 'blocked.msi', 'blocked.xml', 'blocked.xhtml', 'blocked.unknown', 'blocked.__proto__', 'blocked.constructor']) {
+    let rejected = false
+    try { validateAttachments([new File(['blocked'], name, { type: 'text/plain' })]) }
+    catch (error) { rejected = /Unsupported attachment type/.test(error.message) }
+    check(rejected, 'Client validation accepted a forbidden extension')
+  }
+  for (const type of ['text/html', 'text/plain', '']) {
+    let rejected = false
+    try { validateAttachments([new File(['blocked'], 'spoofed.png', { type })]) }
+    catch (error) { rejected = /Unsupported attachment type/.test(error.message) }
+    check(rejected, 'Client validation accepted a missing/mismatched MIME')
+  }
+  pass('client allowlist accepts supported extension/MIME pairs and rejects forbidden names, MIME mismatches and unknown types')
   const { statusWorkflow } = require('../src/lib/services/status-workflow.ts')
   activeClient = customer.client
   stage = 'create customer ticket'
   const ticket = await customerTicketService.createTicket(undefined, { title: 'Cyclops local smoke', description: 'Original customer description', priority: 'medium' })
   tickets.push(ticket.id)
   pass('customer service creates a ticket without an invalid welcome agent')
+  stage = 'app attachment original-filename download'
+  const originalName = 'report & draft#1 + 100%.png'
+  const attachments = await conversationService.uploadAttachments(undefined, ticket.id, [new File(['local fixture'], originalName, { type: 'image/png' })])
+  try {
+    const url = await conversationService.getAttachmentUrl(undefined, attachments[0])
+    check(new URL(url).searchParams.get('download') === originalName && new URL(url).hash === '', 'Original filename became URL syntax')
+    const download = await fetch(url)
+    check(download.ok && /^attachment;/i.test(download.headers.get('content-disposition') || ''), 'Attachment download disposition missing')
+    check(await download.text() === 'local fixture', 'Attachment content changed')
+  } finally { await conversationService.removeAttachments(undefined, attachments) }
+  pass('app signed download preserves original special-character filename and attachment disposition')
   stage = 'app conversation realtime subscriptions'
   const customerMessages = []
   const staffMessages = []
