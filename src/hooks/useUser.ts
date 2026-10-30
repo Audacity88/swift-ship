@@ -8,7 +8,7 @@ export function useUser() {
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        const userData = await userService.getCurrentUser({});
+        const userData = await userService.getCurrentUser(undefined);
         setUser(userData);
       } catch (error) {
         console.error('Error fetching user:', error);

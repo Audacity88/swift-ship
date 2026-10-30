@@ -2,8 +2,7 @@
 
 import { useState } from 'react'
 import { 
-  User, Bell, Shield, CreditCard, Globe, Mail, 
-  Smartphone, Moon, Sun, ChevronRight
+  User, Bell, Shield, CreditCard, Globe
 } from 'lucide-react'
 import Image from 'next/image'
 import { cn } from '@/lib/utils'
@@ -94,19 +93,19 @@ export default function SettingsPage() {
 
   return (
     <div className={cn(
-      "flex h-[calc(100vh-5rem)] -mt-6 -mx-6",
+      "flex min-w-0 flex-col lg:flex-row lg:h-[calc(100vh-5rem)]",
       "bg-background"
     )}>
       {/* Navigation Sidebar */}
       <div className={cn(
-        "w-64",
+        "w-full shrink-0 lg:w-64",
         "border-r border-border",
         "bg-card"
       )}>
         <div className="p-6">
           <h1 className="text-xl font-semibold">Settings</h1>
         </div>
-        <nav className="px-3">
+        <nav className="flex flex-wrap lg:block px-3">
           {navigationItems.map((item) => {
             const Icon = item.icon
             return (
@@ -131,7 +130,7 @@ export default function SettingsPage() {
 
       {/* Content Area */}
       <div className={cn(
-        "flex-1 overflow-auto",
+        "min-w-0 flex-1 overflow-auto",
         "bg-background"
       )}>
         <div className="max-w-3xl mx-auto p-6">
@@ -149,6 +148,7 @@ export default function SettingsPage() {
                     src={user.avatar || "/images/default-avatar.png"}
                     alt={user.name || "Profile"}
                     fill
+                    sizes="96px"
                     className="rounded-full object-cover"
                     priority
                     unoptimized

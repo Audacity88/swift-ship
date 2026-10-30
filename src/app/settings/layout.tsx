@@ -6,7 +6,7 @@ export default function SettingsLayout({
   children: React.ReactNode
 }) {
   return (
-    <div className="p-8">
+    <div className="min-w-0 p-0 sm:p-4">
       {children}
     </div>
   )
