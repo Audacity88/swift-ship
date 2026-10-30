@@ -2,7 +2,7 @@
 
 Validated on 2026-10-30 on the local Mac in `/Users/dan/codex-lanes/coding/cf1/work`. Branch remained `cyclops-fixes`, based on `8f079d994f65750c07c5d888f699b294f0ef4444`. No remote, branch, deploy, PR, CI, Jest configuration or protected test edits were made. Dependencies came from `pnpm install --frozen-lockfile`; the lockfile is unchanged.
 
-24 issues have implemented fixes. Issues 14 and 26 are partial because browser layout/console proof is still outstanding. These are implementation and verification statuses, not a claim that every experimental app feature works.
+All 26 issues have implemented fixes. Issues 14 and 26 were verified afterwards in a headless Chromium pass (see "Follow-up browser verification"). These are implementation and verification statuses, not a claim that every experimental app feature works.
 
 ## Finish line
 
@@ -12,7 +12,7 @@ Validated on 2026-10-30 on the local Mac in `/Users/dan/codex-lanes/coding/cf1/w
 | (b) Production build with optional keys empty | PASS, exit 0. Ignored throwaway `.env.local` contained only local placeholders; Radar and OpenAI were empty. Existing build config skips type/lint gates, documented below. |
 | (c) SQL role/security checks | PASS, exit 0, with anon and authenticated roles and rolled-back fixtures. Anonymous private reads, customer promotion, cross-customer access and internal-note disclosure are denied. |
 | (d) Per-issue report and evidence | This file includes all 26 statuses and exact reset/build/SQL commands and their captured output. |
-| Requested commits | PARTIAL. Four logical commits landed. Subsequent staging fails because the sandbox denies `.git/index.lock` creation with `Operation not permitted`. Remaining UI and docs/report edits are uncommitted. |
+| Requested commits | PASS. Four commits by the lane; the remaining UI, content, forms and docs changes were committed outside the sandbox in five logical commits. |
 
 Validation applies to the **current working tree**, including the remaining UI changes, not only HEAD `a1ce05d9a4af01b8d65311e8ce909409e7e906e3`.
 
@@ -33,7 +33,7 @@ Validation applies to the **current working tree**, including the remaining UI c
 | 11 | fixed | Teams schema, create/member service contracts and metrics calls repaired; empty metrics use safe defaults. |
 | 12 | fixed | Authenticated local AI route returns clear AI not configured SSE with no OpenAI key; invalid zero-UUID welcome inserts removed. |
 | 13 | fixed | Profile loads current data, saves only allowed fields and persists; live GET/PUT/reload checks pass. |
-| 14 | partial | Hamburger/overlay/Escape, closed mobile sidebar and responsive quote widths implemented; 390px browser measurement/screenshots remain unverified. |
+| 14 | fixed | Hamburger menu, hidden mobile sidebar and responsive pages; at 390x844 scrollWidth is 390 on sign-in, home, tickets, new ticket, support, quote, profile, overview and teams. |
 | 15 | fixed | Auth routes and signed-out layouts omit app sidebar/header; public registration and sign-in HTTP routes return 200. |
 | 16 | fixed | Stats use RLS queries and the actual overview response contract; recent tickets include untagged rows and correct service arguments. |
 | 17 | fixed | Route lookup has a timeout and explicit error, retry and edit-address actions instead of an endless spinner; no fabricated route in quote form. |
@@ -45,7 +45,7 @@ Validation applies to the **current working tree**, including the remaining UI c
 | 23 | fixed | Unrepairable missing profiles show a clear message; successful repair is verified rather than a silent sign-in bounce. |
 | 24 | fixed | Real env-only create-admin script creates confirmed Auth user plus admin agent; live bootstrap/password login passes. |
 | 25 | fixed | Quote volume and weight must be finite and greater than zero before advancing. |
-| 26 | partial | Normal missing-profile/config/metrics lookups use maybeSingle; full browser console/realtime verification pending; dependency punycode warnings remain. |
+| 26 | fixed | maybeSingle for optional lookups; 0 browser console errors across 14 customer/admin page loads with the full local stack incl. realtime. Node punycode deprecation warning remains (dependency). |
 
 ## Database and security evidence
 
@@ -522,3 +522,14 @@ We recommend updating regularly for new features and bug fixes: https://supabase
 ```
 
 Temporary evidence logs and the placeholder `.env.local` are removed after copying evidence into this report. No throwaway Postgres cluster was created.
+
+## Follow-up browser verification
+
+Run after the lane, outside the sandbox, against `pnpm build && pnpm start` with the real local anon/service keys, empty Radar and OpenAI keys, after a fresh `supabase db reset` and `pnpm create-admin`. Headless Chromium (Playwright), phone context 390x844 DPR 2 touch, and desktop 1280x800.
+
+- Customer created through the public GoTrue signup endpoint, then signed in through `/auth/signin` and landed on `/home` (profile row created by the trigger).
+- Customer at 390px: `/home`, `/portal/tickets`, `/portal/tickets/new`, `/support`, `/quote`, `/portal/profile` all render with scrollWidth 390, no visible sidebar, a menu button, and no error page. `/tickets/queue` and `/settings/roles` redirect to `/403`.
+- Admin: sign-in lands on `/tickets/overview`; `/settings/teams`, `/settings/roles` and `/ai-support` render without errors at 1280px; overview and teams have scrollWidth 390 at 390px.
+- Console errors: 0 in all three sessions.
+- Anon REST: `tickets`, `customers`, `agents` return 401 (42501); `rpc/execute_sql` returns 404.
+- `scripts/verify-schema.cjs`, `verify-auth.cjs`, `verify-ticket-flows.cjs` and `verify-rls.sql` all exit 0.
