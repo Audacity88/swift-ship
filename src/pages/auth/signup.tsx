@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/router'
-import { COLORS } from '@/lib/constants'
 import { authService } from '@/lib/services'
 import { cn } from '@/lib/utils'
 
@@ -36,16 +35,17 @@ export default function SignUp() {
     }
 
     try {
-      await authService.registerCustomer({}, {
+      const result = await authService.registerCustomer(undefined, {
         email,
         password,
         name,
         company: company.trim() || undefined
       })
 
-      setSuccess(true)
-    } catch (err: any) {
-      setError(err.message || 'An unexpected error occurred')
+      if (result.session) await router.push('/portal/welcome')
+      else setSuccess(true)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'An unexpected error occurred')
     } finally {
       setLoading(false)
     }

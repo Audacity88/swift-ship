@@ -47,7 +47,7 @@ export async function getUserRole() {
       .from('agents')
       .select('role')
       .eq('id', user.id)
-      .single()
+      .maybeSingle()
 
     if (agent) {
       return agent.role
@@ -73,7 +73,7 @@ export async function getUserPermissions() {
       .from('agents')
       .select('role')
       .eq('id', user.id)
-      .single()
+      .maybeSingle()
 
     if (!agent) {
       return ['customer']

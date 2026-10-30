@@ -1,144 +1,28 @@
 'use client'
 
-import { useState } from 'react'
-import { User } from 'lucide-react'
-import Image from 'next/image'
+import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { USER_ROLE_LABELS } from '@/types/role'
-import { COLORS } from '@/lib/constants'
 
 export default function ProfilePage() {
-  const { user } = useAuth()
-  
-  if (!user) {
-    return null
-  }
-
+  const { user, loading, error } = useAuth()
+  const router = useRouter()
+  useEffect(() => {
+    if (loading) return
+    if (!user) router.replace(error ? '/auth/signin?error=profile_missing' : '/auth/signin')
+    else if (user.role === 'customer') router.replace('/portal/profile')
+  }, [user, loading, error, router])
+  if (loading || !user || user.role === 'customer') return <p className="p-6">Loading your profile...</p>
   return (
-    <div className="container mx-auto py-8 px-4">
-      <h1 className="text-2xl font-bold mb-8">Profile Settings</h1>
-      
-      <div className="max-w-3xl mx-auto">
-        <div className="space-y-6">
-          <h2 className="text-lg font-semibold">Profile Information</h2>
-          
-          <div className="flex items-center gap-6 pb-6 border-b border-gray-200">
-            <div className="relative w-24 h-24">
-              <Image
-                src="https://picsum.photos/200"
-                alt="Profile"
-                fill
-                className="rounded-full object-cover"
-              />
-              <button 
-                className="absolute bottom-0 right-0 p-1.5 bg-primary text-white rounded-full text-sm"
-                style={{ backgroundColor: COLORS.primary }}
-              >
-                <User className="w-4 h-4" />
-              </button>
-            </div>
-            <div>
-              <h3 className="font-medium">Profile Photo</h3>
-              <p className="text-sm text-gray-500 mb-4">
-                This will be displayed on your profile
-              </p>
-              <div className="flex gap-3">
-                <button className="px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium">
-                  Change Photo
-                </button>
-                <button className="px-4 py-2 text-red-600 bg-white border border-gray-200 rounded-lg text-sm font-medium">
-                  Remove
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  First Name
-                </label>
-                <input
-                  type="text"
-                  className="w-full p-2 border border-gray-200 rounded-lg"
-                  placeholder="John"
-                  defaultValue={user.name?.split(' ')[0]}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Last Name
-                </label>
-                <input
-                  type="text"
-                  className="w-full p-2 border border-gray-200 rounded-lg"
-                  placeholder="Doe"
-                  defaultValue={user.name?.split(' ')[1]}
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Email Address
-              </label>
-              <input
-                type="email"
-                className="w-full p-2 border border-gray-200 rounded-lg"
-                placeholder="john@example.com"
-                defaultValue={user.email}
-                disabled
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Phone Number
-              </label>
-              <input
-                type="tel"
-                className="w-full p-2 border border-gray-200 rounded-lg"
-                placeholder="+1 (555) 000-0000"
-                defaultValue={user.phone}
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Company
-              </label>
-              <input
-                type="text"
-                className="w-full p-2 border border-gray-200 rounded-lg"
-                placeholder="Company Name"
-                defaultValue={user.company}
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Role
-              </label>
-              <input
-                type="text"
-                className="w-full p-2 border border-gray-200 rounded-lg"
-                value={USER_ROLE_LABELS[user.role]}
-                disabled
-              />
-            </div>
-          </div>
-
-          <div className="flex justify-end">
-            <button
-              className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium"
-              style={{ backgroundColor: COLORS.primary }}
-            >
-              Save Changes
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <main className="mx-auto max-w-2xl space-y-4 p-6">
+      <h1 className="text-2xl font-semibold">Your profile</h1>
+      <dl className="space-y-3">
+        <div><dt className="font-medium">Name</dt><dd>{user.name}</dd></div>
+        <div><dt className="font-medium">Email</dt><dd className="break-all">{user.email}</dd></div>
+        <div><dt className="font-medium">Role</dt><dd>{USER_ROLE_LABELS[user.role]}</dd></div>
+      </dl>
+      <p className="text-muted-foreground">An administrator can update staff profiles in Settings, Agents.</p>
+    </main>
   )
-} 
+}

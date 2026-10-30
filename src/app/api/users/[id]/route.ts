@@ -1,104 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { authService, userService } from '@/lib/services'
-import { getServerSupabase } from '@/lib/supabase-client'
+import { createClient } from '@/lib/supabase/server'
+import { ensureUserProfile } from '@/lib/auth/profile'
+import { z } from 'zod'
 
-export async function GET(
-  request: NextRequest,
-  context: { params: Promise<{ id: string }> }
-) {
-  try {
-    // Await the params
-    const { id } = await Promise.resolve((await context.params))
+const updatesSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  company: z.string().max(200).optional(),
+  phone: z.string().max(100).optional(),
+}).strict()
 
-    // Check authentication
-    const supabase = getServerSupabase(undefined)
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    
-    if (userError || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
-    }
-
-    // Only allow users to access their own data
-    if (user.id !== id) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 403 }
-      )
-    }
-
-    // Get user data
-    const userData = await userService.getUserById(undefined, id)
-
-    // If user not found in either agents or customers table, create a new customer
-    if (!userData) {
-      const newUser = await userService.createCustomer(undefined, {
-        id: user.id,
-        name: user.user_metadata?.name || user.email?.split('@')[0] || 'Unknown',
-        email: user.email!,
-        avatar: user.user_metadata?.avatar_url
-      })
-
-      return NextResponse.json(newUser)
-    }
-
-    return NextResponse.json(userData)
-  } catch (error: any) {
-    console.error('Error in users GET route:', error)
-    return NextResponse.json(
-      { error: error.message || 'Internal server error' },
-      { status: error.status || 500 }
-    )
-  }
+export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+  const { id } = await context.params
+  const supabase = await createClient()
+  const { data: { user }, error } = await supabase.auth.getUser()
+  if (error || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (user.id !== id) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  try { return NextResponse.json(await ensureUserProfile(supabase, user)) }
+  catch { return NextResponse.json({ error: 'Your account profile could not be loaded. Please contact your administrator.' }, { status: 500 }) }
 }
 
-export async function PUT(
-  request: NextRequest,
-  context: { params: Promise<{ id: string }> }
-) {
-  try {
-    // Await the params
-    const { id } = await Promise.resolve((await context.params))
-
-    // Check authentication
-    const supabase = getServerSupabase(undefined)
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    
-    if (userError || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
-    }
-
-    // Only allow users to update their own data
-    if (user.id !== id) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 403 }
-      )
-    }
-
-    const updates = await request.json()
-
-    // Validate required fields
-    if (!updates.name) {
-      return NextResponse.json(
-        { error: 'Name is required' },
-        { status: 400 }
-      )
-    }
-
-    // Update user data
-    const updatedUser = await userService.updateUser(undefined, id, updates)
-    return NextResponse.json(updatedUser)
-  } catch (error: any) {
-    console.error('Error in users PUT route:', error)
-    return NextResponse.json(
-      { error: error.message || 'Internal server error' },
-      { status: error.status || 500 }
-    )
-  }
-} 
+export async function PUT(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+  const { id } = await context.params
+  const supabase = await createClient()
+  const { data: { user }, error } = await supabase.auth.getUser()
+  if (error || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (user.id !== id) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const parsed = updatesSchema.safeParse(await request.json())
+  if (!parsed.success) return NextResponse.json({ error: 'Invalid profile fields' }, { status: 400 })
+  const { data: agent } = await supabase.from('agents').select('role').eq('id', id).maybeSingle()
+  const updates = agent ? { name: parsed.data.name } : parsed.data
+  const { data, error: updateError } = await supabase.from(agent ? 'agents' : 'customers')
+    .update({ ...updates, updated_at: new Date().toISOString() }).eq('id', id).select('*').maybeSingle()
+  if (updateError) return NextResponse.json({ error: 'Unable to save your profile' }, { status: 500 })
+  return NextResponse.json(data)
+}

@@ -1,33 +1,32 @@
-'use client';
+'use client'
 
-import { redirect } from 'next/navigation'
-import { authService, userService } from '@/lib/services'
+import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { getBrowserSupabase } from '@/lib/supabase-client'
+import { ensureUserProfile } from '@/lib/auth/profile'
 
-export default async function AuthCallback() {
-  try {
-    const { data: { user }, error: userError } = await authService.getUser({})
-    if (userError || !user) {
-      return redirect('/auth/sign-in')
+export default function AuthCallback() {
+  const router = useRouter()
+  useEffect(() => {
+    let mounted = true
+    const finish = async () => {
+      try {
+        const supabase = getBrowserSupabase()
+        const code = new URL(window.location.href).searchParams.get('code')
+        if (code) {
+          const { error } = await supabase.auth.exchangeCodeForSession(code)
+          if (error) throw error
+        }
+        const { data: { user }, error } = await supabase.auth.getUser()
+        if (error || !user) throw new Error('Authentication failed')
+        const profile = await ensureUserProfile(supabase, user)
+        if (mounted) router.replace(profile.type === 'agent' ? '/tickets/overview' : '/portal/welcome')
+      } catch {
+        if (mounted) router.replace('/auth/signin?error=profile_missing')
+      }
     }
-
-    // Check if user exists and get their type
-    const userDetails = await userService.getCurrentUser({})
-    if (!userDetails) {
-      // New user - redirect to welcome page
-      return redirect('/welcome')
-    }
-
-    // Redirect based on user type
-    if (userDetails.type === 'customer') {
-      return redirect('/portal')
-    } else if (userDetails.type === 'agent') {
-      return redirect('/tickets/overview')
-    }
-
-    // Fallback redirect if something unexpected happens
-    return redirect('/welcome')
-  } catch (error) {
-    console.error('Auth callback error:', error)
-    return redirect('/auth/sign-in')
-  }
-} 
+    void finish()
+    return () => { mounted = false }
+  }, [router])
+  return <p className="p-6" role="status">Completing sign in...</p>
+}

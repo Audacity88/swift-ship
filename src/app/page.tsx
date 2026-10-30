@@ -7,15 +7,16 @@ import { cn } from '@/lib/utils'
 
 export default function RootPage() {
   const router = useRouter()
-  const { user } = useAuth()
+  const { user, loading, error } = useAuth()
 
   useEffect(() => {
+    if (loading) return
     if (user) {
-      router.push('/home')
+      router.replace(user.role === 'customer' ? '/home' : '/tickets/overview')
     } else {
-      router.push('/auth/signin')
+      router.replace(error ? '/auth/signin?error=profile_missing' : '/auth/signin')
     }
-  }, [user, router])
+  }, [user, loading, error, router])
 
   return (
     <div className={cn(
