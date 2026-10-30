@@ -2,12 +2,10 @@ import OpenAI from 'openai';
 import { createClient } from '@supabase/supabase-js';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-// Log the first and last 4 characters of the API key for debugging
-console.log('Using API Key:', process.env.OPENAI_API_KEY?.slice(0, 4) + '...' + process.env.OPENAI_API_KEY?.slice(-4));
+const getOpenAI = () => {
+  if (!process.env.OPENAI_API_KEY) throw new Error('AI not configured')
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+}
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -74,7 +72,7 @@ export class AISupportService {
     ];
 
     // Generate response using OpenAI
-    const completion = await openai.chat.completions.create({
+    const completion = await getOpenAI().chat.completions.create({
       model: 'gpt-3.5-turbo',
       messages: messages,
       temperature: 0.7,
@@ -94,7 +92,7 @@ export class AISupportService {
   }
 
   async shouldCreateTicket(message: string): Promise<boolean> {
-    const completion = await openai.chat.completions.create({
+    const completion = await getOpenAI().chat.completions.create({
       model: 'gpt-3.5-turbo',
       messages: [
         {

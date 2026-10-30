@@ -2,21 +2,17 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { format, subDays } from 'date-fns'
+import { format } from 'date-fns'
 import {
   ArrowRight,
   ArrowLeft,
   Plus,
   Package,
   Clock,
-  DollarSign,
-  ChevronRight,
-  Pencil,
-  Trash2,
   X
 } from 'lucide-react'
 import { COLORS } from '@/lib/constants'
-import { quoteService, shipmentService, ticketService } from '@/lib/services'
+import { quoteService, ticketService } from '@/lib/services'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { QuoteDetailView } from '@/components/features/quotes/QuoteDetailView'
 import { TIME_SLOTS } from '@/types/time-slots'
@@ -214,6 +210,9 @@ export default function QuotePage() {
   const [error, setError] = useState<string | null>(null)
   const [validationErrors, setValidationErrors] = useState<ValidationErrors>({})
   const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null)
+  const [routeError, setRouteError] = useState<string | null>(null)
+  const [routeLoading, setRouteLoading] = useState(false)
+  const [routeAttempt, setRouteAttempt] = useState(0)
 
   const steps: { id: Step; label: string }[] = [
     { id: 'package', label: 'Package Details' },
@@ -275,64 +274,32 @@ export default function QuotePage() {
     return quoteCalculationService.calculateServiceOptions(route, packageDetails)
   }
 
-  // Calculate route when origin and destination coordinates are available
   useEffect(() => {
+    if (currentStep !== 'service') return
+    let cancelled = false
     const calculateDistance = async () => {
-      // Clear route info when coordinates change
       setRouteInfo(null)
-
-      // Check if we have valid coordinates
-      if (!destination.from.coordinates || !destination.to.coordinates) {
-        console.log('Missing coordinates for route calculation')
-        return
-      }
-
-      console.log('Calculating route with coordinates:', {
-        from: destination.from.coordinates,
-        to: destination.to.coordinates
-      })
-
+      setRouteError(null)
+      setRouteLoading(true)
       try {
-        const route = await radarService.calculateRoute(
-          destination.from.coordinates,
-          destination.to.coordinates
-        )
-
-        if (route) {
-          console.log('Route calculated successfully:', route)
-          setRouteInfo(route)
-        } else {
-          console.error('Failed to calculate route - no route returned')
-          // Fallback to approximate straight-line distance calculation
-          const fallbackRoute = calculateFallbackRoute(
-            destination.from.coordinates,
-            destination.to.coordinates
-          )
-          console.log('Using fallback route calculation:', fallbackRoute)
-          setRouteInfo(fallbackRoute)
-        }
-      } catch (error) {
-        console.error('Error calculating route:', error)
-        // Fallback to approximate straight-line distance calculation
-        const fallbackRoute = calculateFallbackRoute(
-          destination.from.coordinates,
-          destination.to.coordinates
-        )
-        console.log('Using fallback route calculation after error:', fallbackRoute)
-        setRouteInfo(fallbackRoute)
+        if (!radarService.isAvailable) throw new Error('Maps unavailable. Route estimates require the optional Radar key. You can still use support and manage existing shipments.')
+        const [from, to] = await Promise.all([
+          destination.from.coordinates || radarService.geocodeAddress(destination.from.address),
+          destination.to.coordinates || radarService.geocodeAddress(destination.to.address)
+        ])
+        if (!from || !to) throw new Error('Unable to locate these addresses. Check the pickup and delivery addresses and try again.')
+        const route = await radarService.calculateRoute(from, to)
+        if (!route) throw new Error('Unable to calculate the route. Check your connection and Radar configuration, then retry.')
+        if (!cancelled) setRouteInfo(route)
+      } catch (err) {
+        if (!cancelled) setRouteError(err instanceof Error ? err.message : 'Route calculation failed. Please retry.')
+      } finally {
+        if (!cancelled) setRouteLoading(false)
       }
     }
-
     void calculateDistance()
-  }, [destination.from.coordinates, destination.to.coordinates])
-
-  // Fallback route calculation using straight-line distance (Haversine formula)
-  const calculateFallbackRoute = (
-    from: { latitude: number; longitude: number },
-    to: { latitude: number; longitude: number }
-  ): RouteInfo => {
-    return quoteCalculationService.calculateFallbackRoute(from, to)
-  }
+    return () => { cancelled = true }
+  }, [currentStep, destination.from.address, destination.to.address, destination.from.coordinates, destination.to.coordinates, routeAttempt])
 
   const handleNext = () => {
     const errors: ValidationErrors = {}
@@ -348,11 +315,11 @@ export default function QuotePage() {
       if (!packageDetails.volume) {
         errors.volume = 'Please enter the volume'
       }
-      if (parseFloat(packageDetails.volume) < 0) {
-        errors.volume = 'Volume cannot be negative'
+      if (!Number.isFinite(Number(packageDetails.volume)) || Number(packageDetails.volume) <= 0) {
+        errors.volume = 'Volume must be greater than zero'
       }
-      if (parseFloat(packageDetails.weight) < 0) {
-        errors.weight = 'Weight cannot be negative'
+      if (!Number.isFinite(Number(packageDetails.weight)) || Number(packageDetails.weight) <= 0) {
+        errors.weight = 'Weight must be greater than zero'
       }
     } else if (currentStep === 'destination') {
       if (!destination.from.address) {
@@ -441,21 +408,11 @@ export default function QuotePage() {
       }
 
       setCurrentStep('done')
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to save the quote. Please retry.')
     } finally {
       setIsSubmitting(false)
     }
-  }
-
-  const handleEditQuote = (quote: Quote) => {
-    setSelectedQuote(quote)
-    setShowNewQuoteForm(true)
-    // Pre-fill the form with existing data
-    setPackageDetails(quote.metadata.packageDetails)
-    setDestination(quote.metadata.destination)
-    setSelectedService(quote.metadata.selectedService)
-    setCurrentStep('package')
   }
 
   const handleDeleteQuote = async (quoteId: string) => {
@@ -704,26 +661,26 @@ export default function QuotePage() {
           {/* Progress Steps */}
           {currentStep !== 'done' && (
             <div className="mb-8">
-              <div className="flex justify-between">
+              <div className="grid grid-cols-5 gap-1 sm:gap-4">
                 {steps.map((step, index) => {
                   const isActive = currentStep === step.id
                   const isCompleted = steps.findIndex(s => s.id === currentStep) > index
 
                   return (
-                    <div key={step.id} className="flex flex-col items-center w-full">
-                      <div className="relative flex items-center justify-center w-full">
+                    <div key={step.id} className="flex min-w-0 flex-col items-center">
+                      <div className="relative flex min-w-0 items-center justify-center w-full">
                         <div
-                          className={`w-10 h-10 rounded-full flex items-center justify-center \
+                          className={`w-10 h-10 shrink-0 rounded-full flex items-center justify-center \
                             ${isActive || isCompleted ? 'bg-primary text-white' : 'bg-gray-100 text-gray-400'}`}
                           style={isActive || isCompleted ? { backgroundColor: COLORS.primary } : {}}
                         >
                           {index + 1}
                         </div>
                         {index < steps.length - 1 && (
-                          <div className={`${isCompleted ? 'bg-primary' : 'bg-gray-200'} h-[2px] flex-1 mx-4`} />
+                          <div className={`${isCompleted ? 'bg-primary' : 'bg-gray-200'} hidden sm:block h-[2px] flex-1 mx-1 sm:mx-4`} />
                         )}
                       </div>
-                      <span className={`mt-2 text-sm font-medium ${isActive ? 'text-primary' : 'text-gray-500'}`}>
+                      <span className={`mt-2 w-full break-words text-center text-xs sm:text-sm font-medium ${isActive ? 'text-primary' : 'text-gray-500'}`}>
                         {step.label}
                       </span>
                     </div>
@@ -751,7 +708,7 @@ export default function QuotePage() {
                     </label>
                     <select
                       value={packageDetails.type}
-                      onChange={(e) => setPackageDetails({ ...packageDetails, type: e.target.value as any })}
+                      onChange={(e) => setPackageDetails({ ...packageDetails, type: e.target.value as PackageDetails['type'] })}
                       className={`w-full p-2 border rounded-lg ${validationErrors.type ? 'border-red-500' : 'border-gray-200'}`}
                     >
                       <option value="full_truckload">Full Truckload (FTL)</option>
@@ -800,7 +757,7 @@ export default function QuotePage() {
                       </label>
                       <select
                         value={packageDetails.containerSize}
-                        onChange={(e) => setPackageDetails({ ...packageDetails, containerSize: e.target.value as any })}
+                        onChange={(e) => setPackageDetails({ ...packageDetails, containerSize: e.target.value as PackageDetails['containerSize'] })}
                         className="w-full p-2 border border-gray-200 rounded-lg"
                       >
                         <option value="20ft">20ft Standard</option>
@@ -823,7 +780,7 @@ export default function QuotePage() {
                       />
                     </div>
                   )}
-                  <div className="col-span-2">
+                  <div className="md:col-span-2">
                     <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
                       <input
                         type="checkbox"
@@ -837,7 +794,7 @@ export default function QuotePage() {
                       Check if your shipment contains any hazardous materials requiring special handling
                     </p>
                   </div>
-                  <div className="col-span-2">
+                  <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Special Requirements
                     </label>
@@ -967,7 +924,7 @@ export default function QuotePage() {
                 {routeInfo ? (
                   <>
                     <div className="bg-blue-50 p-4 rounded-lg mb-6">
-                      <div className="flex items-center justify-between text-blue-700">
+                      <div className="flex flex-wrap items-center justify-between gap-3 text-blue-700">
                         <div>
                           <p className="font-medium">Estimated Distance</p>
                           <p className="text-sm">{routeInfo.distance.kilometers} km ({routeInfo.distance.miles} miles)</p>
@@ -993,7 +950,7 @@ export default function QuotePage() {
                           }`}
                           onClick={() => setSelectedService(service.id)}
                         >
-                          <div className="flex items-center justify-between mb-2">
+                          <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
                             <h3 className="text-lg font-medium">{service.name}</h3>
                             <div className="text-right">
                               <p className="text-lg font-medium">~${service.price.toLocaleString()}</p>
@@ -1014,7 +971,11 @@ export default function QuotePage() {
                 ) : (
                   <div className="text-center py-8 bg-gray-50 rounded-lg">
                     <Clock className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                    <p className="text-gray-500">Calculating route and service options...</p>
+                    {routeLoading ? <p className="text-gray-500" role="status">Calculating route and service options...</p> : <>
+                      <p className="text-red-600" role="alert">{routeError || 'Route unavailable. Please retry.'}</p>
+                      <button type="button" className="mt-4 px-4 py-2 border rounded-lg" onClick={() => setRouteAttempt(value => value + 1)}>Retry route calculation</button>
+                      <button type="button" className="mt-4 ml-2 px-4 py-2 border rounded-lg" onClick={() => setCurrentStep('destination')}>Edit addresses</button>
+                    </>}
                   </div>
                 )}
               </div>

@@ -32,6 +32,10 @@ export function ShipmentMap({ origin, destination, currentLocation }: ShipmentMa
 
   // Geocode addresses to get coordinates
   useEffect(() => {
+    if (!radarService.isAvailable) {
+      setError('Maps unavailable. Configure the optional Radar key to view shipment locations.')
+      return
+    }
     const geocodeAddresses = async () => {
       try {
         // Geocode origin
@@ -43,9 +47,10 @@ export function ShipmentMap({ origin, destination, currentLocation }: ShipmentMa
           currentResult = await radarService.geocodeAddress(currentLocation)
         }
 
+        if (!originResult || !destResult) throw new Error('Location lookup failed')
         setCoordinates({
-          origin: originResult ? [originResult.longitude, originResult.latitude] : [-74.006, 40.7128],
-          destination: destResult ? [destResult.longitude, destResult.latitude] : [-84.388, 33.749],
+          origin: [originResult.longitude, originResult.latitude],
+          destination: [destResult.longitude, destResult.latitude],
           current: currentResult ? [currentResult.longitude, currentResult.latitude] : undefined
         })
       } catch (err) {

@@ -49,7 +49,7 @@ export function AddressAutocomplete({
     onChange(value, undefined) // Clear details when input changes
     setIsLoading(true)
 
-    if (value.length >= 3) {
+    if (radarService.isAvailable && value.length >= 3) {
       try {
         const results = await radarService.autocompleteAddress(value)
         setSuggestions(results)
@@ -113,6 +113,7 @@ export function AddressAutocomplete({
         )}
       </div>
       
+      {!radarService.isAvailable && <p className="text-sm text-muted-foreground mt-1">Maps unavailable. Address lookup requires the optional Radar key.</p>}
       {error && (
         <p className="text-sm text-red-500 mt-1">{error}</p>
       )}

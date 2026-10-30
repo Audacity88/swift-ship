@@ -25,22 +25,6 @@ interface RadarAutocompleteResponse {
   }>
 }
 
-interface RadarDistanceResponse {
-  routes: {
-    distance: {
-      value: number // Distance in meters
-      text: string
-    }
-    duration: {
-      value: number // Duration in seconds
-      text: string
-    }
-    geometry: {
-      coordinates: [number, number][]
-    }
-  }[]
-}
-
 export interface RouteInfo {
   distance: {
     kilometers: number
@@ -53,17 +37,14 @@ export interface RouteInfo {
 }
 
 class RadarService {
-  private headers: HeadersInit
+  get isAvailable(): boolean {
+    return Boolean(RADAR_PUBLISHABLE_KEY?.trim())
+  }
 
-  constructor() {
-    if (!RADAR_PUBLISHABLE_KEY) {
-      throw new Error('Radar publishable key is not configured')
-    }
-
-    this.headers = {
-      'Authorization': RADAR_PUBLISHABLE_KEY,
-      'Content-Type': 'application/json'
-    }
+  // Resolve configuration only when a map or address feature requests it.
+  private get headers(): HeadersInit {
+    if (!this.isAvailable) throw new Error('Maps unavailable. Configure the optional Radar publishable key to use address lookup and route estimates.')
+    return { Authorization: RADAR_PUBLISHABLE_KEY!, 'Content-Type': 'application/json' }
   }
 
   /**
@@ -71,12 +52,13 @@ class RadarService {
    */
   async autocompleteAddress(query: string): Promise<string[]> {
     try {
-      if (!query || query.length < 3) return []
+      if (!this.isAvailable || !query || query.length < 3) return []
 
       const response = await fetch(`${RADAR_API_URL}/search/autocomplete?query=${encodeURIComponent(query)}`, {
         method: 'GET',
         headers: this.headers,
-        cache: 'no-cache'
+        cache: 'no-cache',
+        signal: AbortSignal.timeout(10000)
       })
 
       if (!response.ok) {
@@ -99,11 +81,13 @@ class RadarService {
    * Geocode an address to get coordinates and formatted address details
    */
   async geocodeAddress(address: string): Promise<RadarAddress | null> {
+    if (!this.isAvailable) return null
     try {
       const response = await fetch(`${RADAR_API_URL}/geocode/forward?query=${encodeURIComponent(address)}`, {
         method: 'GET',
         headers: this.headers,
-        cache: 'no-cache'
+        cache: 'no-cache',
+        signal: AbortSignal.timeout(10000)
       })
 
       if (!response.ok) {
@@ -143,13 +127,15 @@ class RadarService {
    * Reverse geocode coordinates to get address details
    */
   async reverseGeocode(latitude: number, longitude: number): Promise<RadarAddress | null> {
+    if (!this.isAvailable) return null
     try {
       const response = await fetch(
         `${RADAR_API_URL}/geocode/reverse?coordinates=${latitude},${longitude}`,
         { 
           method: 'GET',
           headers: this.headers,
-          cache: 'no-cache'
+          cache: 'no-cache',
+        signal: AbortSignal.timeout(10000)
         }
       )
 
@@ -193,6 +179,7 @@ class RadarService {
     origin: { latitude: number; longitude: number },
     destination: { latitude: number; longitude: number }
   ): Promise<RouteInfo | null> {
+    if (!this.isAvailable) return null
     try {
       // Validate coordinates
       if (!this.isValidCoordinate(origin.latitude, origin.longitude) || 
@@ -215,7 +202,8 @@ class RadarService {
         {
           method: 'GET',
           headers: this.headers,
-          cache: 'no-cache'
+          cache: 'no-cache',
+        signal: AbortSignal.timeout(10000)
         }
       )
 
