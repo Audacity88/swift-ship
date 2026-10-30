@@ -1,17 +1,32 @@
 import React from 'react'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import TicketList from '@/components/features/tickets/TicketList'
+import TicketsOverviewPage from '@/app/tickets/overview/page'
 import { fetchTickets } from '@/lib/services/ticket-service'
-import { TicketStatus, TicketPriority } from '@/types/enums'
+import { TicketStatus, TicketPriority } from '@/types/ticket'
+import { getServerSupabase } from '@/lib/supabase-client'
+import { getTicketAgent } from '@/lib/auth/ticket-access'
 import type { TicketListItem } from '@/types/ticket'
 
-jest.mock('@/lib/services/ticket-service')
+let ticketQueryState = { isLoading: false, data: undefined as { data: TicketListItem[] } | undefined }
+jest.mock('@/lib/services', () => ({}))
+jest.mock('@tanstack/react-query', () => ({
+  useQuery: ({ queryKey }: { queryKey: string[] }) => queryKey[0] === 'tickets'
+    ? ticketQueryState
+    : { isLoading: false, data: undefined },
+}))
+jest.mock('next/navigation', () => ({ useRouter: () => ({ push: jest.fn(), refresh: jest.fn() }) }))
+jest.mock('@/components/ui/use-toast', () => ({ useToast: () => ({ toast: jest.fn() }) }))
+jest.mock('@/components/features/tickets/CreateTicketForm', () => ({ CreateTicketForm: () => null }))
+jest.mock('@/lib/supabase-client', () => ({ getServerSupabase: jest.fn() }))
+jest.mock('@/lib/auth/ticket-access', () => ({ getTicketAgent: jest.fn() }))
 
 // Mock data
 const mockTickets: TicketListItem[] = [
   {
     id: '1',
+    type: 'question',
     title: 'Test Ticket 1',
     status: TicketStatus.OPEN,
     priority: TicketPriority.HIGH,
@@ -26,12 +41,13 @@ const mockTickets: TicketListItem[] = [
       email: 'agent@example.com',
       role: 'agent'
     },
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    createdAt: '2026-01-15T12:00:00Z',
+    updatedAt: '2026-01-15T12:00:00Z',
     tags: []
   },
   {
     id: '2',
+    type: 'question',
     title: 'Test Ticket 2',
     status: TicketStatus.IN_PROGRESS,
     priority: TicketPriority.MEDIUM,
@@ -46,139 +62,123 @@ const mockTickets: TicketListItem[] = [
       email: 'johnson@example.com',
       role: 'agent'
     },
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    createdAt: '2026-01-15T12:00:00Z',
+    updatedAt: '2026-01-15T12:00:00Z',
     tags: []
   }
 ]
 
 describe('TicketList Component', () => {
-  const user = userEvent.setup()
+  it('renders ticket list with data', () => {
+    render(<TicketList tickets={mockTickets} />)
+    for (const ticket of mockTickets) {
+      const row = screen.getByText(ticket.title).closest('tr')!
+      expect(within(row).getByText(ticket.customer.name)).toBeInTheDocument()
+      expect(within(row).getByText(ticket.assignee!.name)).toBeInTheDocument()
+      expect(within(row).getByText(ticket.priority)).toBeInTheDocument()
+      expect(within(row).getByText(ticket.status)).toBeInTheDocument()
+      expect(within(row).getByText('Jan 15, 2026')).toBeInTheDocument()
+    }
+  })
+
+  it('displays the parent loading indicator until tickets are supplied to the table', () => {
+    // The overview owns query loading; the real TicketList receives its result.
+    ticketQueryState = { isLoading: true, data: undefined }
+    const { container, rerender } = render(<TicketsOverviewPage />)
+    expect(container.querySelector('.animate-spin')).toBeInTheDocument()
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+    expect(screen.queryByText('Test Ticket 1')).not.toBeInTheDocument()
+
+    ticketQueryState = { isLoading: false, data: { data: mockTickets } }
+    rerender(<TicketsOverviewPage />)
+    expect(container.querySelector('.animate-spin')).not.toBeInTheDocument()
+    expect(screen.getByRole('table')).toBeInTheDocument()
+    expect(screen.getAllByRole('row')).toHaveLength(3)
+    expect(screen.getByText('Test Ticket 1')).toBeInTheDocument()
+    expect(screen.getByText('Test Ticket 2')).toBeInTheDocument()
+  })
+
+  it('opens the clicked ticket without opening it when its checkbox is toggled', async () => {
+    const user = userEvent.setup()
+    const onTicketClick = jest.fn()
+    render(<TicketList tickets={mockTickets} onTicketClick={onTicketClick} />)
+    const row = screen.getByText('Test Ticket 2').closest('tr')!
+    const checkbox = within(row).getByRole('checkbox')
+    await user.click(checkbox)
+    expect(checkbox).toBeChecked()
+    expect(onTicketClick).not.toHaveBeenCalled()
+    await user.click(screen.getByText('Test Ticket 2'))
+    expect(onTicketClick).toHaveBeenCalledTimes(1)
+    expect(onTicketClick).toHaveBeenCalledWith('2')
+  })
+
+  it('selects and deselects all tickets', async () => {
+    const user = userEvent.setup()
+    render(<TicketList tickets={mockTickets} />)
+    const [selectAll, ...tickets] = screen.getAllByRole('checkbox')
+    await user.click(selectAll)
+    for (const checkbox of [selectAll, ...tickets]) expect(checkbox).toBeChecked()
+    await user.click(selectAll)
+    for (const checkbox of [selectAll, ...tickets]) expect(checkbox).not.toBeChecked()
+  })
+})
+
+// Filtering, search, pagination and request errors are service responsibilities.
+// Exercise the real service, mocking only its database boundary.
+describe('Ticket list query behavior', () => {
+  let query: Record<string, jest.Mock>
+  let result: { data: any[] | null; count: number | null; error: Error | null }
 
   beforeEach(() => {
-    (fetchTickets as jest.Mock).mockResolvedValue({ data: mockTickets, pagination: { total: 2 } })
+    jest.resetAllMocks()
+    result = { data: [], count: 0, error: null }
+    query = {}
+    for (const method of ['select', 'eq', 'in', 'ilike', 'gte', 'lte', 'order', 'range']) {
+      query[method] = jest.fn(() => query)
+    }
+    query.then = jest.fn(resolve => Promise.resolve(result).then(resolve))
+    jest.mocked(getServerSupabase).mockReturnValue({
+      auth: { getUser: jest.fn().mockResolvedValue({ data: { user: { id: 'agent-1' } }, error: null }) },
+      from: jest.fn(() => query),
+    } as any)
+    jest.mocked(getTicketAgent).mockResolvedValue({ role: 'admin' } as any)
   })
 
-  afterEach(() => {
-    jest.clearAllMocks()
+  it('filters by status', async () => {
+    await fetchTickets(undefined, { filters: { status: [TicketStatus.OPEN] } })
+    expect(query.in).toHaveBeenCalledWith('status', [TicketStatus.OPEN])
+    expect(query.in).toHaveBeenCalledTimes(1)
+    expect(query.range).toHaveBeenCalledWith(0, 9)
   })
 
-  it('renders ticket list with data', async () => {
-    render(<TicketList tickets={mockTickets} />)
-
-    await waitFor(() => {
-      expect(screen.getByText('Test Ticket 1')).toBeInTheDocument()
-      expect(screen.getByText('Test Ticket 2')).toBeInTheDocument()
-    })
-
-    expect(screen.getByText('John Doe')).toBeInTheDocument()
-    expect(screen.getByText('Agent Smith')).toBeInTheDocument()
-    expect(screen.getAllByText(/high|medium/i)).toHaveLength(2)
+  it('filters by priority', async () => {
+    await fetchTickets(undefined, { filters: { priority: [TicketPriority.HIGH] } })
+    expect(query.in).toHaveBeenCalledWith('priority', [TicketPriority.HIGH])
+    expect(query.in).toHaveBeenCalledTimes(1)
+    expect(query.range).toHaveBeenCalledWith(0, 9)
   })
 
-  it('handles filtering by status', async () => {
-    render(<TicketList tickets={mockTickets} />)
-
-    // Wait for loading to finish
-    await waitFor(() => {
-      expect(screen.queryByText(/loading/i)).not.toBeInTheDocument()
-    })
-
-    // Change the status filter
-    const { handleStatusChange } = (window as any).__TEST_HANDLERS__
-    handleStatusChange('open')
-
-    await waitFor(() => {
-      expect(fetchTickets).toHaveBeenCalledWith({
-        filters: { status: ['open'] },
-        page: 1
-      })
-    })
+  it('searches ticket titles', async () => {
+    await fetchTickets(undefined, { filters: { search: 'test' } })
+    expect(query.ilike).toHaveBeenCalledWith('title', '%test%')
+    expect(query.ilike).toHaveBeenCalledTimes(1)
   })
 
-  it('handles filtering by priority', async () => {
-    render(<TicketList tickets={mockTickets} />)
-
-    // Wait for loading to finish
-    await waitFor(() => {
-      expect(screen.queryByText(/loading/i)).not.toBeInTheDocument()
-    })
-
-    // Change the priority filter
-    const { handlePriorityChange } = (window as any).__TEST_HANDLERS__
-    handlePriorityChange('high')
-
-    await waitFor(() => {
-      expect(fetchTickets).toHaveBeenCalledWith({
-        filters: { priority: ['high'] },
-        page: 1
-      })
-    })
+  it('requests the requested page and preserves the total', async () => {
+    result.count = 25
+    const response = await fetchTickets(undefined, { pagination: { page: 2, pageSize: 10 } })
+    expect(query.range).toHaveBeenCalledWith(10, 19)
+    expect(response).toEqual({ data: [], total: 25 })
   })
 
-  it('handles search input', async () => {
-    render(<TicketList tickets={mockTickets} />)
-
-    // Wait for loading to finish
-    await waitFor(() => {
-      expect(screen.queryByText(/loading/i)).not.toBeInTheDocument()
-    })
-
-    const searchInput = screen.getByPlaceholderText(/search tickets/i)
-    await user.type(searchInput, 'test')
-
-    await waitFor(() => {
-      expect(fetchTickets).toHaveBeenCalledWith(
-        expect.objectContaining({
-          filters: expect.objectContaining({ search: 'test' }),
-        })
-      )
-    })
+  it('propagates fetch errors instead of returning an empty success', async () => {
+    result = { data: null, count: null, error: new Error('Failed to fetch tickets') }
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      await expect(fetchTickets(undefined)).rejects.toBe(result.error)
+      expect(query.range).toHaveBeenCalledWith(0, 9)
+    } finally {
+      log.mockRestore()
+    }
   })
-
-  it('handles pagination', async () => {
-    render(<TicketList tickets={mockTickets} />)
-
-    // Wait for loading to finish
-    await waitFor(() => {
-      expect(screen.queryByText(/loading/i)).not.toBeInTheDocument()
-    })
-
-    const nextButton = screen.getByRole('button', { name: /next/i })
-    await user.click(nextButton)
-
-    await waitFor(() => {
-      expect(fetchTickets).toHaveBeenCalledWith(
-        expect.objectContaining({
-          page: 2,
-        })
-      )
-    })
-  })
-
-  it('displays loading state', async () => {
-    (fetchTickets as jest.Mock).mockImplementation(
-      () => new Promise((resolve) => setTimeout(resolve, 1000))
-    )
-    
-    // Set loading to true initially
-    const { rerender } = render(<TicketList tickets={[]} />)
-    
-    // Trigger a filter change to cause loading state
-    const { handleStatusChange } = (window as any).__TEST_HANDLERS__
-    handleStatusChange('open')
-    
-    await waitFor(() => {
-      expect(screen.getByText(/loading/i)).toBeInTheDocument()
-    })
-  })
-
-  it('handles error state', async () => {
-    (fetchTickets as jest.Mock).mockRejectedValue(new Error('Failed to fetch tickets'))
-    render(<TicketList tickets={mockTickets} />)
-
-    await waitFor(() => {
-      expect(screen.getByText(/error loading tickets/i)).toBeInTheDocument()
-    })
-  })
-}) 
+})

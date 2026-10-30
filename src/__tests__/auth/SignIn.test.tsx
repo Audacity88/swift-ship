@@ -1,101 +1,67 @@
 import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import SignIn from '@/pages/auth/signin'
-import { createBrowserClient } from '@supabase/ssr'
-import { useRouter } from 'next/router'
+import userEvent from '@testing-library/user-event'
+import SignIn from '@/app/auth/signin/page'
+import { authService } from '@/lib/services'
 
-jest.mock('@supabase/ssr')
-jest.mock('next/router', () => ({
-  useRouter: jest.fn()
+const router = { push: jest.fn() }
+jest.mock('next/navigation', () => ({
+  useRouter: () => router,
+  useSearchParams: () => new URLSearchParams(),
+}))
+jest.mock('@/lib/services', () => ({
+  authService: { signIn: jest.fn(), getUser: jest.fn() },
 }))
 
+beforeEach(() => {
+  jest.resetAllMocks()
+  jest.mocked(authService.signIn).mockResolvedValue({ success: true })
+  jest.mocked(authService.getUser).mockResolvedValue({ user: { id: '123' } as any, error: null })
+})
+
+async function submitCredentials() {
+  const user = userEvent.setup()
+  await user.type(screen.getByLabelText(/email/i), 'test@example.com')
+  await user.type(screen.getByLabelText(/password/i), 'password123')
+  await user.click(screen.getByRole('button', { name: /sign in/i }))
+}
+
 describe('SignIn Component', () => {
-  const mockRouter = {
-    push: jest.fn(),
-    prefetch: jest.fn(),
-    pathname: '/',
-    route: '/',
-    asPath: '/',
-    query: {},
-    replace: jest.fn()
-  }
-
-  const mockSupabase = {
-    auth: {
-      signInWithPassword: jest.fn(),
-    },
-  }
-
-  beforeEach(() => {
-    ;(createBrowserClient as jest.Mock).mockReturnValue(mockSupabase)
-    ;(useRouter as jest.Mock).mockReturnValue(mockRouter)
-  })
-
-  afterEach(() => {
-    jest.clearAllMocks()
-  })
-
   it('renders sign in form', () => {
     render(<SignIn />)
     expect(screen.getByRole('heading', { name: /sign in/i })).toBeInTheDocument()
-    expect(screen.getByLabelText(/email/i)).toBeInTheDocument()
-    expect(screen.getByLabelText(/password/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/email/i)).toBeRequired()
+    expect(screen.getByLabelText(/password/i)).toBeRequired()
     expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument()
   })
 
-  it('handles form submission', async () => {
-    mockSupabase.auth.signInWithPassword.mockResolvedValueOnce({
-      data: { user: { id: '123' } },
-      error: null,
-    })
-
+  it('handles form submission and redirects after verifying the session', async () => {
     render(<SignIn />)
-
-    fireEvent.change(screen.getByLabelText(/email/i), {
-      target: { value: 'test@example.com' },
+    await submitCredentials()
+    expect(authService.signIn).toHaveBeenCalledWith({}, {
+      email: 'test@example.com', password: 'password123',
     })
-    fireEvent.change(screen.getByLabelText(/password/i), {
-      target: { value: 'password123' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: /sign in/i }))
-
-    await waitFor(() => {
-      expect(mockSupabase.auth.signInWithPassword).toHaveBeenCalledWith({
-        email: 'test@example.com',
-        password: 'password123',
-      })
-    })
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith('/'))
+    expect(authService.getUser).toHaveBeenCalledWith({})
+    expect(screen.getByRole('button', { name: 'Sign in' })).toBeEnabled()
   })
 
   it('displays error message on failed sign in', async () => {
-    mockSupabase.auth.signInWithPassword.mockResolvedValueOnce({
-      data: { user: null },
-      error: { message: 'Invalid credentials' },
-    })
-
+    jest.mocked(authService.signIn).mockResolvedValueOnce({ success: false, error: 'Invalid credentials' })
     render(<SignIn />)
-
-    fireEvent.change(screen.getByLabelText(/email/i), {
-      target: { value: 'test@example.com' },
-    })
-    fireEvent.change(screen.getByLabelText(/password/i), {
-      target: { value: 'wrongpassword' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: /sign in/i }))
-
-    await waitFor(() => {
-      expect(screen.getByText(/invalid credentials/i)).toBeInTheDocument()
-    })
+    await submitCredentials()
+    expect(await screen.findByText('Invalid credentials')).toBeInTheDocument()
+    expect(authService.getUser).not.toHaveBeenCalled()
+    expect(router.push).not.toHaveBeenCalled()
   })
 
   it('validates required fields', async () => {
     render(<SignIn />)
-
-    fireEvent.click(screen.getByRole('button', { name: /sign in/i }))
-
-    await waitFor(() => {
-      expect(screen.getByText(/email is required/i)).toBeInTheDocument()
-      expect(screen.getByText(/password is required/i)).toBeInTheDocument()
-    })
+    // Submit directly to exercise application validation in addition to HTML required attributes.
+    fireEvent.submit(screen.getByRole('button', { name: /sign in/i }).closest('form')!)
+    expect(await screen.findByText('Email is required')).toBeInTheDocument()
+    expect(screen.getByText('Password is required')).toBeInTheDocument()
+    expect(authService.signIn).not.toHaveBeenCalled()
+    expect(router.push).not.toHaveBeenCalled()
   })
-}) 
+})

@@ -1,9 +1,8 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { CustomerRegistration } from '@/components/features/auth/CustomerRegistration';
-import { db } from '@/lib/db';
-import { UserRole } from '@/types/role';
+import { authService } from '@/lib/services';
 import { useRouter } from 'next/navigation';
 
 // Mock next/navigation
@@ -11,16 +10,10 @@ jest.mock('next/navigation', () => ({
   useRouter: jest.fn(),
 }));
 
-// Mock supabase client
-jest.mock('@/lib/db', () => ({
-  db: {
-    auth: {
-      signUp: jest.fn(),
-      signInWithOAuth: jest.fn(),
-    },
-    from: jest.fn(() => ({
-      insert: jest.fn().mockResolvedValue({ error: null }),
-    })),
+jest.mock('@/lib/services', () => ({
+  authService: {
+    registerCustomer: jest.fn(),
+    signInWithProvider: jest.fn(),
   },
 }));
 
@@ -30,29 +23,20 @@ describe('CustomerRegistration Component', () => {
   };
 
   beforeEach(() => {
+    jest.resetAllMocks();
     (useRouter as jest.Mock).mockReturnValue(mockRouter);
-    // Reset all mocks before each test
-    jest.clearAllMocks();
-    // Mock successful auth signup
-    (db.auth.signUp as jest.Mock).mockResolvedValue({
-      data: {
-        user: {
-          id: 'test-user-id',
-          email: 'test@example.com',
-        },
-      },
-      error: null,
-    });
+    jest.mocked(authService.registerCustomer).mockResolvedValue({ user: null, session: null });
+    jest.mocked(authService.signInWithProvider).mockResolvedValue(undefined);
   });
 
   it('renders registration form with all fields', () => {
     render(<CustomerRegistration />);
 
-    expect(screen.getByLabelText(/full name/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^name$/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/company/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /create account/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^register$/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /google/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /github/i })).toBeInTheDocument();
   });
@@ -62,56 +46,46 @@ describe('CustomerRegistration Component', () => {
     render(<CustomerRegistration />);
 
     // Fill out form
-    await user.type(screen.getByLabelText(/full name/i), 'John Doe');
+    await user.type(screen.getByLabelText(/^name$/i), 'John Doe');
     await user.type(screen.getByLabelText(/email/i), 'john@example.com');
     await user.type(screen.getByLabelText(/password/i), 'password123');
 
     // Submit form
-    await user.click(screen.getByRole('button', { name: /create account/i }));
+    await user.click(screen.getByRole('button', { name: /^register$/i }));
 
     await waitFor(() => {
-      // Verify auth signup was called with correct data
-      expect(db.auth.signUp).toHaveBeenCalledWith({
+      expect(authService.registerCustomer).toHaveBeenCalledWith({}, {
         email: 'john@example.com',
         password: 'password123',
-        options: {
-          data: {
-            name: 'John Doe',
-            role: UserRole.CUSTOMER,
-          },
-        },
+        name: 'John Doe',
+        company: '',
       });
-
-      // Verify profile creation
-      expect(db.from).toHaveBeenCalledWith('customer_profiles');
-      expect(db.from).toHaveBeenCalledWith('user_roles');
+      expect(authService.registerCustomer).toHaveBeenCalledTimes(1);
 
       // Verify redirect
-      expect(mockRouter.push).toHaveBeenCalledWith('/portal/welcome');
+      expect(mockRouter.push).toHaveBeenCalledWith('/auth/confirm-email');
     });
   });
 
   it('handles successful registration with optional company field', async () => {
     const user = userEvent.setup();
-    const mockInsert = jest.fn().mockResolvedValue({ error: null });
-    (db.from as jest.Mock).mockImplementation(() => ({
-      insert: mockInsert,
-    }));
-
     render(<CustomerRegistration />);
 
     // Fill out form including company
-    await user.type(screen.getByLabelText(/full name/i), 'John Doe');
+    await user.type(screen.getByLabelText(/^name$/i), 'John Doe');
     await user.type(screen.getByLabelText(/email/i), 'john@example.com');
     await user.type(screen.getByLabelText(/password/i), 'password123');
     await user.type(screen.getByLabelText(/company/i), 'Acme Inc');
 
     // Submit form
-    await user.click(screen.getByRole('button', { name: /create account/i }));
+    await user.click(screen.getByRole('button', { name: /^register$/i }));
 
     await waitFor(() => {
-      expect(mockInsert).toHaveBeenCalledWith(
+      expect(authService.registerCustomer).toHaveBeenCalledWith({},
         expect.objectContaining({
+          email: 'john@example.com',
+          password: 'password123',
+          name: 'John Doe',
           company: 'Acme Inc',
         })
       );
@@ -120,42 +94,44 @@ describe('CustomerRegistration Component', () => {
 
   it('handles auth signup error', async () => {
     const user = userEvent.setup();
-    (db.auth.signUp as jest.Mock).mockRejectedValueOnce(new Error('Invalid email format'));
-    render(<CustomerRegistration />);
-
-    // Fill in form
-    await user.type(screen.getByLabelText(/email/i), 'invalid-email');
-    await user.type(screen.getByLabelText(/password/i), 'password123');
-    await user.type(screen.getByLabelText(/full name/i), 'John Doe');
-
-    // Submit form
-    const submitButton = screen.getByRole('button', { name: /create account/i });
-    await user.click(submitButton);
-
-    // Verify error message is displayed
-    await waitFor(() => {
-      expect(screen.getByRole('alert')).toHaveTextContent('Invalid email format');
-    });
-  });
-
-  it('handles profile creation error', async () => {
-    const user = userEvent.setup();
-    (db.auth.signUp as jest.Mock).mockResolvedValueOnce({ data: { user: { id: '123' } }, error: null });
-    (db.from('customer_profiles').insert as jest.Mock).mockRejectedValueOnce(new Error('Profile creation failed'));
+    jest.mocked(authService.registerCustomer).mockRejectedValueOnce(new Error('Invalid email format'));
     render(<CustomerRegistration />);
 
     // Fill in form
     await user.type(screen.getByLabelText(/email/i), 'john@example.com');
     await user.type(screen.getByLabelText(/password/i), 'password123');
-    await user.type(screen.getByLabelText(/full name/i), 'John Doe');
+    await user.type(screen.getByLabelText(/^name$/i), 'John Doe');
 
     // Submit form
-    const submitButton = screen.getByRole('button', { name: /create account/i });
+    const submitButton = screen.getByRole('button', { name: /^register$/i });
+    await user.click(submitButton);
+
+    // Verify error message is displayed
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent('Invalid email format');
+      expect(authService.registerCustomer).toHaveBeenCalledTimes(1);
+      expect(mockRouter.push).not.toHaveBeenCalled();
+    });
+  });
+
+  it('handles registration service errors without redirecting', async () => {
+    const user = userEvent.setup();
+    jest.mocked(authService.registerCustomer).mockRejectedValueOnce(new Error('Profile creation failed'));
+    render(<CustomerRegistration />);
+
+    // Fill in form
+    await user.type(screen.getByLabelText(/email/i), 'john@example.com');
+    await user.type(screen.getByLabelText(/password/i), 'password123');
+    await user.type(screen.getByLabelText(/^name$/i), 'John Doe');
+
+    // Submit form
+    const submitButton = screen.getByRole('button', { name: /^register$/i });
     await user.click(submitButton);
 
     // Verify error message is displayed
     await waitFor(() => {
       expect(screen.getByRole('alert')).toHaveTextContent('Profile creation failed');
+      expect(mockRouter.push).not.toHaveBeenCalled();
     });
   });
 
@@ -166,11 +142,8 @@ describe('CustomerRegistration Component', () => {
     await user.click(screen.getByRole('button', { name: /google/i }));
 
     await waitFor(() => {
-      expect(db.auth.signInWithOAuth).toHaveBeenCalledWith({
-        provider: 'google',
-        options: {
-          redirectTo: expect.stringContaining('/portal/auth/callback'),
-        },
+      expect(authService.signInWithProvider).toHaveBeenCalledWith({}, 'google', {
+        redirectTo: `${window.location.origin}/portal/auth/callback`,
       });
     });
   });
@@ -182,18 +155,15 @@ describe('CustomerRegistration Component', () => {
     await user.click(screen.getByRole('button', { name: /github/i }));
 
     await waitFor(() => {
-      expect(db.auth.signInWithOAuth).toHaveBeenCalledWith({
-        provider: 'github',
-        options: {
-          redirectTo: expect.stringContaining('/portal/auth/callback'),
-        },
+      expect(authService.signInWithProvider).toHaveBeenCalledWith({}, 'github', {
+        redirectTo: `${window.location.origin}/portal/auth/callback`,
       });
     });
   });
 
   it('handles social login error', async () => {
     const user = userEvent.setup();
-    (db.auth.signInWithOAuth as jest.Mock).mockRejectedValueOnce({
+    jest.mocked(authService.signInWithProvider).mockRejectedValueOnce({
       message: 'Failed to connect with Google',
     });
 
@@ -208,26 +178,30 @@ describe('CustomerRegistration Component', () => {
 
   it('disables form submission while loading', async () => {
     const user = userEvent.setup();
-    // Make auth signup take some time
-    (db.auth.signUp as jest.Mock).mockImplementation(
-      () => new Promise(resolve => setTimeout(resolve, 1000))
+    let resolveRegistration!: (value: any) => void;
+    jest.mocked(authService.registerCustomer).mockImplementationOnce(
+      () => new Promise(resolve => { resolveRegistration = resolve; })
     );
 
     render(<CustomerRegistration />);
 
     // Fill out form
-    await user.type(screen.getByLabelText(/full name/i), 'John Doe');
+    await user.type(screen.getByLabelText(/^name$/i), 'John Doe');
     await user.type(screen.getByLabelText(/email/i), 'john@example.com');
     await user.type(screen.getByLabelText(/password/i), 'password123');
 
     // Submit form
-    const submitButton = screen.getByRole('button', { name: /create account/i });
+    const submitButton = screen.getByRole('button', { name: /^register$/i });
     await user.click(submitButton);
 
     // Verify button is disabled and shows loading state
     await waitFor(() => {
       expect(submitButton).toHaveAttribute('disabled');
-      expect(screen.getByText(/creating account/i)).toBeInTheDocument();
+      expect(screen.getByText(/registering/i)).toBeInTheDocument();
     });
+    expect(mockRouter.push).not.toHaveBeenCalled();
+    await act(async () => resolveRegistration({ user: null, session: null }));
+    expect(mockRouter.push).toHaveBeenCalledWith('/auth/confirm-email');
+    expect(screen.getByRole('button', { name: /^register$/i })).toBeEnabled();
   });
-}); 
+});

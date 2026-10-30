@@ -4,6 +4,30 @@ import userEvent from '@testing-library/user-event';
 import { CustomerProfile } from '@/components/features/portal/CustomerProfile';
 import type { CustomerProfile as CustomerProfileType, PortalPreferences } from '@/types/portal';
 
+// Radix Select uses browser APIs that jsdom does not implement. Keep the real
+// Select and its onValueChange behavior; shim only the missing DOM methods.
+const missingSelectAPIs = {
+  hasPointerCapture: () => false,
+  setPointerCapture: () => {},
+  releasePointerCapture: () => {},
+  scrollIntoView: () => {},
+};
+const originalSelectAPIs = new Map<string, PropertyDescriptor | undefined>();
+beforeAll(() => {
+  for (const [name, implementation] of Object.entries(missingSelectAPIs)) {
+    originalSelectAPIs.set(name, Object.getOwnPropertyDescriptor(HTMLElement.prototype, name));
+    if (!(name in HTMLElement.prototype)) {
+      Object.defineProperty(HTMLElement.prototype, name, { configurable: true, value: implementation });
+    }
+  }
+});
+afterAll(() => {
+  for (const [name, descriptor] of originalSelectAPIs) {
+    if (descriptor) Object.defineProperty(HTMLElement.prototype, name, descriptor);
+    else delete (HTMLElement.prototype as any)[name];
+  }
+});
+
 // Mock data
 const mockProfile: CustomerProfileType = {
   id: 'test-id',
@@ -158,55 +182,39 @@ describe('CustomerProfile Component', () => {
   });
 
   it('handles timezone selection', async () => {
+    const user = userEvent.setup();
     renderComponent();
 
-    // Get the form and submit with new values
-    const submitButton = screen.getByRole('button', { name: /save profile/i });
-    const form = submitButton.closest('form');
-    if (!form) throw new Error('Form not found');
-
-    await act(async () => {
-      fireEvent.submit(form, {
-        target: {
-          timezone: { value: 'America/Los_Angeles' }
-        }
-      });
-    });
+    await user.click(screen.getByRole('combobox', { name: /timezone/i }));
+    await user.click(screen.getByRole('option', { name: 'Pacific Time' }));
+    expect(screen.getByRole('combobox', { name: /timezone/i })).toHaveTextContent('Pacific Time');
+    await user.click(screen.getByRole('button', { name: /save profile/i }));
 
     await waitFor(() => {
-      expect(mockOnUpdateProfile).toHaveBeenCalledWith(
-        expect.objectContaining({
-          ...mockProfile,
-          timezone: 'America/Los_Angeles',
-        })
-      );
+      expect(mockOnUpdateProfile).toHaveBeenCalledWith({
+        ...mockProfile,
+        timezone: 'America/Los_Angeles',
+      });
     });
+    expect(mockOnUpdateProfile).toHaveBeenCalledTimes(1);
   });
 
   it('handles language selection', async () => {
+    const user = userEvent.setup();
     renderComponent();
 
-    // Get the form and submit with new values
-    const submitButton = screen.getByRole('button', { name: /save profile/i });
-    const form = submitButton.closest('form');
-    if (!form) throw new Error('Form not found');
-
-    await act(async () => {
-      fireEvent.submit(form, {
-        target: {
-          language: { value: 'es' }
-        }
-      });
-    });
+    await user.click(screen.getByRole('combobox', { name: /language/i }));
+    await user.click(screen.getByRole('option', { name: 'Spanish' }));
+    expect(screen.getByRole('combobox', { name: /language/i })).toHaveTextContent('Spanish');
+    await user.click(screen.getByRole('button', { name: /save profile/i }));
 
     await waitFor(() => {
-      expect(mockOnUpdateProfile).toHaveBeenCalledWith(
-        expect.objectContaining({
-          ...mockProfile,
-          language: 'es',
-        })
-      );
+      expect(mockOnUpdateProfile).toHaveBeenCalledWith({
+        ...mockProfile,
+        language: 'es',
+      });
     });
+    expect(mockOnUpdateProfile).toHaveBeenCalledTimes(1);
   });
 
   it('disables submit buttons while updating', async () => {
