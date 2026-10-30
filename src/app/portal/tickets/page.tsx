@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { ChevronLeft } from 'lucide-react';
 import { TicketList } from '@/components/features/portal/TicketList';
 import { customerTicketService } from '@/lib/services';
@@ -21,6 +22,7 @@ interface TicketListState {
 
 export default function TicketsPage() {
   const { toast } = useToast();
+  const router = useRouter();
   const [state, setState] = useState<TicketListState>({
     tickets: [],
     pagination: {
@@ -61,7 +63,7 @@ export default function TicketsPage() {
   const handleCreateTicket = useCallback(async (data: { description: string }) => {
     setState(prev => ({ ...prev, isLoading: true }));
     try {
-      await customerTicketService.createTicket(undefined, {
+      const ticket = await customerTicketService.createTicket(undefined, {
         description: data.description,
         priority: 'medium'
       });
@@ -69,7 +71,7 @@ export default function TicketsPage() {
         title: 'Success',
         description: 'Ticket created successfully.',
       });
-      void fetchTickets(1); // Refresh the list
+      router.push(`/portal/tickets/${ticket.id}`);
     } catch (error) {
       console.error('Error creating ticket:', error);
       toast({
@@ -80,7 +82,7 @@ export default function TicketsPage() {
     } finally {
       setState(prev => ({ ...prev, isLoading: false }));
     }
-  }, [fetchTickets, toast]);
+  }, [router, toast]);
 
   const handleAddComment = useCallback(async (ticketId: string, content: string) => {
     setState(prev => ({ ...prev, isLoading: true }));

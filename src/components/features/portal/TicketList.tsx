@@ -1,5 +1,6 @@
 'use client';
 
+import { formatTicketStatus } from '@/lib/ticket-labels'
 import { useState } from 'react';
 import Link from 'next/link';
 import { Ticket } from '@/types/ticket';
@@ -221,7 +222,7 @@ export const TicketList = ({
                   </CardDescription>
                 </div>
                 <Badge className={cn('ml-2', getStatusColor(ticket.status))}>
-                  {ticket.status.replace('_', ' ')}
+                  {formatTicketStatus(ticket.status)}
                 </Badge>
               </div>
             </CardHeader>
@@ -254,7 +255,7 @@ export const TicketList = ({
               )}
             </CardContent>
             <CardFooter className="flex justify-between">
-              <Button variant="outline" asChild><Link href={`/tickets/${ticket.id}`}>View conversation</Link></Button>
+              <Button variant="outline" asChild><Link href={`/portal/tickets/${ticket.id}`}>View conversation</Link></Button>
               <Dialog>
                 <DialogTrigger asChild>
                   <Button variant="outline" onClick={() => setSelectedTicket(ticket)}>

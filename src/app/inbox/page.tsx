@@ -1,5 +1,6 @@
 'use client'
 
+import { formatTicketStatus } from '@/lib/ticket-labels'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
@@ -171,7 +172,7 @@ export default function InboxPage() {
                     ? "bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-100"
                     : "bg-muted text-muted-foreground"
                 )}>
-                  {ticket.status}
+                  {formatTicketStatus(ticket.status)}
                 </span>
               </div>
             </div>

@@ -1,5 +1,6 @@
 'use client'
 
+import { formatTicketStatus } from '@/lib/ticket-labels'
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { LifeBuoy, MessageSquare, Plus, Search } from 'lucide-react'
@@ -119,7 +120,7 @@ export default function SupportDashboard() {
           ) : (
             tickets.map((ticket) => (
               <div key={ticket.id} className="p-6 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                <Link href={`/tickets/${ticket.id}`} className="block">
+                <Link href={`/portal/tickets/${ticket.id}`} className="block">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <h3 className="text-sm font-medium text-gray-900 dark:text-white">{ticket.title}</h3>
@@ -134,7 +135,7 @@ export default function SupportDashboard() {
                         ? 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-100'
                         : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100'
                     }`}>
-                      {ticket.status.charAt(0).toUpperCase() + ticket.status.slice(1)}
+                      {formatTicketStatus(ticket.status)}
                     </span>
                   </div>
                 </Link>

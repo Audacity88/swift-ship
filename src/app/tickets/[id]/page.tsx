@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import Image from 'next/image'
 import { 
@@ -8,7 +8,7 @@ import {
   Tag, Link as LinkIcon, Users, ChevronDown, MessageSquare
 } from 'lucide-react'
 import { COLORS } from '@/lib/constants'
-import { TicketStatus, TicketPriority } from '@/types/enums'
+import { TicketStatus, TicketPriority } from '@/types/ticket'
 import type { Ticket, TicketComment, TicketType } from '@/types/ticket'
 import type { User } from '@/types/user'
 import type { QuoteRequest } from '@/types/quote'
@@ -26,6 +26,7 @@ import {
   slaService,
   authService,
   ticketService,
+  conversationService,
   quoteService,
   type Ticket as TicketData 
 } from '@/lib/services'
@@ -36,6 +37,7 @@ import { getServerSupabase } from '@/lib/supabase-client'
 import { statusWorkflow } from '@/lib/services'
 import { tagService } from '@/lib/services'
 import { cn } from '@/lib/utils'
+import { formatTicketStatus } from '@/lib/ticket-labels'
 
 interface Tag {
   id: string
@@ -46,6 +48,7 @@ interface Tag {
 export default function TicketPage() {
   const params = useParams()
   const ticketId = params?.id as string
+  const liveStatus = useRef<{ ticketId: string; revision: number; status?: TicketStatus }>({ ticketId, revision: 0 })
   const [ticket, setTicket] = useState<TicketData | null>(null)
   const [selectedType, setSelectedType] = useState<TicketType>('problem')
   const [selectedPriority, setSelectedPriority] = useState<TicketPriority>(TicketPriority.MEDIUM)
@@ -129,6 +132,7 @@ export default function TicketPage() {
       
       try {
         console.log('[Ticket Page] Fetching ticket data for ID:', ticketId)
+        const revision = liveStatus.current.revision
         const ticketData = await ticketService.getTicket(undefined, ticketId)
         if (!ticketData) {
           setError('Ticket not found')
@@ -142,7 +146,8 @@ export default function TicketPage() {
           metadata: ticketData.metadata
         })
 
-        setTicket(ticketData)
+        setTicket(liveStatus.current.ticketId === ticketId && liveStatus.current.revision !== revision && liveStatus.current.status
+          ? { ...ticketData, status: liveStatus.current.status } : ticketData)
         setSelectedType((ticketData.metadata as any)?.type || 'problem')
         setSelectedPriority(ticketData.priority)
         setSelectedAssignee(ticketData.assignee?.id || null)
@@ -183,6 +188,31 @@ export default function TicketPage() {
     if (isAuthenticated === true) {
       void fetchTicket()
     }
+  }, [isAuthenticated, ticketId])
+
+  useEffect(() => {
+    if (!isAuthenticated || !ticketId) return
+    let disposed = false
+    if (liveStatus.current.ticketId !== ticketId) liveStatus.current = { ticketId, revision: 0 }
+    let stop: (() => void) | undefined
+    void conversationService.subscribeToTicket(undefined, ticketId, row => {
+      if (!disposed) {
+        liveStatus.current = { ticketId, revision: liveStatus.current.revision + 1, status: row.status as TicketStatus }
+        setTicket(current => current ? { ...current, status: row.status as TicketStatus } : current)
+      }
+    }).then(unsubscribe => {
+      if (disposed) { unsubscribe(); return }
+      stop = unsubscribe
+      // Reconcile changes committed while the initial ticket request was in flight.
+      const revision = liveStatus.current.revision
+      void ticketService.getTicket(undefined, ticketId).then(ticket => {
+        if (!disposed && ticket) setTicket(liveStatus.current.revision !== revision && liveStatus.current.status
+          ? { ...ticket, status: liveStatus.current.status } : ticket)
+      }).catch(() => { if (!disposed) setError('Unable to refresh ticket. Please reopen it.') })
+    }).catch(error => {
+      if (!disposed) setError(error instanceof Error ? error.message : 'Live status updates are unavailable.')
+    })
+    return () => { disposed = true; stop?.() }
   }, [isAuthenticated, ticketId])
 
   // Add SLA status fetch
@@ -484,7 +514,7 @@ export default function TicketPage() {
                         ? "bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-100"
                         : "bg-muted text-muted-foreground"
                     )}>
-                      {ticket.status}
+                      {formatTicketStatus(ticket.status)}
                     </div>
                   </div>
                 </div>

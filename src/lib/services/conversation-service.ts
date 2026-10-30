@@ -1,5 +1,23 @@
 import { getServerSupabase, type ServerContext } from '@/lib/supabase-client'
 
+export interface Attachment {
+  name: string
+  path: string
+  type: string
+  size: number
+}
+
+export const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024
+export const MAX_ATTACHMENTS = 5
+const ATTACHMENT_BUCKET = 'ticket-attachments'
+
+export function validateAttachments(files: File[]) {
+  if (files.length > MAX_ATTACHMENTS) throw new Error('Attach at most 5 files per reply.')
+  if (files.some(file => file.size === 0 || file.size > MAX_ATTACHMENT_SIZE)) {
+    throw new Error('Each attachment must be nonempty and no larger than 10 MB.')
+  }
+}
+
 export interface Message {
   id: string
   ticket_id: string
@@ -13,12 +31,7 @@ export interface Message {
     name: string | null
     avatar_url: string | null
   }
-  attachments?: {
-    name: string
-    url: string
-    type: string
-    size: number
-  }[]
+  attachments?: Attachment[]
 }
 
 export interface Ticket {
@@ -153,12 +166,7 @@ export const conversationService = {
     ticketId: string,
     content: string,
     authorType: 'agent' | 'customer' | 'system',
-    attachments?: {
-      name: string
-      url: string
-      type: string
-      size: number
-    }[],
+    attachments?: Attachment[],
     isInternal = false
   ): Promise<Message> {
     const supabase = getServerSupabase(context)
@@ -175,7 +183,7 @@ export const conversationService = {
         content,
         author_type: authorType,
         author_id: user.id,
-        attachments,
+        attachments: attachments || [],
         is_internal: isInternal
       })
       .select()
@@ -185,38 +193,99 @@ export const conversationService = {
     return data as Message
   },
 
-  async subscribeToMessages(
-    context: ServerContext,
-    ticketId: string,
-    callback: (message: Message) => void
-  ): Promise<() => void> {
+  async uploadAttachments(context: ServerContext, ticketId: string, files: File[], isInternal = false): Promise<Attachment[]> {
+    validateAttachments(files)
     const supabase = getServerSupabase(context)
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    
-    if (userError || !user) {
-      throw new Error('Unauthorized')
+    const uploaded: Attachment[] = []
+    try {
+      for (const file of files) {
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-120) || 'attachment'
+        const path = `${ticketId}/${isInternal ? 'internal' : 'public'}/${crypto.randomUUID()}/${safeName}`
+        const { error } = await supabase.storage.from(ATTACHMENT_BUCKET).upload(path, file, {
+          contentType: file.type || 'application/octet-stream', upsert: false
+        })
+        if (error) throw new Error(`Could not upload ${file.name}. Please retry.`)
+        uploaded.push({ name: file.name, path, type: file.type || 'application/octet-stream', size: file.size })
+      }
+      return uploaded
+    } catch (error) {
+      await this.removeAttachments(context, uploaded)
+      throw error
     }
+  },
 
-    const channel = supabase
-      .channel(`messages:${ticketId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `ticket_id=eq.${ticketId}`
-        },
-        (payload) => {
-          callback(payload.new as Message)
-        }
-      )
-      .subscribe()
-
-    // Return a function that properly unsubscribes and removes the channel
-    return () => {
-      void channel.unsubscribe()
-      void supabase.removeChannel(channel)
+  async removeAttachments(context: ServerContext, attachments: Attachment[]) {
+    if (attachments.length) {
+      const supabase = getServerSupabase(context)
+      await supabase.storage.from(ATTACHMENT_BUCKET).remove(attachments.map(file => file.path))
     }
+  },
+
+  async getAttachmentUrl(context: ServerContext, attachment: Attachment): Promise<string> {
+    const supabase = getServerSupabase(context)
+    const { data, error } = await supabase.storage.from(ATTACHMENT_BUCKET)
+      .createSignedUrl(attachment.path, 60, { download: attachment.name })
+    if (error || !data?.signedUrl) throw new Error('Unable to download this attachment. Please retry.')
+    return data.signedUrl
+  },
+
+  async subscribeToMessages(context: ServerContext, ticketId: string, callback: (message: Message) => void): Promise<() => void> {
+    return subscribeToTicketChanges(context, ticketId, 'messages', 'INSERT', 'ticket_id', row => callback(row as unknown as Message))
+  },
+
+  async subscribeToTicket(context: ServerContext, ticketId: string, callback: (ticket: Record<string, unknown>) => void): Promise<() => void> {
+    return subscribeToTicketChanges(context, ticketId, 'tickets', 'UPDATE', 'id', callback)
   }
-} 
+}
+
+async function subscribeToTicketChanges(
+  context: ServerContext, ticketId: string, table: 'messages' | 'tickets',
+  event: 'INSERT' | 'UPDATE', filterColumn: 'ticket_id' | 'id',
+  callback: (row: Record<string, unknown>) => void
+): Promise<() => void> {
+  const supabase = getServerSupabase(context)
+  const { data: { session }, error } = await supabase.auth.getSession()
+  if (error || !session) throw new Error('Please sign in to receive live ticket updates.')
+  // Set the JWT before joining so Realtime can evaluate the caller's RLS policies.
+  await supabase.realtime.setAuth(session.access_token)
+  const channel = supabase.channel(`${table}:${ticketId}:${crypto.randomUUID()}`)
+  let stopped = false
+  const stop = () => {
+    if (stopped) return
+    stopped = true
+    void supabase.removeChannel(channel)
+  }
+  try {
+    await new Promise<void>((resolve, reject) => {
+      let joined = false
+      let postgresReady = false
+      const timeout = setTimeout(() => reject(new Error('Live updates could not connect. Please reopen this ticket.')), 20000)
+      const ready = () => { if (joined && postgresReady) { clearTimeout(timeout); resolve() } }
+      channel.on('system', {}, payload => {
+        if (payload.extension !== 'postgres_changes') return
+        if (payload.status === 'ok') { postgresReady = true; ready() }
+        else if (payload.status === 'error') {
+          clearTimeout(timeout)
+          reject(new Error('Live updates could not connect. Please reopen this ticket.'))
+        }
+      })
+      const filter = { schema: 'public', table, filter: `${filterColumn}=eq.${ticketId}` }
+      if (event === 'INSERT') {
+        channel.on('postgres_changes', { ...filter, event: 'INSERT' }, payload => { if (!stopped) callback(payload.new) })
+      } else {
+        channel.on('postgres_changes', { ...filter, event: 'UPDATE' }, payload => { if (!stopped) callback(payload.new) })
+      }
+      channel.subscribe(status => {
+          if (status === 'SUBSCRIBED') { joined = true; ready() }
+          else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+            clearTimeout(timeout)
+            reject(new Error('Live updates could not connect. Please reopen this ticket.'))
+          }
+        })
+    })
+    return stop
+  } catch (error) {
+    stop()
+    throw error
+  }
+}

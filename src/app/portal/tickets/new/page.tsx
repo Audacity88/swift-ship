@@ -40,9 +40,9 @@ export default function NewTicketPage() {
         type: 'question' as TicketType, // Default type
       }
 
-      await createTicket(undefined, ticketData)
+      const ticket = await createTicket(undefined, ticketData)
       toast.success('Your support request has been submitted successfully! We will review it and get back to you soon.')
-      router.push('/support') // Redirect to support page instead of portal
+      router.push(`/portal/tickets/${ticket.id}`)
     } catch (error) {
       console.error('Error creating ticket:', error)
       setErrorMessage('Failed to submit support request. Please try again.')
