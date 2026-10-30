@@ -4,7 +4,6 @@ import { useEffect, useState, useRef } from 'react'
 import { format, isValid, parseISO } from 'date-fns'
 import { Loader2, Send, Paperclip } from 'lucide-react'
 import Image from 'next/image'
-import { COLORS } from '@/lib/constants'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { conversationService, type Message } from '@/lib/services'
@@ -74,11 +73,11 @@ export function ConversationView({
       setIsLoading(true)
       setError(null)
       try {
-        const messages = await conversationService.getMessages({}, ticketId)
+        const messages = await conversationService.getMessages(undefined, ticketId)
         setMessages(messages)
-      } catch (err: any) {
+      } catch (err) {
         console.error('Error loading conversation:', err)
-        setError(err.message)
+        setError(err instanceof Error ? err.message : 'Unable to load conversation. Please retry.')
       } finally {
         setIsLoading(false)
       }
@@ -88,23 +87,27 @@ export function ConversationView({
 
     // Set up real-time subscription
     let unsubscribe: (() => void) | undefined
+    let disposed = false
 
     const setupSubscription = async () => {
       try {
-        unsubscribe = await conversationService.subscribeToMessages({}, ticketId, (newMessage) => {
-          setMessages(prev => [...prev, newMessage])
+        const stop = await conversationService.subscribeToMessages(undefined, ticketId, (newMessage) => {
+          setMessages(prev => prev.some(message => message.id === newMessage.id) ? prev : [...prev, newMessage])
           // Scroll to bottom after adding new message
           setTimeout(scrollToBottom, 100)
         })
-      } catch (err: any) {
+        if (disposed) stop()
+        else unsubscribe = stop
+      } catch (err) {
         console.error('Error setting up subscription:', err)
-        setError(err.message)
+        setError(err instanceof Error ? err.message : 'Unable to load conversation. Please retry.')
       }
     }
 
     void setupSubscription()
 
     return () => {
+      disposed = true
       if (unsubscribe) {
         unsubscribe()
       }
@@ -129,23 +132,32 @@ export function ConversationView({
 
     setIsSending(true)
     setError(null)
+    const content = newMessage.trim()
+    const optimisticId = `pending:${crypto.randomUUID()}`
+    const optimistic: Message = {
+      id: optimisticId, ticket_id: ticketId, content,
+      author_id: currentUserId, author_type: isAgent ? 'agent' : 'customer',
+      created_at: new Date().toISOString()
+    }
+    setMessages(prev => [...prev, optimistic])
     try {
       // Use the isAgent prop to determine author_type
       const authorType = isAgent ? 'agent' : 'customer'
 
-      await conversationService.addMessage({}, ticketId, newMessage.trim(), authorType)
+      const saved = await conversationService.addMessage(undefined, ticketId, content, authorType, undefined, isAgent && isInternalNote)
+      setMessages(prev => [...prev.filter(message => message.id !== optimisticId && message.id !== saved.id), saved])
 
       setNewMessage('')
       setAttachments([])
       
       // Scroll to bottom after sending
       setTimeout(scrollToBottom, 100)
-    } catch (err: any) {
+    } catch (err) {
+      setMessages(prev => prev.filter(message => message.id !== optimisticId))
       console.error('Error sending message:', err)
-      setError(err.message || 'Failed to send message. Please try again.')
+      setError(err instanceof Error ? err.message : 'Failed to send message. Please try again.')
       
-      // Show the error briefly then clear it
-      setTimeout(() => setError(null), 3000)
+      // Keep the draft and error available for retry.
     } finally {
       setIsSending(false)
     }
@@ -190,7 +202,7 @@ export function ConversationView({
     )
   }
 
-  if (error) {
+  if (error && messages.length === 0) {
     return (
       <div className="flex items-center justify-center h-full text-destructive">
         {error}
@@ -237,6 +249,7 @@ export function ConversationView({
                   src={message.author?.avatar_url || "/images/default-avatar.png"}
                   alt={message.author?.name || "User"}
                   fill
+                  sizes="32px"
                   className="rounded-full object-cover"
                 />
               </div>

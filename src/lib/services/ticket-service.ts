@@ -120,7 +120,7 @@ export const ticketService = {
           *,
           customer:customers(*),
           assignee:agents!tickets_assignee_id_fkey(*),
-          ticket_tags!inner(
+          ticket_tags(
             tags(
               id,
               name,
@@ -129,10 +129,7 @@ export const ticketService = {
           )
         `, { count: 'exact' })
 
-      // If user is not an admin, only show tickets assigned to them
-      if (user.type === 'agent' && user.role !== 'admin') {
-        query = query.eq('assignee_id', user.id)
-      }
+      // The database applies customer ownership and staff access through RLS.
 
       // Apply filters
       if (options?.filters?.status?.length) {
@@ -225,7 +222,7 @@ export const ticketService = {
           .from('customers')
           .select('id')
           .eq('id', user.id)
-          .single()
+          .maybeSingle()
 
         if (customer) {
           customerId = customer.id
@@ -235,11 +232,12 @@ export const ticketService = {
       }
 
       // If the user is an agent, automatically assign the ticket to them
-      const assigneeId = user.type === 'agent' ? user.id : payload.assigneeId || null
+      const { data: agent } = await supabase.from('agents').select('id').eq('id', user.id).maybeSingle()
+      const assigneeId = agent ? (payload.assigneeId || user.id) : null
       
       // Only set created_by and updated_by if the user is an agent
-      const createdBy = user.type === 'agent' ? user.id : null
-      const updatedBy = user.type === 'agent' ? user.id : null
+      const createdBy = user.id
+      const updatedBy = user.id
 
       const { data: ticket, error } = await supabase
         .from('tickets')
@@ -267,21 +265,6 @@ export const ticketService = {
       if (error || !ticket) {
         console.error('Failed to create ticket:', error)
         throw error
-      }
-
-      // Create initial welcome message
-      const { error: messageError } = await supabase
-        .from('messages')
-        .insert({
-          ticket_id: ticket.id,
-          content: `Thank you for contacting our support team. Your request has been received and our team will review it shortly. Your ticket number is #${ticket.id.slice(0, 8)}.`,
-          author_type: 'agent',
-          author_id: '00000000-0000-0000-0000-000000000000' // System user ID
-        })
-
-      if (messageError) {
-        console.error('Failed to create welcome message:', messageError)
-        // Don't throw here, as the ticket was created successfully
       }
 
       return ticket
@@ -385,6 +368,16 @@ export const ticketService = {
         createdAt: ticketData.created_at,
         updatedAt: ticketData.updated_at,
         customerId: ticketData.customer_id,
+        assigneeId: ticketData.assignee_id || undefined,
+        isArchived: ticketData.is_archived,
+        resolvedAt: ticketData.resolved_at || undefined,
+        metadata: {
+          ...ticketData.metadata,
+          createdAt: ticketData.created_at,
+          updatedAt: ticketData.updated_at,
+          tags: (ticketData.ticket_tags || []).flatMap((link: { tags: { id: string; name: string; color: string } | null }) => link.tags ? [link.tags] : [])
+        },
+        comments: [],
         customer: {
           id: ticketData.customer?.id,
           name: ticketData.customer?.name,

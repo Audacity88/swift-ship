@@ -1,5 +1,4 @@
 import { getServerSupabase, type ServerContext } from '@/lib/supabase-client'
-import type { RealtimeChannel } from '@supabase/supabase-js'
 
 export interface Message {
   id: string
@@ -59,7 +58,7 @@ export const conversationService = {
           name,
           email
         ),
-        messages!inner (
+        messages (
           id,
           content,
           created_at,
@@ -86,6 +85,11 @@ export const conversationService = {
       throw new Error('Unauthorized')
     }
 
+    const { data: ticket, error: ticketError } = await supabase.from('tickets')
+      .select('id, description, customer_id, created_at').eq('id', ticketId).maybeSingle()
+    if (ticketError) throw ticketError
+    if (!ticket) throw new Error('Ticket not found or access denied')
+
     // First get messages
     const { data: messages, error: messagesError } = await supabase
       .from('messages')
@@ -100,7 +104,7 @@ export const conversationService = {
     const agentMessages = messages.filter(m => m.author_type === 'agent')
 
     // Get customer authors
-    const customerIds = [...new Set(customerMessages.map(m => m.author_id))]
+    const customerIds = [...new Set([ticket.customer_id, ...customerMessages.map(m => m.author_id)])]
     const { data: customers, error: customersError } = customerIds.length > 0 ? await supabase
       .from('customers')
       .select('id, name, email, avatar')
@@ -134,7 +138,14 @@ export const conversationService = {
       }
     })
 
-    return messagesWithAuthors as Message[]
+    const customer = customers?.find(c => c.id === ticket.customer_id)
+    const original: Message[] = ticket.description ? [{
+      id: `description:${ticket.id}`, ticket_id: ticket.id,
+      content: ticket.description, author_id: ticket.customer_id,
+      author_type: 'customer', created_at: ticket.created_at,
+      author: customer ? { ...customer, avatar_url: customer.avatar } : undefined
+    }] : []
+    return [...original, ...messagesWithAuthors] as Message[]
   },
 
   async addMessage(
@@ -147,7 +158,8 @@ export const conversationService = {
       url: string
       type: string
       size: number
-    }[]
+    }[],
+    isInternal = false
   ): Promise<Message> {
     const supabase = getServerSupabase(context)
     const { data: { user }, error: userError } = await supabase.auth.getUser()
@@ -163,7 +175,8 @@ export const conversationService = {
         content,
         author_type: authorType,
         author_id: user.id,
-        attachments
+        attachments,
+        is_internal: isInternal
       })
       .select()
       .single()

@@ -3,7 +3,7 @@
 import { useState, useRef } from 'react'
 import { Paperclip, Send, X } from 'lucide-react'
 import type { User } from '@/types/user'
-import { RoleType } from '@/types/role'
+import { useAuth } from '@/lib/hooks/useAuth'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -20,6 +20,7 @@ interface ReplyComposerProps {
 }
 
 export function ReplyComposer({ onSubmit, isSubmitting }: ReplyComposerProps) {
+  const { user } = useAuth()
   const [content, setContent] = useState('')
   const [attachments, setAttachments] = useState<File[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -28,20 +29,11 @@ export function ReplyComposer({ onSubmit, isSubmitting }: ReplyComposerProps) {
   const handleSubmit = () => {
     if (!content.trim()) return
 
-    // Mock user data - replace with actual user data from auth context
-    const mockUser: User = {
-      id: '1',
-      name: 'Support Agent',
-      email: 'agent@example.com',
-      role: RoleType.AGENT,
-      isActive: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    }
+    if (!user) { setError('Please sign in before replying.'); return }
 
     onSubmit({
       content: content.trim(),
-      user: mockUser,
+      user: user as User,
       attachments: attachments.length > 0 ? attachments : undefined
     })
     setContent('')

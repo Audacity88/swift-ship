@@ -1,136 +1,66 @@
 import { NextResponse } from 'next/server'
-import { ShipmentStatus, ShipmentType } from '@/types/shipment'
-import { shipmentService } from '@/lib/services'
-import { getServerSupabase } from '@/lib/supabase-client'
-import { cookies } from 'next/headers'
-import { createServerClient } from '@supabase/ssr'
+import { createClient } from '@/lib/supabase/server'
+import { shipmentService } from '@/lib/services/shipment-service'
+import { z } from 'zod'
+
+const shipmentTypes = z.enum(['full_truckload', 'less_than_truckload', 'sea_container', 'bulk_freight'])
+const shipmentStatuses = z.enum(['quote_requested', 'quote_provided', 'quote_accepted', 'pickup_scheduled', 'pickup_completed', 'in_transit', 'out_for_delivery', 'delivered', 'cancelled'])
+const createShipmentSchema = z.object({
+  quote_id: z.string().uuid().optional(),
+  type: shipmentTypes,
+  origin: z.string().trim().min(1),
+  destination: z.string().trim().min(1),
+  scheduled_pickup: z.string().optional(),
+  estimated_delivery: z.string().optional(),
+  customer_id: z.string().uuid(),
+})
 
 export async function GET(request: Request) {
   try {
-    const supabase = getServerSupabase()
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    
-    if (userError || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
-    }
-
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const { searchParams } = new URL(request.url)
-    const customerId = searchParams.get('customer_id')
-    const status = searchParams.get('status') as ShipmentStatus
-    const type = searchParams.get('type') as ShipmentType
-    const page = parseInt(searchParams.get('page') || '1')
-    const limit = parseInt(searchParams.get('limit') || '10')
-
-    // Fetch shipments using the service
-    const { shipments, total } = await shipmentService.listShipments(undefined, {
-      customerId: customerId || undefined,
-      status,
-      type,
-      page,
-      limit
+    const parsed = z.object({
+      customerId: z.string().uuid().optional(),
+      status: shipmentStatuses.optional(),
+      type: shipmentTypes.optional(),
+      page: z.coerce.number().int().min(1).default(1),
+      limit: z.coerce.number().int().min(1).max(100).default(10),
+    }).parse({
+      customerId: searchParams.get('customer_id') || undefined,
+      status: searchParams.get('status') || undefined,
+      type: searchParams.get('type') || undefined,
+      page: searchParams.get('page') || undefined,
+      limit: searchParams.get('limit') || undefined,
     })
-
-    return NextResponse.json({
-      shipments,
-      page,
-      limit,
-      total
-    })
+    // Use this request's authenticated client so every filter remains subject to RLS.
+    let query = supabase.from('shipments').select('*', { count: 'exact' })
+    if (parsed.customerId) query = query.eq('customer_id', parsed.customerId)
+    if (parsed.status) query = query.eq('status', parsed.status)
+    if (parsed.type) query = query.eq('type', parsed.type)
+    const { data, error, count } = await query.order('created_at', { ascending: false })
+      .range((parsed.page - 1) * parsed.limit, parsed.page * parsed.limit - 1)
+    if (error) throw error
+    return NextResponse.json({ shipments: data || [], page: parsed.page, limit: parsed.limit, total: count || 0 })
   } catch (error) {
-    console.error('Error in shipments GET route:', error)
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
+    if (error instanceof z.ZodError) return NextResponse.json({ error: 'Invalid shipment filters' }, { status: 400 })
+    return NextResponse.json({ error: 'Failed to fetch shipments' }, { status: 500 })
   }
 }
 
 export async function POST(request: Request) {
   try {
-    console.log('Starting shipment creation...')
-    const cookieStore = await cookies()
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get(name: string) {
-            const cookie = cookieStore.get(name)
-            console.log('Cookie retrieved:', { name, value: cookie?.value })
-            return cookie?.value
-          },
-          set(name: string, value: string, options: any) {
-            cookieStore.set({ name, value, ...options })
-          },
-          remove(name: string, options: any) {
-            cookieStore.delete({ name, ...options })
-          },
-        },
-      }
-    )
-    console.log('Supabase client created')
-
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    console.log('Auth check result:', { user: user?.id, error: userError?.message })
-    
-    if (userError || !user) {
-      console.log('Authentication failed:', userError)
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
-    }
-
-    const json = await request.json()
-    console.log('Received shipment creation request:', json)
-
-    const { quote_id, type, origin, destination, scheduled_pickup, estimated_delivery, customer_id } = json
-
-    // Validate required fields
-    if (!type || !origin || !destination || !customer_id) {
-      console.error('Missing required fields:', { type, origin, destination, customer_id })
-      return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
-      )
-    }
-
-    // Create shipment using the service with server context
-    try {
-      const shipment = await shipmentService.createShipment(supabase, {
-        quote_id,
-        type,
-        origin,
-        destination,
-        scheduled_pickup,
-        estimated_delivery,
-        customer_id,
-        status: 'quote_accepted'
-      })
-      return NextResponse.json(shipment)
-    } catch (serviceError) {
-      console.error('Service error creating shipment:', serviceError)
-      return NextResponse.json(
-        { error: serviceError instanceof Error ? serviceError.message : 'Failed to create shipment', details: serviceError },
-        { status: 500 }
-      )
-    }
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const input = createShipmentSchema.parse(await request.json())
+    const shipment = await shipmentService.createShipment(supabase, { ...input, status: 'quote_accepted' })
+    return NextResponse.json(shipment, { status: 201 })
   } catch (error) {
-    console.error('Error in shipments POST route:', error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Internal server error', details: error },
-      { status: 500 }
-    )
+    if (error instanceof z.ZodError || error instanceof SyntaxError) {
+      return NextResponse.json({ error: 'Enter valid shipment details', details: error instanceof z.ZodError ? error.flatten().fieldErrors : undefined }, { status: 400 })
+    }
+    return NextResponse.json({ error: 'Could not create the shipment. Check the customer and quote, then try again.' }, { status: 400 })
   }
 }
-
-// Helper function to generate tracking number
-function generateTrackingNumber(): string {
-  const prefix = 'SSE'
-  const year = new Date().getFullYear()
-  const random = Math.floor(Math.random() * 10000000).toString().padStart(7, '0')
-  return `${prefix}-${year}-${random}`
-} 

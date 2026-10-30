@@ -1,245 +1,128 @@
 import { getServerSupabase, type ServerContext } from '@/lib/supabase-client'
-import { TicketStatus, TicketPriority } from '@/types/enums'
-import { DEFAULT_SLA_CONFIGS, type SLAConfig } from '@/types/sla'
-import type { SLAState } from '@/types/sla'
+import { DEFAULT_SLA_CONFIGS, type SLAState } from '@/types/sla'
+import { TicketPriority } from '@/types/ticket'
 
-// Map priorities to their default SLA config UUIDs
-const PRIORITY_TO_CONFIG_ID: Record<TicketPriority, string> = {
-  [TicketPriority.URGENT]: '00000000-0000-4000-a000-000000000001',
-  [TicketPriority.HIGH]: '00000000-0000-4000-a000-000000000002',
-  [TicketPriority.MEDIUM]: '00000000-0000-4000-a000-000000000003',
-  [TicketPriority.LOW]: '00000000-0000-4000-a000-000000000004'
+interface SLAPause {
+  id: string
+  ticket_id: string
+  reason: string
+  created_at: string
+  resumed_at: string | null
+}
+interface SLASettings {
+  id: string
+  name: string
+  first_response_time: number
+  resolution_time: number
+}
+export interface TicketSLAState extends SLAState {
+  config: SLASettings
+  name: string
+  isPaused: boolean
+  isBreached: boolean
+  isCompleted: boolean
+  elapsedTime: number
+  remainingTime: number
+  breachTime: Date
+  pauses: SLAPause[]
+}
+
+async function getStaff(context: ServerContext) {
+  const supabase = getServerSupabase(context)
+  const { data: { user }, error } = await supabase.auth.getUser()
+  if (error || !user) throw new Error('Unauthorized')
+  const { data: agent, error: roleError } = await supabase.from('agents').select('role').eq('id', user.id).maybeSingle()
+  if (roleError) throw roleError
+  if (!agent || !['admin', 'agent', 'supervisor'].includes(agent.role)) throw new Error('Staff access required')
+  return { supabase, user }
 }
 
 export const slaService = {
-  async getTicketSLA(context: ServerContext, ticketId: string): Promise<SLAState | null> {
-    try {
-      const supabase = getServerSupabase(context)
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      
-      if (userError || !user) {
-        throw new Error('Unauthorized')
-      }
+  async getTicketSLA(context: ServerContext, ticketId: string): Promise<TicketSLAState | null> {
+    const supabase = getServerSupabase(context)
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) throw new Error('Unauthorized')
+    const { data: ticket, error } = await supabase.from('tickets')
+      .select('id,priority,status,created_at,resolved_at,sla_config_id').eq('id', ticketId).maybeSingle()
+    if (error) throw error
+    if (!ticket) return null
 
-      // Get ticket details
-      const { data: ticket, error: ticketError } = await supabase
-        .from('tickets')
-        .select(`
-          id,
-          priority,
-          status,
-          created_at,
-          sla_config:sla_config_id (*)
-        `)
-        .eq('id', ticketId)
-        .single()
+    // Reading a ticket never creates settings or updates the ticket. A missing
+    // saved configuration uses the same local defaults for staff and customers.
+    const defaults = DEFAULT_SLA_CONFIGS.find(config => config.priority === ticket.priority) ||
+      DEFAULT_SLA_CONFIGS.find(config => config.priority === TicketPriority.MEDIUM)!
+    let settings: SLASettings = {
+      id: defaults.id, name: defaults.name,
+      first_response_time: defaults.responseTime, resolution_time: defaults.resolutionTime
+    }
+    if (ticket.sla_config_id) {
+      const { data: saved, error: configError } = await supabase.from('sla_configs')
+        .select('id,name,first_response_time,resolution_time').eq('id', ticket.sla_config_id).maybeSingle()
+      if (configError) throw configError
+      if (saved) settings = saved
+    }
 
-      if (ticketError) {
-        console.error('Failed to get ticket:', ticketError)
-        throw ticketError
-      }
+    const [{ data: pauses, error: pausesError }, { data: firstReply, error: replyError }] = await Promise.all([
+      supabase.from('sla_pauses').select('id,ticket_id,reason,created_at,resumed_at').eq('ticket_id', ticketId).order('created_at'),
+      supabase.from('messages').select('created_at').eq('ticket_id', ticketId).eq('author_type', 'agent').eq('is_internal', false).order('created_at').limit(1).maybeSingle()
+    ])
+    if (pausesError) throw pausesError
+    if (replyError) throw replyError
+    const allPauses = (pauses || []) as SLAPause[]
+    const started = new Date(ticket.created_at).getTime()
+    const completed = ['resolved', 'closed'].includes(ticket.status)
+    const end = completed && ticket.resolved_at ? new Date(ticket.resolved_at).getTime() : Date.now()
+    const pausedMilliseconds = (until: number) => allPauses.reduce((total, pause) => {
+      const start = Math.max(started, new Date(pause.created_at).getTime())
+      const stop = Math.min(until, pause.resumed_at ? new Date(pause.resumed_at).getTime() : until)
+      return total + Math.max(0, stop - start)
+    }, 0)
+    const totalPaused = pausedMilliseconds(end)
+    const activePause = allPauses.find(pause => !pause.resumed_at)
+    const responseEnd = firstReply ? new Date(firstReply.created_at).getTime() : end
+    const responseElapsed = Math.max(0, responseEnd - started - pausedMilliseconds(responseEnd))
+    const elapsed = Math.max(0, end - started - totalPaused)
+    const responseBreached = responseElapsed > settings.first_response_time * 60000
+    const resolutionBreached = elapsed > settings.resolution_time * 60000
+    const deadline = started + settings.resolution_time * 60000 + totalPaused
 
-      if (!ticket) {
-        throw new Error('Ticket not found')
-      }
-
-      // Get or create SLA config
-      const configId = ticket.sla_config?.id || PRIORITY_TO_CONFIG_ID[ticket.priority]
-      let slaConfig = null
-
-      // Try to get existing config
-      const { data: existingConfig, error: slaError } = await supabase
-        .from('sla_configs')
-        .select('*')
-        .eq('id', configId)
-        .single()
-
-      if (slaError && slaError.code !== 'PGRST116') { // Ignore "no rows returned" error
-        console.error('Failed to get SLA config:', slaError)
-        throw slaError
-      }
-
-      if (existingConfig) {
-        slaConfig = existingConfig
-      } else {
-        // Create new SLA config if it doesn't exist
-        const { data: newConfig, error: insertError } = await supabase
-          .from('sla_configs')
-          .insert({
-            id: configId,
-            name: `${ticket.priority.toUpperCase()} Priority SLA`,
-            description: `Default SLA for ${ticket.priority} priority tickets`,
-            first_response_time: DEFAULT_SLA_CONFIGS[ticket.priority].responseTime,
-            resolution_time: DEFAULT_SLA_CONFIGS[ticket.priority].resolutionTime
-          })
-          .select()
-          .single()
-
-        if (insertError) {
-          console.error('Failed to create SLA config:', insertError)
-          throw insertError
-        }
-
-        slaConfig = newConfig
-      }
-
-      // Update ticket with SLA config if not set
-      if (!ticket.sla_config) {
-        const { error: updateError } = await supabase
-          .from('tickets')
-          .update({ sla_config_id: configId })
-          .eq('id', ticketId)
-
-        if (updateError) {
-          console.error('Failed to update ticket SLA config:', updateError)
-          throw updateError
-        }
-      }
-
-      // Get SLA pauses
-      const { data: slaPauses = [], error: pausesError } = await supabase
-        .from('sla_pauses')
-        .select('*')
-        .eq('ticket_id', ticketId)
-        .order('created_at', { ascending: true })
-
-      if (pausesError) {
-        console.error('Failed to get SLA pauses:', pausesError)
-        throw pausesError
-      }
-
-      // Calculate SLA state
-      const createdAt = new Date(ticket.created_at)
-      const now = new Date()
-
-      let totalPausedTime = 0
-      let isPaused = false
-      let currentPauseStart: Date | null = null
-
-      slaPauses.forEach(pause => {
-        if (!pause.resumed_at) {
-          isPaused = true
-          currentPauseStart = new Date(pause.created_at)
-        } else {
-          totalPausedTime += new Date(pause.resumed_at).getTime() - new Date(pause.created_at).getTime()
-        }
-      })
-
-      if (isPaused && currentPauseStart) {
-        totalPausedTime += now.getTime() - currentPauseStart.getTime()
-      }
-
-      const elapsedTime = now.getTime() - createdAt.getTime() - totalPausedTime
-      const breachTime = createdAt.getTime() + (slaConfig.first_response_time * 60 * 1000)
-      const remainingTime = breachTime - now.getTime() + totalPausedTime
-
-      return {
-        configId,
-        config: slaConfig,
-        isPaused,
-        elapsedTime,
-        remainingTime,
-        breachTime: new Date(breachTime),
-        pauses: slaPauses
-      }
-    } catch (error) {
-      console.error('Error in getTicketSLA:', error)
-      throw error
+    return {
+      ticketId, configId: settings.id, config: settings, name: settings.name,
+      startedAt: ticket.created_at, pausedAt: activePause?.created_at,
+      totalPausedTime: totalPaused / 60000,
+      responseBreached, resolutionBreached,
+      isPaused: !!activePause && !completed, isCompleted: completed,
+      isBreached: responseBreached || resolutionBreached,
+      elapsedTime: elapsed, remainingTime: settings.resolution_time * 60000 - elapsed,
+      breachTime: new Date(deadline), pauses: allPauses
     }
   },
 
   async pauseSLA(context: ServerContext, ticketId: string, reason: string): Promise<boolean> {
-    try {
-      const supabase = getServerSupabase(context)
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      
-      if (userError || !user) {
-        throw new Error('Unauthorized')
-      }
-
-      // Check if SLA is already paused
-      const { data: existingPause, error: checkError } = await supabase
-        .from('sla_pauses')
-        .select('id')
-        .eq('ticket_id', ticketId)
-        .is('resumed_at', null)
-        .single()
-
-      if (checkError && checkError.code !== 'PGRST116') { // PGRST116 = no rows returned
-        console.error('Failed to check existing pause:', checkError)
-        throw checkError
-      }
-
-      if (existingPause) {
-        throw new Error('SLA is already paused')
-      }
-
-      // Create new pause
-      const { error: pauseError } = await supabase
-        .from('sla_pauses')
-        .insert({
-          ticket_id: ticketId,
-          reason,
-          created_by: user.id,
-          created_at: new Date().toISOString()
-        })
-
-      if (pauseError) {
-        console.error('Failed to pause SLA:', pauseError)
-        throw pauseError
-      }
-
-      return true
-    } catch (error) {
-      console.error('Error in pauseSLA:', error)
-      throw error
-    }
+    if (!reason.trim()) throw new Error('A pause reason is required')
+    const { supabase, user } = await getStaff(context)
+    const { data: ticket, error: ticketError } = await supabase.from('tickets').select('id,status').eq('id', ticketId).maybeSingle()
+    if (ticketError) throw ticketError
+    if (!ticket) throw new Error('Ticket not found')
+    if (['resolved', 'closed'].includes(ticket.status)) throw new Error('Completed tickets cannot be paused')
+    const { data: existing, error: checkError } = await supabase.from('sla_pauses')
+      .select('id').eq('ticket_id', ticketId).is('resumed_at', null).maybeSingle()
+    if (checkError) throw checkError
+    if (existing) return true
+    const { error } = await supabase.from('sla_pauses').insert({ ticket_id: ticketId, reason: reason.trim(), created_by: user.id })
+    if (error) throw error
+    return true
   },
 
   async resumeSLA(context: ServerContext, ticketId: string): Promise<boolean> {
-    try {
-      const supabase = getServerSupabase(context)
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      
-      if (userError || !user) {
-        throw new Error('Unauthorized')
-      }
-
-      // Find the active pause
-      const { data: activePause, error: findError } = await supabase
-        .from('sla_pauses')
-        .select('id')
-        .eq('ticket_id', ticketId)
-        .is('resumed_at', null)
-        .single()
-
-      if (findError) {
-        console.error('Failed to find active pause:', findError)
-        throw findError
-      }
-
-      if (!activePause) {
-        throw new Error('No active SLA pause found')
-      }
-
-      // Resume the pause
-      const { error: resumeError } = await supabase
-        .from('sla_pauses')
-        .update({
-          resumed_at: new Date().toISOString(),
-          resumed_by: user.id
-        })
-        .eq('id', activePause.id)
-
-      if (resumeError) {
-        console.error('Failed to resume SLA:', resumeError)
-        throw resumeError
-      }
-
-      return true
-    } catch (error) {
-      console.error('Error in resumeSLA:', error)
-      throw error
-    }
+    const { supabase, user } = await getStaff(context)
+    const { data: active, error: checkError } = await supabase.from('sla_pauses')
+      .select('id').eq('ticket_id', ticketId).is('resumed_at', null).maybeSingle()
+    if (checkError) throw checkError
+    if (!active) return true
+    const { error } = await supabase.from('sla_pauses').update({ resumed_at: new Date().toISOString(), resumed_by: user.id })
+      .eq('id', active.id).is('resumed_at', null)
+    if (error) throw error
+    return true
   }
 }

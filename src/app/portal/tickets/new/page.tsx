@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createTicket } from '@/lib/services/ticket-service'
 import { useAuth } from '@/lib/hooks/useAuth'
@@ -9,26 +9,26 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Card } from '@/components/ui/card'
 import { toast } from 'sonner'
-import { createBrowserClient } from '@supabase/ssr'
 
 export default function NewTicketPage() {
   const router = useRouter()
   const { user } = useAuth()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [description, setDescription] = useState('')
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
+  const [errorMessage, setErrorMessage] = useState('')
+  const summaryRef = useRef<HTMLDivElement>(null)
+  const descriptionRef = useRef<HTMLTextAreaElement>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
     if (!description.trim()) {
-      toast.error('Please describe your issue')
+      setErrorMessage('Please describe your issue before submitting your support request.')
+      requestAnimationFrame(() => summaryRef.current?.focus())
       return
     }
 
+    setErrorMessage('')
     setIsSubmitting(true)
 
     try {
@@ -40,12 +40,13 @@ export default function NewTicketPage() {
         type: 'question' as TicketType, // Default type
       }
 
-      await createTicket({ supabase }, ticketData)
+      await createTicket(undefined, ticketData)
       toast.success('Your support request has been submitted successfully! We will review it and get back to you soon.')
       router.push('/support') // Redirect to support page instead of portal
     } catch (error) {
       console.error('Error creating ticket:', error)
-      toast.error('Failed to submit support request. Please try again.')
+      setErrorMessage('Failed to submit support request. Please try again.')
+      requestAnimationFrame(() => summaryRef.current?.focus())
     } finally {
       setIsSubmitting(false)
     }
@@ -56,7 +57,8 @@ export default function NewTicketPage() {
       <h1 className="text-2xl font-bold mb-6">Get Support</h1>
       
       <Card className="p-6">
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} noValidate className="space-y-6">
+          {errorMessage && <div ref={summaryRef} tabIndex={-1} role="alert" className="rounded border border-destructive p-4 text-destructive"><p>{errorMessage}</p><button type="button" className="mt-2 underline" onClick={() => descriptionRef.current?.focus()}>Go to issue description</button></div>}
           <div className="space-y-4">
             <label 
               htmlFor="description" 
@@ -66,6 +68,8 @@ export default function NewTicketPage() {
             </label>
             <Textarea
               id="description"
+              ref={descriptionRef}
+              aria-invalid={!!errorMessage && !description.trim()}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Please describe your issue in detail. Include any relevant information that might help us assist you better."
@@ -96,7 +100,7 @@ export default function NewTicketPage() {
       <div className="mt-6 text-sm text-gray-500">
         <p>
           After submitting your request, our support team will review it and get back to you through your portal inbox.
-          You will receive a notification when we respond to your request.
+          Open your ticket conversation to check for replies.
         </p>
       </div>
     </div>

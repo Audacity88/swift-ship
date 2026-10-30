@@ -1,32 +1,15 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import {
-  AlertCircle,
-  ChevronDown,
-  Loader2,
-  AlertTriangle
-} from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { ChevronDown, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Textarea } from '@/components/ui/textarea'
-import { TicketStatus } from '@/types/enums'
+import { TicketStatus } from '@/types/ticket'
 import { statusWorkflow } from '@/lib/services/status-workflow'
-import type { StatusTransition as StatusTransitionType, TransitionCondition } from '@/types/status-workflow'
-import { conversationService } from '@/lib/services'
+import type { StatusTransition as Transition } from '@/types/status-workflow'
 
 interface StatusTransitionProps {
   ticketId: string
@@ -35,244 +18,90 @@ interface StatusTransitionProps {
   className?: string
 }
 
-export function StatusTransition({
-  ticketId,
-  currentStatus,
-  onStatusChange,
-  className = ''
-}: StatusTransitionProps) {
-  // State
-  const [availableTransitions, setAvailableTransitions] = useState<StatusTransitionType[]>([])
+const colors: Record<TicketStatus, string> = {
+  [TicketStatus.OPEN]: 'bg-blue-500',
+  [TicketStatus.IN_PROGRESS]: 'bg-yellow-500',
+  [TicketStatus.WAITING]: 'bg-purple-500',
+  [TicketStatus.RESOLVED]: 'bg-green-500',
+  [TicketStatus.CLOSED]: 'bg-gray-500'
+}
+const label = (status: TicketStatus) => status === TicketStatus.WAITING ? 'Awaiting response' : status.replaceAll('_', ' ')
+
+export function StatusTransition({ ticketId, currentStatus, onStatusChange, className = '' }: StatusTransitionProps) {
+  const [transitions, setTransitions] = useState<Transition[]>([])
   const [selectedStatus, setSelectedStatus] = useState<TicketStatus | null>(null)
   const [reason, setReason] = useState('')
-  const [isLoading, setIsLoading] = useState(true)
-  const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [error, setError] = useState('')
 
-  // Load available transitions
   useEffect(() => {
-    const loadTransitions = async () => {
-      try {
-        setIsLoading(true)
-        setError(null)
-        const transitions = await statusWorkflow.getAvailableTransitions(ticketId, currentStatus)
-        setAvailableTransitions(transitions)
-      } catch (error) {
-        console.error('Failed to load status transitions:', error)
-        const errorMessage = error instanceof Error && error.message === 'Unauthorized' 
-          ? 'Please sign in to view available status transitions.'
-          : 'Unable to load status transitions. Please try again later.'
-        setError(errorMessage)
-        setAvailableTransitions([])
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    loadTransitions()
+    let active = true
+    setLoading(true)
+    setError('')
+    statusWorkflow.getAvailableTransitions(undefined, ticketId, currentStatus)
+      .then(result => { if (active) setTransitions(result) })
+      .catch(error => { if (active) setError(error instanceof Error ? error.message : 'Status options could not be loaded.') })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
   }, [ticketId, currentStatus])
 
-  // Get status badge color
-  const getStatusColor = (status: TicketStatus) => {
-    switch (status) {
-      case TicketStatus.OPEN:
-        return 'bg-blue-500'
-      case TicketStatus.IN_PROGRESS:
-        return 'bg-yellow-500'
-      case TicketStatus.AWAITING_RESPONSE:
-        return 'bg-purple-500'
-      case TicketStatus.RESOLVED:
-        return 'bg-green-500'
-      case TicketStatus.CLOSED:
-        return 'bg-gray-500'
-      default:
-        return 'bg-gray-500'
-    }
-  }
-
-  // Handle status change
-  const handleStatusChange = async () => {
+  const changeStatus = async () => {
     if (!selectedStatus) return
-
-    setIsLoading(true)
-    setError(null)
-
+    setSaving(true)
+    setError('')
     try {
-      // Validate transition first
-      const isValid = await statusWorkflow.validateTransition(ticketId, currentStatus, selectedStatus)
-      if (!isValid) {
-        setError('This status transition is not allowed')
-        return
-      }
-
+      const validation = await statusWorkflow.validateTransition(undefined, ticketId, currentStatus, selectedStatus)
+      if (!validation.valid) throw new Error(validation.message || 'Status transition is not allowed')
       await onStatusChange(selectedStatus, reason.trim() || undefined)
-
-      // If the status is changing to in_progress, send a message
-      if (selectedStatus === 'in_progress') {
-        try {
-          await conversationService.addMessage({}, ticketId, `🔄 Status Update: Ticket moved to In Progress\n${reason ? `\nReason: ${reason}` : ''}\n\nThis ticket is now being actively worked on. You'll be notified of any updates.`, 'agent')
-        } catch (error) {
-          console.error('Failed to send assignment message:', error)
-          // Don't block the status change if message fails
-        }
-      }
-
-      setIsDialogOpen(false)
+      setDialogOpen(false)
       setSelectedStatus(null)
       setReason('')
-
-      // Refresh transitions
-      const transitions = await statusWorkflow.getAvailableTransitions(ticketId, selectedStatus)
-      setAvailableTransitions(transitions)
     } catch (error) {
-      console.error('Failed to update status:', error)
-      setError('Failed to update status. Please try again.')
+      setError(error instanceof Error ? error.message : 'Status could not be updated. Please try again.')
     } finally {
-      setIsLoading(false)
+      setSaving(false)
     }
   }
-
-  // Check if status has conditions
-  const getStatusConditions = (transition: StatusTransitionType): TransitionCondition[] => {
-    return transition.conditions || []
-  }
-
-  if (error) {
-    return (
-      <div className={`flex items-center gap-2 text-sm ${error.includes('sign in') ? 'text-amber-500' : 'text-red-500'} ${className}`}>
-        {error.includes('sign in') ? (
-          <AlertTriangle className="w-4 h-4" />
-        ) : (
-          <AlertCircle className="w-4 h-4" />
-        )}
-        {error}
-      </div>
-    )
-  }
-
-  // Group transitions by toStatus to remove duplicates and filter out current status
-  const uniqueTransitions = Array.from(
-    new Map(availableTransitions
-      .filter(t => t.toStatus !== currentStatus)
-      .map(t => [t.toStatus, t])
-    ).values()
-  )
 
   return (
     <div className={className}>
       <Popover>
         <PopoverTrigger asChild>
-          <Button
-            variant="outline"
-            className="min-w-[150px]"
-            disabled={isLoading}
-          >
-            <Badge className={getStatusColor(currentStatus)}>
-              {currentStatus}
-            </Badge>
-            {isLoading ? (
-              <Loader2 className="w-4 h-4 ml-2 animate-spin" />
-            ) : (
-              <ChevronDown className="w-4 h-4 ml-2" />
-            )}
+          <Button variant="outline" disabled={loading || saving} aria-label="Change ticket status">
+            <Badge className={colors[currentStatus]}>{label(currentStatus)}</Badge>
+            {loading ? <Loader2 className="ml-2 h-4 w-4 animate-spin" /> : <ChevronDown className="ml-2 h-4 w-4" />}
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-50 p-2" align="start">
+        <PopoverContent className="w-56 p-2" align="start">
           <div className="grid gap-1">
-            {uniqueTransitions.map(transition => {
-              const conditions = getStatusConditions(transition)
-              const hasConditions = conditions.length > 0
-
-              return (
-                <Button
-                  key={`${transition.fromStatus}-${transition.toStatus}`}
-                  variant="ghost"
-                  className="justify-start font-normal"
-                  onClick={() => {
-                    setSelectedStatus(transition.toStatus)
-                    setIsDialogOpen(true)
-                  }}
-                >
-                  <Badge className={getStatusColor(transition.toStatus)}>
-                    {transition.toStatus}
-                  </Badge>
-                  {hasConditions && (
-                    <AlertTriangle className="w-4 h-4 ml-2 text-yellow-500" />
-                  )}
-                </Button>
-              )
-            })}
+            {transitions.length === 0 && <p className="p-2 text-sm text-muted-foreground">No status changes available.</p>}
+            {transitions.map(transition => <Button key={transition.toStatus} variant="ghost" className="justify-start capitalize" onClick={() => {
+              setSelectedStatus(transition.toStatus)
+              setReason('')
+              setError('')
+              setDialogOpen(true)
+            }}>{label(transition.toStatus)}</Button>)}
           </div>
         </PopoverContent>
       </Popover>
-
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      {error && !dialogOpen && <p role="alert" className="mt-2 text-sm text-destructive">{error}</p>}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Update Status</DialogTitle>
-            <DialogDescription>
-              Change the ticket status to{' '}
-              {selectedStatus}
-            </DialogDescription>
+            <DialogTitle>Update status</DialogTitle>
+            <DialogDescription>Change ticket status to {selectedStatus && label(selectedStatus)}.</DialogDescription>
           </DialogHeader>
-
-          {/* Status Conditions */}
-          {selectedStatus && getStatusConditions(availableTransitions.find(t => t.toStatus === selectedStatus) || {} as StatusTransitionType).length > 0 && (
-            <div className="space-y-2">
-              <h4 className="font-medium text-yellow-500">Requirements</h4>
-              <ul className="space-y-1 text-sm">
-                {getStatusConditions(availableTransitions.find(t => t.toStatus === selectedStatus) || {} as StatusTransitionType).map((condition, index) => (
-                  <li key={index} className="flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 text-yellow-500" />
-                    {condition.message}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {/* Reason Input */}
-          <div className="space-y-2">
-            <label htmlFor="reason" className="text-sm font-medium">
-              Reason for Change (Optional)
-            </label>
-            <Textarea
-              id="reason"
-              value={reason}
-              onChange={e => setReason(e.target.value)}
-              placeholder="Enter a reason for this status change..."
-              className="h-20"
-            />
-          </div>
-
-          {/* Error Message */}
-          {error && (
-            <div className="flex items-center gap-2 text-sm text-red-500">
-              <AlertCircle className="w-4 h-4" />
-              {error}
-            </div>
-          )}
-
+          <label htmlFor="status-reason" className="text-sm font-medium">Reason for change (optional)</label>
+          <Textarea id="status-reason" value={reason} onChange={event => setReason(event.target.value)} placeholder="Add context for the next person handling this ticket." />
+          {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setIsDialogOpen(false)}
-              disabled={isLoading}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleStatusChange}
-              disabled={isLoading}
-            >
-              {isLoading && (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              )}
-              Update Status
-            </Button>
+            <Button variant="outline" disabled={saving} onClick={() => setDialogOpen(false)}>Cancel</Button>
+            <Button disabled={saving || !selectedStatus} onClick={() => void changeStatus()}>{saving ? 'Updating...' : 'Update status'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
   )
-} 
+}

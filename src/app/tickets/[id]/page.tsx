@@ -87,9 +87,10 @@ export default function TicketPage() {
           .from('customers')
           .select('id')
           .eq('id', user.id)
-          .single()
+          .maybeSingle()
 
-        const isCustomer = !!customer
+        const { data: agent } = await supabase.from('agents').select('id').eq('id', user.id).maybeSingle()
+        const isCustomer = !agent && !!customer
 
         setIsAuthenticated(true)
         setCurrentUserId(user.id)
@@ -331,7 +332,7 @@ export default function TicketPage() {
         .from('agents')
         .select('role')
         .eq('id', currentUserId)
-        .single()
+        .maybeSingle()
 
       if (!agent) {
         throw new Error('Could not find agent details')

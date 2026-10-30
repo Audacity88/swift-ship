@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { Ticket } from '@/types/ticket';
 import { Button } from '@/components/ui/button';
 import {
@@ -39,14 +40,12 @@ import {
   Plus,
   RefreshCw,
   Search,
-  SlidersHorizontal,
 } from 'lucide-react';
 
 interface TicketListProps {
   tickets: Ticket[];
   onCreateTicket: (ticket: { description: string }) => Promise<void>;
   onAddComment: (ticketId: string, comment: string) => Promise<void>;
-  onUpdateStatus: (ticketId: string, status: string) => Promise<void>;
   isLoading: boolean;
   pagination: {
     page: number;
@@ -62,7 +61,6 @@ export const TicketList = ({
   tickets,
   onCreateTicket,
   onAddComment,
-  onUpdateStatus,
   isLoading,
   pagination,
   onPageChange,
@@ -176,7 +174,7 @@ export const TicketList = ({
             <DialogHeader>
               <DialogTitle>Create New Support Request</DialogTitle>
               <DialogDescription>
-                Describe your issue and we'll get back to you as soon as possible.
+                Describe your issue and we&apos;ll get back to you as soon as possible.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
@@ -210,6 +208,7 @@ export const TicketList = ({
       </div>
 
       <div className="space-y-4">
+        {isLoading && <p role="status">Loading tickets...</p>}
         {filteredTickets.map((ticket) => (
           <Card key={ticket.id}>
             <CardHeader>
@@ -255,23 +254,10 @@ export const TicketList = ({
               )}
             </CardContent>
             <CardFooter className="flex justify-between">
-              <Select
-                value={ticket.status}
-                onValueChange={(value) => onUpdateStatus(ticket.id, value)}
-              >
-                <SelectTrigger className="w-[160px]">
-                  <SelectValue placeholder="Update status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="open">Open</SelectItem>
-                  <SelectItem value="in_progress">In Progress</SelectItem>
-                  <SelectItem value="resolved">Resolved</SelectItem>
-                  <SelectItem value="closed">Closed</SelectItem>
-                </SelectContent>
-              </Select>
+              <Button variant="outline" asChild><Link href={`/tickets/${ticket.id}`}>View conversation</Link></Button>
               <Dialog>
                 <DialogTrigger asChild>
-                  <Button variant="outline">
+                  <Button variant="outline" onClick={() => setSelectedTicket(ticket)}>
                     <MessageSquare className="mr-2 h-4 w-4" />
                     Add Comment
                   </Button>
@@ -313,7 +299,7 @@ export const TicketList = ({
           </Card>
         ))}
 
-        {filteredTickets.length === 0 && (
+        {!isLoading && filteredTickets.length === 0 && (
           <div className="text-center py-8 text-muted-foreground">
             {searchTerm ? (
               <>No tickets found matching &quot;{searchTerm}&quot;</>
@@ -323,6 +309,11 @@ export const TicketList = ({
           </div>
         )}
       </div>
+      {pagination.totalPages > 1 && <div className="flex items-center justify-between">
+        <Button variant="outline" disabled={isLoading || pagination.page <= 1} onClick={() => onPageChange(pagination.page - 1)}>Previous</Button>
+        <span>Page {pagination.page} of {pagination.totalPages}</span>
+        <Button variant="outline" disabled={isLoading || pagination.page >= pagination.totalPages} onClick={() => onPageChange(pagination.page + 1)}>Next</Button>
+      </div>}
     </div>
   );
 }; 

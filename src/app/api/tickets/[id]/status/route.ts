@@ -1,352 +1,50 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
+import { createClient } from '@/lib/supabase/server'
+import { DEFAULT_STATUS_WORKFLOW, normalizeTicketStatus } from '@/types/status-workflow'
 import { TicketStatus } from '@/types/ticket'
-import { getServerSupabase } from '@/lib/supabase-client'
-import type { User } from '@supabase/supabase-js'
 
-interface CustomSession {
-  user: User
-  role: 'agent' | 'admin'
-  type: 'agent' | 'customer'
-  id: string
-}
-
-// Types
-interface StatusTransition {
-  fromStatus: TicketStatus
-  toStatus: TicketStatus
-  requiredRole: 'agent' | 'admin' | null
-  conditions: Array<{
-    type: 'required_field' | 'time_restriction' | 'permission'
-    message: string
-    data?: Record<string, unknown>
-  }>
-  metadata?: Record<string, unknown>
-}
-
-interface TicketStatusInfo {
-  id: string
-  status: TicketStatus
-  assignee_id: string | null
-  customer_id: string
-  metadata: Record<string, unknown>
-  created_at: string
-  updated_at: string
-  resolved_at: string | null
-}
-
-// Status transition rules
-const statusTransitions: Record<TicketStatus, StatusTransition[]> = {
-  [TicketStatus.OPEN]: [
-    {
-      fromStatus: TicketStatus.OPEN,
-      toStatus: TicketStatus.IN_PROGRESS,
-      requiredRole: null,
-      conditions: [
-        {
-          type: 'required_field',
-          message: 'Ticket must be assigned to an agent',
-          data: { field: 'assignee_id' }
-        }
-      ]
-    },
-    {
-      fromStatus: TicketStatus.OPEN,
-      toStatus: TicketStatus.AWAITING_RESPONSE,
-      requiredRole: null,
-      conditions: []
-    }
-  ],
-  [TicketStatus.IN_PROGRESS]: [
-    {
-      fromStatus: TicketStatus.IN_PROGRESS,
-      toStatus: TicketStatus.RESOLVED,
-      requiredRole: null,
-      conditions: [
-        {
-          type: 'required_field',
-          message: 'Resolution comment is required',
-          data: { field: 'resolution_comment' }
-        }
-      ]
-    },
-    {
-      fromStatus: TicketStatus.IN_PROGRESS,
-      toStatus: TicketStatus.AWAITING_RESPONSE,
-      requiredRole: null,
-      conditions: []
-    },
-    {
-      fromStatus: TicketStatus.IN_PROGRESS,
-      toStatus: TicketStatus.OPEN,
-      requiredRole: null,
-      conditions: []
-    }
-  ],
-  [TicketStatus.AWAITING_RESPONSE]: [
-    {
-      fromStatus: TicketStatus.AWAITING_RESPONSE,
-      toStatus: TicketStatus.IN_PROGRESS,
-      requiredRole: null,
-      conditions: []
-    },
-    {
-      fromStatus: TicketStatus.AWAITING_RESPONSE,
-      toStatus: TicketStatus.RESOLVED,
-      requiredRole: null,
-      conditions: [
-        {
-          type: 'required_field',
-          message: 'Resolution comment is required',
-          data: { field: 'resolution_comment' }
-        }
-      ]
-    }
-  ],
-  [TicketStatus.RESOLVED]: [
-    {
-      fromStatus: TicketStatus.RESOLVED,
-      toStatus: TicketStatus.CLOSED,
-      requiredRole: null,
-      conditions: [
-        {
-          type: 'time_restriction',
-          message: 'Must be resolved for at least 24 hours',
-          data: { hours: 24 }
-        }
-      ]
-    },
-    {
-      fromStatus: TicketStatus.RESOLVED,
-      toStatus: TicketStatus.IN_PROGRESS,
-      requiredRole: null,
-      conditions: []
-    }
-  ],
-  [TicketStatus.CLOSED]: [
-    {
-      fromStatus: TicketStatus.CLOSED,
-      toStatus: TicketStatus.IN_PROGRESS,
-      requiredRole: 'admin',
-      conditions: [
-        {
-          type: 'permission',
-          message: 'Only admins can reopen closed tickets'
-        }
-      ]
-    }
-  ]
-}
-
-// Validation schema for status update
-const updateStatusSchema = z.object({
-  status: z.enum([
-    TicketStatus.OPEN,
-    TicketStatus.IN_PROGRESS,
-    TicketStatus.AWAITING_RESPONSE,
-    TicketStatus.RESOLVED,
-    TicketStatus.CLOSED
-  ]),
-  reason: z.string().optional(),
-  comment: z.string().optional()
+type Context = { params: Promise<{ id: string }> }
+const inputSchema = z.object({
+  status: z.enum(['open', 'in_progress', 'waiting', 'awaiting_response', 'resolved', 'closed']),
+  reason: z.string().max(5000).optional()
 })
 
-// GET /api/tickets/[id]/status - Get available status transitions
-export async function GET(
-  request: Request,
-  context: { params: Promise<{ id: string }> }
-) {
-  const { id } = await Promise.resolve((await context.params))
-  
-  try {
-    const supabase = getServerSupabase()
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    
-    if (userError || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
-    }
-
-    const customSession = user as unknown as CustomSession
-
-    // Get current ticket status
-    const { data: ticket, error: ticketError } = await supabase
-      .from('tickets')
-      .select(`
-        id,
-        status,
-        assignee_id,
-        customer_id,
-        metadata,
-        created_at,
-        updated_at,
-        resolved_at
-      `)
-      .eq('id', id)
-      .single()
-
-    if (ticketError) {
-      throw ticketError
-    }
-
-    if (!ticket) {
-      return NextResponse.json(
-        { error: 'Ticket not found' },
-        { status: 404 }
-      )
-    }
-
-    // Get available transitions
-    const availableTransitions = statusTransitions[ticket.status as TicketStatus]
-      .filter((transition: StatusTransition) => {
-        // Filter by role if required
-        if (transition.requiredRole && transition.requiredRole !== customSession.role) {
-          return false
-        }
-        return true
-      })
-      .map((transition: StatusTransition) => ({
-        status: transition.toStatus,
-        conditions: transition.conditions.map((condition: StatusTransition['conditions'][0]) => {
-          switch (condition.type) {
-            case 'time_restriction':
-              if (condition.data?.hours && ticket.resolved_at) {
-                const hoursElapsed = (Date.now() - new Date(ticket.resolved_at).getTime()) / (1000 * 60 * 60)
-                return {
-                  ...condition,
-                  isSatisfied: hoursElapsed >= (condition.data.hours as number)
-                }
-              }
-              return { ...condition, isSatisfied: false }
-            
-            case 'required_field':
-              if (condition.data?.field === 'assignee_id') {
-                return {
-                  ...condition,
-                  isSatisfied: ticket.assignee_id !== null
-                }
-              }
-              return { ...condition, isSatisfied: false }
-            
-            case 'permission':
-              return {
-                ...condition,
-                isSatisfied: customSession.role === 'admin'
-              }
-            
-            default:
-              return { ...condition, isSatisfied: false }
-          }
-        })
-      }))
-
-    return NextResponse.json({ data: availableTransitions })
-  } catch (error) {
-    console.error('Failed to get status transitions:', error)
-    return NextResponse.json(
-      { error: 'Failed to get status transitions', details: error },
-      { status: 500 }
-    )
-  }
+async function loadContext(id: string) {
+  const supabase = await createClient()
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (authError || !user) return { response: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
+  const { data: agent } = await supabase.from('agents').select('id,role').eq('id', user.id).maybeSingle()
+  if (!agent || !['admin', 'agent', 'supervisor'].includes(agent.role)) return { response: NextResponse.json({ error: 'Staff access required' }, { status: 403 }) }
+  const { data: ticket, error } = await supabase.from('tickets').select('id,status').eq('id', id).maybeSingle()
+  if (error) return { response: NextResponse.json({ error: 'Could not load ticket' }, { status: 500 }) }
+  if (!ticket) return { response: NextResponse.json({ error: 'Ticket not found' }, { status: 404 }) }
+  return { supabase, agent, ticket }
 }
 
-// POST /api/tickets/[id]/status - Update ticket status
-export async function POST(
-  request: Request,
-  context: { params: Promise<{ id: string }> }
-) {
-  const { id } = await Promise.resolve((await context.params))
-  
-  try {
-    const supabase = getServerSupabase()
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    
-    if (userError || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
-    }
+export async function GET(request: Request, context: Context) {
+  const { id } = await context.params
+  const loaded = await loadContext(id)
+  if (loaded.response) return loaded.response
+  const current = normalizeTicketStatus(loaded.ticket.status)
+  return NextResponse.json({ data: DEFAULT_STATUS_WORKFLOW.filter(item => item.fromStatus === current).map(item => ({ status: item.toStatus, conditions: [] })) })
+}
 
-    const customSession = user as unknown as CustomSession
-
-    const json = await request.json()
-    const body = updateStatusSchema.parse(json)
-
-    // Get current ticket
-    const { data: ticket, error: ticketError } = await supabase
-      .from('tickets')
-      .select('*')
-      .eq('id', id)
-      .single()
-
-    if (ticketError) {
-      throw ticketError
-    }
-
-    if (!ticket) {
-      return NextResponse.json(
-        { error: 'Ticket not found' },
-        { status: 404 }
-      )
-    }
-
-    // Update ticket status
-    const updates: any = {
-      status: body.status,
-      updated_at: new Date().toISOString(),
-      updated_by: user.id
-    }
-
-    // Set resolved_at if status is being changed to resolved
-    if (body.status === TicketStatus.RESOLVED) {
-      updates.resolved_at = new Date().toISOString()
-    }
-
-    const { data: updatedTicket, error: updateError } = await supabase
-      .from('tickets')
-      .update(updates)
-      .eq('id', id)
-      .select()
-      .single()
-
-    if (updateError) {
-      throw updateError
-    }
-
-    // Create audit log
-    const { error: auditError } = await supabase
-      .from('audit_logs')
-      .insert({
-        entity_type: 'ticket',
-        entity_id: id,
-        action: 'status_update',
-        actor_id: customSession.id,
-        actor_type: customSession.type,
-        changes: {
-          status: body.status,
-          reason: body.reason
-        }
-      })
-
-    if (auditError) {
-      throw auditError
-    }
-
-    return NextResponse.json({ data: updatedTicket })
-  } catch (error) {
-    console.error('Failed to update ticket status:', error)
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Invalid request data', details: error.errors },
-        { status: 400 }
-      )
-    }
-    return NextResponse.json(
-      { error: 'Failed to update ticket status', details: error },
-      { status: 500 }
-    )
+export async function POST(request: Request, context: Context) {
+  const { id } = await context.params
+  const loaded = await loadContext(id)
+  if (loaded.response) return loaded.response
+  const parsed = inputSchema.safeParse(await request.json().catch(() => null))
+  if (!parsed.success) return NextResponse.json({ error: 'Invalid status update' }, { status: 400 })
+  const target = normalizeTicketStatus(parsed.data.status)
+  const current = normalizeTicketStatus(loaded.ticket.status)
+  if (target !== current && !DEFAULT_STATUS_WORKFLOW.some(item => item.fromStatus === current && item.toStatus === target as TicketStatus)) {
+    return NextResponse.json({ error: 'Invalid status transition' }, { status: 400 })
   }
-} 
+  const { error } = await loaded.supabase.rpc('execute_status_transition', {
+    p_ticket_id: id, p_new_status: target, p_reason: parsed.data.reason?.trim() || null, p_agent_id: loaded.agent.id
+  })
+  if (error) return NextResponse.json({ error: 'Status could not be updated. Refresh the ticket and try again.' }, { status: 409 })
+  const { data } = await loaded.supabase.from('tickets').select('*').eq('id', id).maybeSingle()
+  return NextResponse.json({ data })
+}

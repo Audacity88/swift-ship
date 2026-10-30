@@ -37,10 +37,10 @@ export const customerTicketService = {
 
       // Get customer name
       const { data: customer, error: customerError } = await supabase
-        .from('users')
+        .from('customers')
         .select('name')
         .eq('id', user.id)
-        .single()
+        .maybeSingle()
 
       if (customerError) throw customerError
 
@@ -52,13 +52,11 @@ export const customerTicketService = {
           status: 'open',
           priority: data.priority || 'medium',
           customer_id: user.id,
-          created_by: user.id,
-          updated_by: user.id,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
         .select()
-        .single()
+        .maybeSingle()
 
       if (error) throw error
       if (!ticket) throw new Error('Failed to create ticket')
@@ -97,7 +95,7 @@ export const customerTicketService = {
       }
 
       // Add sorting
-      query = query.order(sortBy, { ascending: sortOrder === 'asc' })
+      query = query.order(({ createdAt: 'created_at', updatedAt: 'updated_at', status: 'status' })[sortBy], { ascending: sortOrder === 'asc' })
 
       // Add pagination
       const from = (page - 1) * limit
@@ -109,7 +107,13 @@ export const customerTicketService = {
       if (error) throw error
 
       return {
-        tickets: data || [],
+        tickets: (data || []).map(row => ({
+          ...row, createdAt: row.created_at, updatedAt: row.updated_at,
+          customerId: row.customer_id, assigneeId: row.assignee_id,
+          isArchived: row.is_archived,
+          metadata: { ...row.metadata, createdAt: row.created_at, updatedAt: row.updated_at, tags: row.metadata?.tags || [] },
+          comments: []
+        })),
         pagination: {
           page,
           limit,
@@ -138,25 +142,24 @@ export const customerTicketService = {
         .select('id')
         .eq('id', ticketId)
         .eq('customer_id', user.id)
-        .single()
+        .maybeSingle()
 
       if (ticketError || !ticket) {
         throw new Error('Ticket not found or access denied')
       }
 
       const { data: comment, error } = await supabase
-        .from('ticket_comments')
+        .from('messages')
         .insert({
           ticket_id: ticketId,
           content,
           author_id: user.id,
-          created_by: user.id,
-          updated_by: user.id,
+          author_type: 'customer',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
         .select()
-        .single()
+        .maybeSingle()
 
       if (error) throw error
       if (!comment) throw new Error('Failed to add comment')
@@ -183,24 +186,21 @@ export const customerTicketService = {
         .select('id')
         .eq('id', ticketId)
         .eq('customer_id', user.id)
-        .single()
+        .maybeSingle()
 
       if (ticketError || !ticket) {
         throw new Error('Ticket not found or access denied')
       }
 
       const { data, error } = await supabase
-        .from('ticket_comments')
+        .from('messages')
         .select(`
           id,
           content,
           created_at,
           updated_at,
-          author:author_id (
-            id,
-            name,
-            avatar_url
-          )
+          author_id,
+          author_type
         `)
         .eq('ticket_id', ticketId)
         .order('created_at', { ascending: true })
