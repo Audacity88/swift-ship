@@ -1,6 +1,6 @@
 # Cyclops fixes report
 
-The [Round 3 section](#round-3) is the current result. Earlier sections are historical; Cyclops disproved some of their browser-completion claims.
+The [Round 4 section](#round-4) is the current result. Earlier sections are historical; Cyclops disproved some of their browser-completion claims.
 
 Validated on 2026-10-30 on the local Mac in `/Users/dan/codex-lanes/coding/cf1/work`. Branch remained `cyclops-fixes`, based on `8f079d994f65750c07c5d888f699b294f0ef4444`. No remote, branch, deploy, PR, CI, Jest configuration or protected test edits were made. Dependencies came from `pnpm install --frozen-lockfile`; the lockfile is unchanged.
 
@@ -842,3 +842,147 @@ Not verified: real OpenAI or Radar calls, hosted Supabase, email delivery, scree
 ### Commits and cleanup
 
 Codex's sandbox could not create `.git/index.lock`, so the operator committed the Round 3 changes on `cyclops-fixes` in logical commits and pushed only that branch. The throwaway `.env.local` was removed and never staged. The local Supabase stack was stopped and Colima was stopped after testing.
+
+
+## Round 4
+
+Completed on 2026-10-30 on `cyclops-fixes`, based on HEAD `9ccd6ca0bb677b3db9b0ee8d6670a7688a01fa79`. Results below apply to the final working tree. No branch switch, remote change, push, deployment, PR, CI, Jest test/config change, or real Radar/OpenAI request occurred. The lockfile and dependency versions are unchanged.
+
+### Remaining nit status
+
+| Nit | Status | Note |
+| --- | --- | --- |
+| 1. Attachment types/downloads | Fixed; service, storage and browser PASS | The file input advertises explicit extension/MIME pairs; validation requires both. Migration 35 sets the bucket MIME allowlist and extends the message trigger to check original names, stored path names and matching MIME. Signed downloads request attachment disposition and preserve reserved characters in original filenames. |
+| 2. Failed-upload message | Fixed; browser PASS | Upload failures log their detailed error and display **Upload failed. Please check your connection and try again.** Cleanup failures cannot replace that message. Draft text and chips are still cleared only after a successful send. |
+| 3. Admin header at 390px | Fixed; browser PASS (menu fully inside 390px) | Ticket header stacks below `sm`; status popover aligns to the end, uses 8px collision padding and a viewport-limited width. The browser script asserts left >= 0 and right <= 390 at 390×844. |
+| 4. Generic README | Fixed | pnpm 10 on PATH is supported first; npx/npm-exec 10.34.0 runners bypass Corepack cache failures. Brief strict/cache guidance, generic first-admin setup and `verify` instructions replace machine and handoff notes. |
+| 5. Typecheck/lint/build gates | PASS, all exit 0 | `typecheck`, flat-config `lint`, and `verify` scripts pass. Strict stays enabled; existing skipLibCheck is unchanged. Both build ignore flags were removed; Next actually ran lint and type validation. |
+
+### Type and lint scope
+
+The baseline reported 295 TypeScript errors and 355 ESLint errors. The app project now explicitly includes `next-env.d.ts`, every `src/**/*.ts` and `src/**/*.tsx`, and generated `.next/types/**/*.ts`; previously the glob named only `.ts`, leaving some unimported TSX unchecked. Standard DOM/modern library declarations are enabled while retaining the ES2017 emit target.
+
+Explicit exclusions:
+
+- `supabase/functions/**`: Deno URL imports and globals belong to the Edge Function runtime, not the Node/Next project. No Deno validation is claimed.
+- `src/__tests__/**`, `src/**/__mocks__/**`, and `src/**/*.test.{ts,tsx}` / `src/**/*.spec.{ts,tsx}`: independently owned Jest tests and fixtures. Their files and Jest config were not edited. ESLint uses the same test exclusions. Their typecheck/test results are not claimed.
+- `node_modules`: existing exclusion. The narrowed app include also leaves standalone `scripts/*.ts` experiments and root tool configs outside the app TypeScript project; executable CJS verification helpers were checked and run separately.
+
+Real source repairs include supported Next 15 async route params, nullable navigation values, correct service contexts and argument lists, actual database-derived author roles, supported Supabase pagination/count calls, quote/shipment metadata contracts, SDK cookie types, runtime Permission enum imports and existing role-service methods, current DayPicker/ReactMarkdown component props, and complete effect dependencies. Unknown exception/metadata values are narrowed instead of adding explicit `any`. Missing generated Database imports were removed; known joined query results have explicit domain return shapes at the query boundary. No generated schema or Deno type contract is claimed.
+
+**New `@ts-expect-error` / `@ts-ignore` / `@ts-nocheck` / ESLint suppression list: none.** No strictness rule was weakened, no lint rule was disabled, no dependency was added or upgraded.
+
+Unused code removal (repository import/symbol searches plus unread local declarations):
+
+- Deleted `next.config.ts`: unused duplicate; Next reads `next.config.js`. Also removed the obsolete `experimental.serverActions.enabled` option from the active config.
+- Deleted `src/components/features/audit/AuditLogViewer.tsx` and `src/components/features/knowledge/SearchBar.tsx`: neither had any imports anywhere in the repository, including tests. They referenced obsolete nonexistent contracts. The active portal SearchBar remains.
+- Removed unreferenced local ticket-page tag/follower handlers and their unused dropdown/state scaffold; unused component imports, toolbar helpers, a duplicate unread custom-field definitions fetch, and unused type-only interfaces.
+- Removed private unused API schema/mock declarations (`mockCustomFields`, createArticleSchema, createCategorySchema, createFeedbackSchema, createRoleSchema, updateTeamSchema, addMemberSchema, removeMemberSchema, MessageResult, CreateTicketResult, tickets paginationSchema/sortingSchema). None was called for request validation.
+- Removed the unused BaseAgent.processMessage throwing stub and private unread permission-cache helpers/TTL, retaining the exported invalidation API. No imported runtime function or rendered control was deleted.
+- Removed an impossible `notification.type === 'pickup'` rendering branch: pickup is not a NotificationType. Inbox search now filters its populated ticket list; the discarded messages array was never populated or rendered.
+
+Documentation/code conflicts resolved: earlier README advice made Corepack the primary runner, described machine-specific CLI/socket state, and said builds bypass type/lint gates. The new README follows the current scripts/config. Older report sections remain historical. Experimental/stub features outside the five nits remain experimental; passing types does not establish their end-to-end behavior.
+
+### Commands and outputs
+
+Execution host: local Mac; working directory for all commands: `/Users/dan/codex-lanes/coding/cf1/work`. Docker was reachable with the supplied socket and returned `29.5.2`. The existing Colima/Supabase stack was used and left running. Credentials from `supabase status -o json` were captured only in process memory, never printed or persisted in an env file. OpenAI/Radar and tracing keys were forced empty for build/runtime validation.
+
+```sh
+DOCKER_HOST=unix:///Users/dan/DevelopmentScratch/vm/default/docker.sock docker info --format '{{.ServerVersion}}'
+DOCKER_HOST=unix:///Users/dan/DevelopmentScratch/vm/default/docker.sock supabase db reset
+npx --yes pnpm@10.34.0 typecheck
+npx --yes pnpm@10.34.0 lint
+```
+
+Reset output (full local log `/tmp/swift-ship-round4-reset.log`):
+
+```text
+Applying migration 20250101000001_initial_schema.sql...
+[all intervening migrations 02 through 34 applied successfully]
+Applying migration 20250101000035_attachment_type_allowlist.sql...
+Seeding data from supabase/seed.sql...
+Restarting containers...
+Finished supabase db reset on branch cyclops-fixes.
+```
+
+Typecheck and lint both returned exit 0 with only their script banners and no diagnostics. Final production validation used a temporary local runner to read local configuration into child-process environment memory, with no `.env.local` creation:
+
+```sh
+DOCKER_HOST=unix:///Users/dan/DevelopmentScratch/vm/default/docker.sock node /tmp/swift-ship-round4-run.cjs verify
+```
+
+The runner executed `npx --yes pnpm@10.34.0 verify` (which runs `pnpm typecheck && pnpm lint && pnpm build`). Final exit 0; `/tmp/swift-ship-round4-verify.log` includes:
+
+```text
+> tsc --noEmit -p tsconfig.json
+> eslint src
+> next build
+✓ Compiled successfully
+  Linting and checking validity of types ...
+  Collecting page data ...
+✓ Generating static pages (76/76)
+  Finalizing page optimization ...
+  Collecting build traces ...
+```
+
+No ignored type/lint gates were present. The runner then started its own production server on `127.0.0.1:3014` with the same in-memory local settings:
+
+```sh
+DOCKER_HOST=unix:///Users/dan/DevelopmentScratch/vm/default/docker.sock node /tmp/swift-ship-round4-run.cjs smoke
+```
+
+It executed every current `scripts/verify-*.cjs` file and the SQL check twice, sequentially:
+
+```sh
+node scripts/verify-auth.cjs --app-url http://127.0.0.1:3014
+node scripts/verify-realtime-storage.cjs
+node scripts/verify-schema.cjs
+node scripts/verify-ticket-flows.cjs --app-url http://127.0.0.1:3014
+docker exec -i supabase_db_zendesk-clone psql -U postgres -d postgres -v ON_ERROR_STOP=1 < scripts/verify-rls.sql
+docker exec -i supabase_db_zendesk-clone psql -U postgres -d postgres -v ON_ERROR_STOP=1 < scripts/verify-rls.sql
+```
+
+All used the same `DOCKER_HOST` shown above. Summary of captured outputs:
+
+| Check | Output | Exit |
+| --- | --- | --- |
+| verify-auth | 14 PASS, temporary smoke accounts removed | 0 |
+| verify-realtime-storage | 12 PASS, temporary realtime/storage fixtures removed | 0 |
+| verify-schema | 8 PASS: 40 table references, 9 RPC references, 45/45 tables with RLS; invoker/search_path/grant checks pass | 0 |
+| verify-ticket-flows | 24 PASS, temporary ticket/account fixtures removed | 0 |
+| verify-rls, first run | 16 PASS; ends ROLLBACK | 0 |
+| verify-rls, second run | 16 PASS; ends ROLLBACK | 0 |
+
+New attachment assertions produced:
+
+```text
+PASS client allowlist accepts supported extension/MIME pairs and rejects forbidden names, MIME mismatches and unknown types
+PASS app signed download preserves original special-character filename and attachment disposition
+PASS bucket rejects forbidden MIME types; metadata rejects forbidden names, mismatches and disguised paths
+```
+
+Client checks include inherited-key names (`.__proto__`, `.constructor`) so an unsupported filename cannot surface a raw TypeError. Original-filename checks use `report & draft#1 + 100%.png`; the app rebuilds the SDK's download query suffix with URLSearchParams so reserved characters remain filename data. The server checks include html/htm, svg, js/mjs, exe, sh, bat, msi, xml/xhtml, unknown extensions, mismatched MIME and disguised stored-path extensions. Existing cross-customer/internal-file isolation and bidirectional realtime delivery still pass. Only the dependency `punycode` deprecation warning appeared in Node smoke logs.
+
+Complete output is in `/tmp/swift-ship-round4-smoke.log` and `/tmp/swift-ship-round4-{verify-auth,verify-realtime-storage,verify-schema,verify-ticket-flows,rls-1,rls-2}.log`. CJS/MJS syntax checks and `git diff --check` also pass.
+
+### Browser check: PASS (operator run, outside the Codex sandbox)
+
+`scripts/e2e/round3.mjs` now also covers: HTML selection rejected with a clear message and no chip or request, an authenticated direct text/html storage upload rejected, a route-aborted upload showing the friendly toast (no raw error) while keeping the draft and chip, a successful retry, attachment-disposition downloads with the original filename, and the admin status menu's bounding box at 390×844.
+
+The operator ran it on the Mac mini after `supabase db reset` and an empty-key `pnpm build`:
+
+```sh
+PLAYWRIGHT_MODULE=/tmp/swift-ship-round3-browser/node_modules/playwright node scripts/e2e/round3.mjs
+```
+
+Exit 0, 15/15 PASS, twice in a row (including "aborted upload shows friendly toast, logs details, preserves draft/chip, and retries successfully" and "admin status dropdown fits entirely inside a 390×844 viewport").
+
+Two operator fixes found by that run:
+- Test bug: the direct-storage probe called `auth.signOut()`, whose default global scope revoked the browser customer's session, so the retry failed with "Unauthorized". The probe now uses `signOut({ scope: 'local' })`.
+- App fix: Sonner toasts sat at the bottom-right over the reply composer's Send button, and hovering pauses them, so a user retrying after an error toast couldn't click Send. The Toaster now uses `position="top-center"`.
+
+Still unverified: screen readers, the independently owned Jest suite, Deno edge functions (excluded from the Node typecheck; check with `deno check`), hosted Supabase, real email/OAuth, and real Radar/OpenAI integrations.
+
+### Commits and cleanup
+
+Codex's sandbox could not create `.git/index.lock`, so the operator committed the Round 4 changes on `cyclops-fixes` and pushed only that branch. `.env.local` was removed and never staged. The local Supabase stack and Colima were stopped after testing.
