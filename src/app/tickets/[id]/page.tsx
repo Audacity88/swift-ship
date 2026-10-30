@@ -1,75 +1,42 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { useParams } from 'next/navigation'
-import Image from 'next/image'
-import { 
-  FileText, AlertCircle, HelpCircle, Wrench, Check, Clock,
-  Tag, Link as LinkIcon, Users, ChevronDown, MessageSquare
-} from 'lucide-react'
-import { COLORS } from '@/lib/constants'
-import { TicketStatus, TicketPriority } from '@/types/ticket'
-import type { Ticket, TicketComment, TicketType } from '@/types/ticket'
-import type { User } from '@/types/user'
-import type { QuoteRequest } from '@/types/quote'
-import { 
-  TypeDropdown, 
-  PriorityDropdown, 
-  TagsDropdown, 
-  FollowersDropdown 
-} from '@/components/features/tickets/PropertyDropdowns'
-import { StatusTransition } from '@/components/features/tickets/StatusTransition'
-import { 
-  getTicket, 
-  updateTicket, 
-  updateTicketStatus, 
-  slaService,
-  authService,
-  ticketService,
-  conversationService,
-  quoteService,
-  type Ticket as TicketData 
-} from '@/lib/services'
-import { TicketConversation } from '@/components/features/tickets/TicketConversation'
 import { QuoteDetailView } from '@/components/features/quotes/QuoteDetailView'
-import type { ServerContext } from '@/lib/supabase-client'
+import { StatusTransition } from '@/components/features/tickets/StatusTransition'
+import { TicketConversation } from '@/components/features/tickets/TicketConversation'
+import {
+conversationService,
+quoteService,
+slaService,
+statusWorkflow,
+ticketService,
+type Ticket as TicketData
+} from '@/lib/services'
 import { getServerSupabase } from '@/lib/supabase-client'
-import { statusWorkflow } from '@/lib/services'
-import { tagService } from '@/lib/services'
-import { cn } from '@/lib/utils'
 import { formatTicketStatus } from '@/lib/ticket-labels'
-
-interface Tag {
-  id: string
-  name: string
-  color: string
-}
+import { cn } from '@/lib/utils'
+import type { QuoteRequest } from '@/types/quote'
+import { TicketStatus } from '@/types/ticket'
+import {
+Clock
+} from 'lucide-react'
+import { useParams } from 'next/navigation'
+import { useEffect,useRef,useState } from 'react'
 
 export default function TicketPage() {
   const params = useParams()
   const ticketId = params?.id as string
   const liveStatus = useRef<{ ticketId: string; revision: number; status?: TicketStatus }>({ ticketId, revision: 0 })
   const [ticket, setTicket] = useState<TicketData | null>(null)
-  const [selectedType, setSelectedType] = useState<TicketType>('problem')
-  const [selectedPriority, setSelectedPriority] = useState<TicketPriority>(TicketPriority.MEDIUM)
-  const [selectedAssignee, setSelectedAssignee] = useState<string | null>(null)
-  const [tags, setTags] = useState<Tag[]>([])
-  const [linkedProblem, setLinkedProblem] = useState<string | null>(null)
-  const [followers, setFollowers] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
-  const [slaStatus, setSlaStatus] = useState<any>(null)
+  const [slaStatus, setSlaStatus] = useState<Awaited<ReturnType<typeof slaService.getTicketSLA>>>(null)
   const [isQuoteTicket, setIsQuoteTicket] = useState(false)
   const [quoteData, setQuoteData] = useState<QuoteRequest | null>(null)
   const [isCustomer, setIsCustomer] = useState(false)
 
   // Dropdown visibility states
-  const [showTypeDropdown, setShowTypeDropdown] = useState(false)
-  const [showPriorityDropdown, setShowPriorityDropdown] = useState(false)
-  const [showTagsDropdown, setShowTagsDropdown] = useState(false)
-  const [showFollowersDropdown, setShowFollowersDropdown] = useState(false)
 
   // Check auth status first
   useEffect(() => {
@@ -142,26 +109,20 @@ export default function TicketPage() {
 
         console.log('[Ticket Page] Received ticket data:', {
           id: ticketData.id,
-          tags: ticketData.tags,
+          tags: ticketData.metadata.tags,
           metadata: ticketData.metadata
         })
 
         setTicket(liveStatus.current.ticketId === ticketId && liveStatus.current.revision !== revision && liveStatus.current.status
           ? { ...ticketData, status: liveStatus.current.status } : ticketData)
-        setSelectedType((ticketData.metadata as any)?.type || 'problem')
-        setSelectedPriority(ticketData.priority)
-        setSelectedAssignee(ticketData.assignee?.id || null)
-        setTags(ticketData.tags || [])
-        console.log('[Ticket Page] Updated tags state:', ticketData.tags || [])
-
         // Check if this is a quote ticket
-        const metadata = ticketData.metadata as any
+        const metadata = ticketData.metadata
         const isQuote = ticketData.type === 'task' && 
           metadata?.destination && 
           metadata?.packageDetails &&
           !metadata?.quotedPrice // Only show quotes without a price
 
-        setIsQuoteTicket(isQuote)
+        setIsQuoteTicket(Boolean(isQuote))
         if (isQuote) {
           const quoteMetadata = metadata as unknown as QuoteRequest['metadata']
           setQuoteData({
@@ -263,94 +224,6 @@ export default function TicketPage() {
     </div>
   }
 
-  // Tag handlers
-  const handleAddTag = async (tagName: string) => {
-    if (!ticket) return
-    
-    try {
-      console.log('[Ticket Page] Adding new tag:', tagName)
-      const newTag: Tag = {
-        id: `tag_${Date.now()}`,
-        name: tagName,
-        color: '#' + Math.floor(Math.random()*16777215).toString(16)
-      }
-
-      // Create the tag first
-      const createdTag = await tagService.createTag(undefined, tagName)
-      console.log('[Ticket Page] Tag created:', createdTag)
-      
-      // Add the tag to the ticket
-      await tagService.addTagToTicket(undefined, createdTag.id, ticketId)
-      console.log('[Ticket Page] Tag added to ticket')
-      
-      // Update local state
-      setTags(prev => {
-        const newTags = [...prev, createdTag]
-        console.log('[Ticket Page] Updated tags state:', newTags)
-        return newTags
-      })
-    } catch (error) {
-      console.error('[Ticket Page] Failed to add tag:', error)
-    }
-  }
-
-  const handleRemoveTag = async (tagId: string) => {
-    if (!ticket) return
-    
-    try {
-      console.log('[Ticket Page] Removing tag:', tagId)
-      // Remove the tag from the ticket
-      await tagService.removeTagFromTicket(undefined, tagId, ticketId)
-      console.log('[Ticket Page] Tag removed from ticket')
-      
-      // Update local state
-      setTags(prev => {
-        const newTags = prev.filter(t => t.id !== tagId)
-        console.log('[Ticket Page] Updated tags state:', newTags)
-        return newTags
-      })
-    } catch (error) {
-      console.error('[Ticket Page] Failed to remove tag:', error)
-    }
-  }
-
-  // Follower handlers
-  const handleAddFollower = async (follower: string) => {
-    if (!ticket) return
-    
-    try {
-      const response = await fetch(`/api/tickets/${ticketId}/followers`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ follower })
-      })
-      
-      if (!response.ok) throw new Error('Failed to add follower')
-      
-      setFollowers(prev => [...prev, follower])
-    } catch (error) {
-      console.error('Failed to add follower:', error)
-    }
-  }
-
-  const handleRemoveFollower = async (follower: string) => {
-    if (!ticket) return
-    
-    try {
-      const response = await fetch(`/api/tickets/${ticketId}/followers/${encodeURIComponent(follower)}`, {
-        method: 'DELETE',
-        credentials: 'include'
-      })
-      
-      if (!response.ok) throw new Error('Failed to remove follower')
-      
-      setFollowers(prev => prev.filter(f => f !== follower))
-    } catch (error) {
-      console.error('Failed to remove follower:', error)
-    }
-  }
-
   // Handle status change
   const handleStatusChange = async (newStatus: TicketStatus, reason?: string) => {
     if (!ticket) return
@@ -375,9 +248,7 @@ export default function TicketPage() {
         newStatus,
         {
           id: currentUserId!,
-          role: agent.role,
-          name: '',
-          email: ''
+          role: agent.role
         },
         reason
       )
@@ -500,8 +371,8 @@ export default function TicketPage() {
             <>
               {/* Combined header for customers */}
               <div className="mb-6">
-                <div className="flex items-center justify-between">
-                  <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">
+                <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <h1 className="min-w-0 break-words text-2xl font-semibold text-gray-900 dark:text-white">
                     {ticket.title}
                   </h1>
                   <div className="flex items-center gap-2">
@@ -537,8 +408,8 @@ export default function TicketPage() {
             <>
               {/* Full agent view with all components */}
               <div className="mb-6">
-                <div className="flex items-center justify-between">
-                  <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">
+                <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <h1 className="min-w-0 break-words text-2xl font-semibold text-gray-900 dark:text-white">
                     {ticket.title}
                   </h1>
                   <div className="flex items-center gap-4">

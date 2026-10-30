@@ -11,7 +11,34 @@ export const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024
 export const MAX_ATTACHMENTS = 5
 const ATTACHMENT_BUCKET = 'ticket-attachments'
 
+// Keep these extension/MIME pairs in sync with migration 35. Unknown or empty
+// browser MIME types are rejected rather than guessed from a filename.
+export const ATTACHMENT_TYPES: Record<string, string[]> = {
+  png: ['image/png'], jpg: ['image/jpeg'], jpeg: ['image/jpeg'],
+  gif: ['image/gif'], webp: ['image/webp'], heic: ['image/heic'],
+  pdf: ['application/pdf'], txt: ['text/plain'], csv: ['text/csv'],
+  doc: ['application/msword'],
+  docx: ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+  xls: ['application/vnd.ms-excel'],
+  xlsx: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+  ppt: ['application/vnd.ms-powerpoint'],
+  pptx: ['application/vnd.openxmlformats-officedocument.presentationml.presentation'],
+  odt: ['application/vnd.oasis.opendocument.text'],
+  ods: ['application/vnd.oasis.opendocument.spreadsheet'],
+  zip: ['application/zip', 'application/x-zip-compressed'],
+}
+export const ATTACHMENT_ACCEPT = Object.entries(ATTACHMENT_TYPES)
+  .flatMap(([extension, types]) => [`.${extension}`, ...types]).join(',')
+export const UPLOAD_FAILURE_MESSAGE = 'Upload failed. Please check your connection and try again.'
+export const ATTACHMENT_TYPE_MESSAGE = 'Unsupported attachment type. Choose PNG, JPEG, GIF, WebP, HEIC, PDF, TXT, CSV, DOC/DOCX, XLS/XLSX, PPT/PPTX, ODT/ODS, or ZIP with a matching file type.'
+
 export function validateAttachments(files: File[]) {
+  if (files.some(file => {
+    const extension = file.name.split('.').pop()?.toLowerCase() || ''
+    return /[\/\\\x00-\x1f\x7f]/.test(file.name) || !file.name.includes('.')
+      || !Object.prototype.hasOwnProperty.call(ATTACHMENT_TYPES, extension)
+      || !ATTACHMENT_TYPES[extension].includes(file.type.toLowerCase())
+  })) throw new Error(ATTACHMENT_TYPE_MESSAGE)
   if (files.length > MAX_ATTACHMENTS) throw new Error('Attach at most 5 files per reply.')
   if (files.some(file => file.size === 0 || file.size > MAX_ATTACHMENT_SIZE)) {
     throw new Error('Each attachment must be nonempty and no larger than 10 MB.')
@@ -76,15 +103,18 @@ export const conversationService = {
           content,
           created_at,
           author_id,
+          ticket_id,
           author_type
         )
       `)
       .or(`customer_id.eq.${userId},assignee_id.eq.${userId}`)
       .order('created_at', { foreignTable: 'messages', ascending: false })
       .limit(1, { foreignTable: 'messages' })
+      // Without generated DB relationships the SDK assumes customer is an array.
+      .returns<Ticket[]>()
 
     if (error) throw error
-    return data as Ticket[]
+    return data || []
   },
 
   async getMessages(
@@ -202,22 +232,25 @@ export const conversationService = {
         const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-120) || 'attachment'
         const path = `${ticketId}/${isInternal ? 'internal' : 'public'}/${crypto.randomUUID()}/${safeName}`
         const { error } = await supabase.storage.from(ATTACHMENT_BUCKET).upload(path, file, {
-          contentType: file.type || 'application/octet-stream', upsert: false
+          contentType: file.type.toLowerCase(), upsert: false
         })
-        if (error) throw new Error(`Could not upload ${file.name}. Please retry.`)
-        uploaded.push({ name: file.name, path, type: file.type || 'application/octet-stream', size: file.size })
+        if (error) throw error
+        uploaded.push({ name: file.name, path, type: file.type.toLowerCase(), size: file.size })
       }
       return uploaded
     } catch (error) {
-      await this.removeAttachments(context, uploaded)
-      throw error
+      console.error('Attachment upload failed:', error)
+      try { await this.removeAttachments(context, uploaded) }
+      catch (cleanupError) { console.error('Attachment cleanup failed:', cleanupError) }
+      throw new Error(UPLOAD_FAILURE_MESSAGE)
     }
   },
 
   async removeAttachments(context: ServerContext, attachments: Attachment[]) {
     if (attachments.length) {
       const supabase = getServerSupabase(context)
-      await supabase.storage.from(ATTACHMENT_BUCKET).remove(attachments.map(file => file.path))
+      const { error } = await supabase.storage.from(ATTACHMENT_BUCKET).remove(attachments.map(file => file.path))
+      if (error) throw error
     }
   },
 
@@ -226,7 +259,11 @@ export const conversationService = {
     const { data, error } = await supabase.storage.from(ATTACHMENT_BUCKET)
       .createSignedUrl(attachment.path, 60, { download: attachment.name })
     if (error || !data?.signedUrl) throw new Error('Unable to download this attachment. Please retry.')
-    return data.signedUrl
+    // storage-js 2.7 uses encodeURI on the complete URL, leaving filename '&'
+    // and '#' as query/fragment syntax. Rebuild that suffix as one encoded value.
+    const url = new URL(data.signedUrl.split('&download=', 1)[0])
+    url.searchParams.set('download', attachment.name)
+    return url.href
   },
 
   async subscribeToMessages(context: ServerContext, ticketId: string, callback: (message: Message) => void): Promise<() => void> {

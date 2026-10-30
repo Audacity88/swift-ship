@@ -25,7 +25,7 @@ const colors: Record<TicketStatus, string> = {
   [TicketStatus.RESOLVED]: 'bg-green-500',
   [TicketStatus.CLOSED]: 'bg-gray-500'
 }
-const label = (status: TicketStatus) => status === TicketStatus.WAITING ? 'Awaiting response' : status.replaceAll('_', ' ')
+const label = (status: TicketStatus) => status === TicketStatus.WAITING ? 'Awaiting response' : status.replace(/_/g, ' ')
 
 export function StatusTransition({ ticketId, currentStatus, onStatusChange, className = '' }: StatusTransitionProps) {
   const [transitions, setTransitions] = useState<Transition[]>([])
@@ -74,7 +74,7 @@ export function StatusTransition({ ticketId, currentStatus, onStatusChange, clas
             {loading ? <Loader2 className="ml-2 h-4 w-4 animate-spin" /> : <ChevronDown className="ml-2 h-4 w-4" />}
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-56 p-2" align="start">
+        <PopoverContent className="w-56 max-w-[calc(100vw-1rem)] p-2" align="end" collisionPadding={8}>
           <div className="grid gap-1">
             {transitions.length === 0 && <p className="p-2 text-sm text-muted-foreground">No status changes available.</p>}
             {transitions.map(transition => <Button key={transition.toStatus} variant="ghost" className="justify-start capitalize" onClick={() => {

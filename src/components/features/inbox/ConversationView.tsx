@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label'
 import { conversationService, type Message } from '@/lib/services'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
-import { validateAttachments, type Attachment } from '@/lib/services/conversation-service'
+import { ATTACHMENT_ACCEPT, UPLOAD_FAILURE_MESSAGE, validateAttachments, type Attachment } from '@/lib/services/conversation-service';
 import { formatTicketStatus } from '@/lib/ticket-labels'
 
 interface ConversationViewProps {
@@ -145,11 +145,13 @@ export function ConversationView({
       // Scroll to bottom after sending
       setTimeout(scrollToBottom, 100)
     } catch (err) {
-      await conversationService.removeAttachments(undefined, uploaded)
-      toast.error(err instanceof Error ? err.message : 'Failed to send attachments. Please retry.')
+      try { await conversationService.removeAttachments(undefined, uploaded) }
+      catch (cleanupError) { console.error('Attachment cleanup failed:', cleanupError) }
+      const message = attachments.length > 0 ? UPLOAD_FAILURE_MESSAGE : 'Message could not be sent. Please try again.'
+      toast.error(message)
       setMessages(prev => prev.filter(message => message.id !== optimisticId))
       console.error('Error sending message:', err)
-      setError(err instanceof Error ? err.message : 'Failed to send message. Please try again.')
+      setError(message)
       
       // Keep the draft and error available for retry.
     } finally {
@@ -370,6 +372,7 @@ export function ConversationView({
           <div className="absolute right-3 bottom-3 flex items-center gap-2">
             <input
               type="file"
+              accept={ATTACHMENT_ACCEPT}
               ref={fileInputRef}
               onChange={handleFileChange}
               className="hidden"
