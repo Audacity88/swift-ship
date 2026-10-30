@@ -4,28 +4,30 @@ A local shipping support app built with Next.js and Supabase. Customers can regi
 
 ## Prerequisites
 
-- Node.js 20 or newer and pnpm 9. This checkout was validated with pnpm 9.15.4.
+- Node.js 20 or newer and pnpm 10. `packageManager` pins pnpm 10.34.0. Select it with Corepack or install that pnpm version locally. If `pnpm --version` still shows 9, use `corepack pnpm` in place of `pnpm` for every command below.
 - Docker running, including Docker Desktop or Colima. On a Colima installation, use your existing `DOCKER_HOST`; do not change global Docker contexts.
-- Supabase CLI available as `supabase`. Local validation used CLI 2.6.8 and PostgreSQL 15.
+- Supabase CLI 2.x available as `supabase`, plus Docker available as `docker`. Recent CLI releases label the local API keys **Publishable** and **Secret**. This Mac has CLI 2.6.8 and PostgreSQL 15; Cyclops used CLI 2.122.0. Both use the environment names below.
 
 Run every command below from the repository root. The first Supabase start downloads container images and can take several minutes.
 
 ## Local setup
 
 ```sh
-pnpm install --frozen-lockfile
+corepack pnpm install --frozen-lockfile
 supabase start
 supabase db reset
 cp .env.example .env.local
-supabase status
+supabase status -o env
 ```
 
-Copy the **API URL**, **anon key**, and **service_role key** from your own local `supabase status` into the corresponding variables in `.env.local`:
+Copy the values from your own local `supabase status -o env` into `.env.local`. Keep this credential output private. The environment output uses `API_URL`, `ANON_KEY`, and `SERVICE_ROLE_KEY`, even when the status table uses Publishable and Secret labels:
 
-- `NEXT_PUBLIC_SUPABASE_URL`: the local API URL, normally `http://127.0.0.1:54321`.
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`: the local anon key. The browser uses this key with row-level security.
-- `SUPABASE_SERVICE_ROLE_KEY`: the local service_role key. This is server-only and used for explicit admin provisioning.
+- `NEXT_PUBLIC_SUPABASE_URL`: `API_URL`, normally `http://127.0.0.1:54321`.
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`: `ANON_KEY`. The browser uses this key with row-level security.
+- `SUPABASE_SERVICE_ROLE_KEY`: `SERVICE_ROLE_KEY`. This is server-only and used for explicit admin provisioning.
 - `NEXT_PUBLIC_APP_URL`: `http://localhost:3000`.
+
+If Corepack is unavailable, run `npm exec --yes --package=pnpm@10.34.0 -- pnpm install --frozen-lockfile`. Use that same prefix for the `pnpm` commands below until pnpm 10 is on PATH. The pnpm 10 install may report skipped optional dependency build scripts; the checked build does not require them. The lockfile format is unchanged.
 
 `.env.local` is ignored by Git. Never put the service role key in a `NEXT_PUBLIC_` variable, source file, screenshot, or issue. Do not copy hosted credentials into this local setup. `.env.example` contains no usable credentials.
 
@@ -74,14 +76,27 @@ pnpm build
 node scripts/verify-schema.cjs
 node scripts/verify-auth.cjs --app-url http://localhost:3000
 node scripts/verify-ticket-flows.cjs --app-url http://localhost:3000
+node scripts/verify-realtime-storage.cjs
 docker exec -i supabase_db_zendesk-clone psql -U postgres -d postgres -v ON_ERROR_STOP=1 < scripts/verify-rls.sql
 ```
 
-The Node smoke helpers are local-only, discover local credentials in memory via the Supabase CLI, and suppress sensitive failure details. Auth and ticket helpers create and remove temporary test users. The SQL check wraps fixtures in a transaction and rolls it back. The HTTP checks require the app to run with the real local anon key, not the placeholders used for a build-only check.
+The Node smoke helpers resolve `supabase` from `SUPABASE_BIN` or PATH and `docker` from `DOCKER_BIN` or PATH. Overrides are executable paths, not shell commands. For example, set `SUPABASE_BIN=/path/to/supabase` and `DOCKER_BIN=/path/to/docker`; missing executables produce a clear error. On this Mac, prefix stack/check commands with `DOCKER_HOST=unix:///Users/dan/.colima/default/docker.sock`.
+
+The Node smoke helpers are local-only, discover local credentials in memory via the Supabase CLI, and suppress sensitive failure details. Auth and ticket helpers create and remove temporary test users. The SQL check owns its fixtures, checks only those rows, and rolls back. Run it twice on the same database. The realtime/storage helper checks publication membership, replica identity, private bucket configuration, two authenticated realtime clients, uploads and signed downloads, and customer/internal-file isolation. The HTTP checks require the app to run with the real local anon key, not the placeholders used for a build-only check.
+
+For the Round 3 browser check, install Playwright and Chromium in a separate verification folder, or use the existing `../verify` installation. After building with empty optional keys, run:
+
+```sh
+node scripts/e2e/round3.mjs --headed
+```
+
+The script starts and stops its own production server on port 3013, creates and removes local fixtures, and leaves Supabase running. It forces optional keys empty in the server process and blocks external browser requests. It checks two browser sessions, live replies and status, attachment persistence/downloads, both AI URLs for both roles, overview dates, and mobile ticket width. Use `--port` to choose another unused port. `PLAYWRIGHT_MODULE` can point to a Playwright module installed outside this repo. Run without `--headed` only outside sandboxes that prohibit headless Chrome.
+
+Ticket attachments are private, limited to five nonempty files per reply and 10 MB per file. Both staff and customers can attach files. Failed uploads show an error and preserve the draft. Downloads use short-lived signed URLs. Customers can read public replies and their files only on their own tickets; internal notes and their files remain staff-only. Migration 33 publishes `messages` and `tickets` to realtime, and migration 34 adds the bucket and message metadata. Apply both on an existing development database with `supabase migration up`; use reset for a disposable database.
 
 The existing production configuration skips TypeScript and ESLint gates during `next build`. A successful build does not imply the legacy Jest suite or repository-wide type checks pass. See `REPORT.md` for the exact checks, limitations, and issue-by-issue results. Some analytics and ticket-follower panels are explicitly labelled sample data; they do not represent activity in your local database.
 
-Stop the app with Ctrl-C and stop only this project's local Supabase stack when finished:
+Stop the app with Ctrl-C. Leave Supabase running when handing this Round 3 checkout to Cyclops. To stop only this project later:
 
 ```sh
 supabase stop --no-backup

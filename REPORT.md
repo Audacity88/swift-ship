@@ -1,5 +1,7 @@
 # Cyclops fixes report
 
+The [Round 3 section](#round-3) is the current result. Earlier sections are historical; Cyclops disproved some of their browser-completion claims.
+
 Validated on 2026-10-30 on the local Mac in `/Users/dan/codex-lanes/coding/cf1/work`. Branch remained `cyclops-fixes`, based on `8f079d994f65750c07c5d888f699b294f0ef4444`. No remote, branch, deploy, PR, CI, Jest configuration or protected test edits were made. Dependencies came from `pnpm install --frozen-lockfile`; the lockfile is unchanged.
 
 All 26 issues have implemented fixes. Issues 14 and 26 were verified afterwards in a headless Chromium pass (see "Follow-up browser verification"). These are implementation and verification statuses, not a claim that every experimental app feature works.
@@ -533,3 +535,310 @@ Run after the lane, outside the sandbox, against `pnpm build && pnpm start` with
 - Console errors: 0 in all three sessions.
 - Anon REST: `tickets`, `customers`, `agents` return 401 (42501); `rpc/execute_sql` returns 404.
 - `scripts/verify-schema.cjs`, `verify-auth.cjs`, `verify-ticket-flows.cjs` and `verify-rls.sql` all exit 0.
+
+## Round 3
+
+Work completed on 2026-10-30 in `/Users/dan/codex-lanes/coding/cf1/work`, branch `cyclops-fixes`, HEAD `4b62aa6990b408b7013c38bdb95ef4f4038709c0`. All Round 2 findings have implementation changes. The clean reset, production build, API checks, two SQL RLS runs, realtime delivery and storage checks pass. Browser interaction remains unverified because the sandbox prevents Chromium from starting. Do not call this a Cyclops Round 3 acceptance pass until the browser script runs outside the sandbox.
+
+### Round 2 item status
+
+| R2 item | Status | Note |
+| --- | --- | --- |
+| 8 | Implemented; service realtime PASS | Migration 33 publishes messages/tickets with FULL identity; authenticated unique channels wait for PostgreSQL readiness, clean up, and deliver both replies/status within 10 seconds. |
+| 11 | Fixed; service PASS | Team lead/member pickers use agent names and emails; all nested member/lead queries pass on the real database. |
+| 12 | Implemented; API/hook checks PASS; browser PASS | Both URLs render the same AI screen directly; hooks precede returns, send waits for auth, empty-key API returns AI not configured. |
+| 16 | Fixed in source; browser PASS | Overview reads the mapped createdAt field and guards invalid dates. |
+| 26 | Implemented; browser console PASS | Removed the AI alias render-time redirect and redundant highlightAll, repaired realtime setup, and added missing dialog descriptions. |
+| N1 | Implemented; storage/API PASS; browser PASS | Migration 34 creates a private bucket and messages.attachments; both sides upload, persist metadata and download signed PNGs under RLS. UI preserves failed drafts, reports errors with a toast, limits five files/10 MB each. |
+| N2 | Fixed in source; browser PASS | Same Created field/format repair as item 16. |
+| N3 | Fixed; resolver checks PASS | Helpers resolve SUPABASE_BIN/DOCKER_BIN or PATH, including paths with spaces, with clear missing-executable errors. |
+| N4 | Fixed; SQL PASS | SQL creates its own fixture rows and scopes counts to them; consecutive runs and an extra-ticket adversarial run pass. |
+| N5 | Fixed; install/build PASS | README explains recent Publishable/Secret labels and ANON_KEY/SERVICE_ROLE_KEY env names; packageManager pins pnpm 10.34.0 (no hard engines.pnpm, so pnpm 9 still works); lockfile unchanged. |
+| N6 | Fixed in source; browser PASS | Both customer creation flows push the actual ticket ID to /portal/tickets/<id>; the new route shares ticket details. |
+| N7 | Fixed in source; browser PASS | Customer screens use friendly status labels; unreadable staff profiles fall back to Support agent, with customer authors labelled Customer. |
+| N8 | Fixed; service PASS | Same name/email pickers and displays as item 11; editing also persists team lead changes. |
+| N9 | Fixed; source audit PASS; browser PASS | AST audit found 19 DialogContent/AlertDialogContent uses and zero missing descriptions. |
+
+### Implementation details and conflicts
+
+- Migration `20250101000033_ticket_realtime.sql` is the next version after 32. It adds only missing publication members and sets FULL identity on messages and tickets. These are every public table used by the app's postgres_changes subscriptions.
+- The first cold-stack smoke reproduced a second realtime problem after publication membership was repaired: the SDK reports SUBSCRIBED before its system event reports `{extension: 'postgres_changes', status: 'ok'}`. The shared app helper now waits for both. A final fresh reset followed by the realtime check passes, and the ticket smoke separately exercises the actual app helpers. Fetch/realtime races preserve messages and the latest status.
+- Migration 34 separates `<ticket_id>/public/...` reply files from `<ticket_id>/internal/...` note files. Authenticated staff can manage this bucket; customers can upload/read only their own public ticket paths. Anonymous users have no policy. Metadata validation enforces the ticket and visibility prefix, nonempty names/sizes, and the 10 MB limit. Message SELECT RLS continues to hide internal notes.
+- The Round 2 hooks error was not reproducible in a browser here. Source inspection found no existing conditional hook in the chat or surrounding layouts. The alias used a render-time redirect; it now renders the canonical page directly. Hook lint passes. This is an implemented repair with runtime confirmed by the operator browser run (no hooks error), not a proven conditional-hook root cause.
+- Earlier README versions reported pnpm 9 and Supabase 2.6.8 as the expected setup. The package now recommends pnpm 10 via packageManager, and the README distinguishes this Mac's installed CLI 2.6.8 from Cyclops's 2.122.0 and recent key labels. Global pnpm is still 9.15.4; the operator removed the engines.pnpm hard block so a plain `pnpm build` with pnpm 9 also works. The checked install/build explicitly use pnpm 10.34.0 through npm exec.
+- The standing AGENTS instruction forbids headless Chrome in this sandbox. The requested browser script was attempted in headed mode. macOS sandbox permissions block that too. No headless browser run or screenshot is claimed.
+
+### Finish-line commands and output
+
+Execution host for every check: this Mac. Working directory: `/Users/dan/codex-lanes/coding/cf1/work`. Stack commands and Node verify helpers use `DOCKER_HOST=unix:///Users/dan/.colima/default/docker.sock`. Docker reports 29.5.2, Supabase CLI 2.6.8, Node 23.5.0, Next 15.1.6. Only the local zendesk-clone stack was started; no real OpenAI/Radar request, hosted database, demo, cloud account, remote, PR, CI file or Jest test/config was used or changed.
+
+#### (a) Clean reset: PASS
+
+```sh
+DOCKER_HOST=unix:///Users/dan/.colima/default/docker.sock supabase start
+DOCKER_HOST=unix:///Users/dan/.colima/default/docker.sock supabase db reset > /tmp/swift-ship-round3-reset.log 2>&1
+```
+
+Start and both reset runs returned exit 0. Start's credential output was captured in memory and suppressed. Final reset output:
+
+```text
+Resetting local database...
+Recreating database...
+Setting up initial schema...
+Seeding globals from roles.sql...
+Applying migration 20250101000001_initial_schema.sql...
+Applying migration 20250101000002_knowledge_base.sql...
+Applying migration 20250101000003_search_indexes.sql...
+Applying migration 20250101000004_ticket_stats_functions.sql...
+Applying migration 20250101000005_ticket_updates.sql...
+Applying migration 20250101000006_ticket_stats_functions.sql...
+Applying migration 20250101000007_shipping_articles.sql...
+Applying migration 20250101000008_message_relationships.sql...
+Applying migration 20250101000009_internal_notes.sql...
+Applying migration 20250101000010_ticket_relationships.sql...
+Applying migration 20250101000011_audit_logs_fk.sql...
+Applying migration 20250101000012_shipment_tracking.sql...
+Applying migration 20250101000013_add_sla_config_id.sql...
+Applying migration 20250101000014_sla_management.sql...
+Applying migration 20250101000015_disable_unsafe_sql.sql...
+Applying migration 20250101000016_drop_execute_sql_function.sql...
+Applying migration 20250101000017_add_updated_by.sql...
+Applying migration 20250101000018_add_shipment_created_by.sql...
+Applying migration 20250101000019_fix_updated_at_trigger.sql...
+Applying migration 20250101000020_seed_agents.sql...
+Applying migration 20250101000021_fix_updated_at_trigger.sql...
+Applying migration 20250101000022_recreate_ticket_tags.sql...
+Applying migration 20250101000023_insert_knowledge_categories.sql...
+Applying migration 20250101000024_insert_additional_articles.sql...
+Applying migration 20250101000025_recreate_ticket_tags.sql...
+Applying migration 20250101000026_update_articles.sql...
+Applying migration 20250101000027_create_embeddings.sql...
+Applying migration 20250101000028_create_increment_article_feedback.sql...
+Applying migration 20250101000029_update_shipment_trigger.sql...
+Applying migration 20250101000030_complete_application_schema.sql...
+Applying migration 20250101000031_row_security.sql...
+Applying migration 20250101000032_application_functions.sql...
+Applying migration 20250101000033_ticket_realtime.sql...
+Applying migration 20250101000034_ticket_attachments.sql...
+Seeding data from supabase/seed.sql...
+Restarting containers...
+Finished supabase db reset on branch cyclops-fixes.
+```
+
+#### (b) Empty-key production build: PASS
+
+A mode-600 ignored throwaway `.env.local` was populated from `supabase status -o json` in memory. OpenAI, Radar and tracing keys were empty; no credential values were logged or added to Git. The env file was removed after verification.
+
+```sh
+npm exec --yes --package=pnpm@10.34.0 -- pnpm install --frozen-lockfile
+npm exec --yes --package=pnpm@10.34.0 -- pnpm build > /tmp/swift-ship-round3-build.log 2>&1
+```
+
+Install returned exit 0, `Done in 4.9s using pnpm v10.34.0`. Lockfile format/content is unchanged. Build returned exit 0. Representative output:
+
+```text
+> zendesk-clone@0.1.0 build
+> next build
+▲ Next.js 15.1.6
+Creating an optimized production build ...
+✓ Compiled successfully
+Skipping validation of types
+Skipping linting
+✓ Generating static pages (76/76)
+Finalizing page optimization ...
+Collecting build traces ...
+```
+
+The existing configuration still skips repository type/lint gates. `pnpm exec tsc --noEmit` returns exit 2 with legacy Next route-param types, missing customer/Supabase modules, Deno imports and unrelated service/page contracts. New conversation-service and team-service code has no remaining diagnostics in that run. The preexisting Node punycode deprecation warning remains in build/smoke processes; it is not a browser console result.
+
+#### (c) Verify helpers and repeated SQL: PASS
+
+The app was started for HTTP checks with `npm exec --yes --package=pnpm@10.34.0 -- pnpm start` on port 3000, with the same empty optional keys. Commands below all returned exit 0:
+
+```sh
+DOCKER_HOST=unix:///Users/dan/.colima/default/docker.sock node scripts/verify-schema.cjs
+DOCKER_HOST=unix:///Users/dan/.colima/default/docker.sock node scripts/verify-auth.cjs --app-url http://localhost:3000
+DOCKER_HOST=unix:///Users/dan/.colima/default/docker.sock node scripts/verify-ticket-flows.cjs --app-url http://localhost:3000
+DOCKER_HOST=unix:///Users/dan/.colima/default/docker.sock node scripts/verify-realtime-storage.cjs
+```
+
+Exact helper output follows, excluding the repeated Node punycode warning:
+
+schema:
+
+```text
+PASS: 40 literal .from references exist in the database
+PASS: 9 literal .rpc references exist in the database
+PASS: 45/45 public tables have RLS enabled
+PASS: 7 compatibility views use security_invoker
+PASS: 9 SECURITY DEFINER functions pin search_path
+PASS: execute_sql has no remaining overloads
+PASS: anon has no private-table or private-view grants
+PASS: anon can execute no data-changing SECURITY DEFINER RPC
+```
+
+auth:
+
+```text
+PASS create-admin creates an auth account and admin agent; password sign-in succeeds
+PASS signup immediately creates the matching customer profile with metadata name
+PASS customer can sign out and sign in with a usable profile
+PASS customer profile fields and preferences persist after a new query
+PASS customer cannot insert themselves into agents
+PASS GET /api/portal/profile returns customer data for form prefill
+PASS PUT /api/portal/profile saves whitelisted fields and GET returns them
+PASS profile API recreates an older account missing its customer profile
+PASS customer agent create, update, delete and auth user delete requests return 403
+PASS ordinary agents cannot delete other agents through the API
+PASS customer shipment API returns empty state, creates an own shipment, and lists it
+PASS customers are redirected to /403 from queue, roles and admin setup pages
+PASS signed-out /portal/auth/register is reachable
+PASS temporary smoke accounts removed
+```
+
+ticket-flows:
+
+```text
+PASS customer service creates a ticket without an invalid welcome agent
+PASS app conversation helpers authenticate and wait for PostgreSQL readiness on three unique channels
+PASS customer ticket list returns persisted ticket and mapped dates
+PASS customer conversation begins with original description
+PASS app message helper delivers customer reply to staff within 10 seconds
+PASS agent list includes untagged tickets
+PASS agent conversation includes original description and reply returns saved data
+PASS app message helper delivers staff reply to customer within 10 seconds
+PASS app message helper delivers internal note to staff
+PASS offered open to in_progress transition persists through shared workflow RPC
+PASS app ticket helper delivers customer status change within 10 seconds
+PASS app customer message helper excludes internal notes
+PASS customer sees saved replies and cannot see internal notes
+PASS team picker and all member/lead queries return agent names and emails
+PASS new-team and new-agent metrics return empty defaults without 406 errors
+PASS admin ticket stats API returns real counts in the overview contract
+PASS customer cannot access staff stats endpoint
+PASS customer can read own SLA but cannot pause it
+PASS AI support returns clear AI not configured response with empty key
+PASS anonymous AI requests are rejected
+PASS app subscription cleanup removes channels before signing out
+PASS temporary ticket and account fixtures removed
+```
+
+realtime-storage:
+
+```text
+PASS supabase_realtime publishes public.messages and public.tickets
+PASS messages and tickets use REPLICA IDENTITY FULL
+PASS ticket-attachments is private with a size limit; messages store jsonb attachment metadata
+PASS authenticated customer receives staff reply within 10 seconds without polling or reload
+PASS authenticated staff receives customer reply within 10 seconds without polling or reload
+PASS customer receives ticket status change live within 10 seconds
+PASS internal notes reach staff and are withheld from customer realtime
+PASS staff and customer PNG uploads persist with attachment metadata on messages
+PASS staff downloads all attachments; owning customer downloads public attachments via signed URLs
+PASS cross-customer, anonymous and customer internal-file reads/uploads are denied
+PASS temporary realtime/storage fixtures removed
+```
+
+The SQL command was run twice sequentially on the same database after the final reset. Both exited 0 and ended in ROLLBACK:
+
+```sh
+DOCKER_HOST=unix:///Users/dan/.colima/default/docker.sock docker exec -i supabase_db_zendesk-clone psql -U postgres -d postgres -v ON_ERROR_STOP=1 < scripts/verify-rls.sql
+DOCKER_HOST=unix:///Users/dan/.colima/default/docker.sock docker exec -i supabase_db_zendesk-clone psql -U postgres -d postgres -v ON_ERROR_STOP=1 < scripts/verify-rls.sql
+```
+
+First run output:
+
+```text
+BEGIN
+INSERT 0 2
+INSERT 0 1
+INSERT 0 2
+INSERT 0 3
+INSERT 0 1
+INSERT 0 2
+INSERT 0 1
+INSERT 0 2
+DO
+SET
+NOTICE:  PASS: all public tables have RLS, execute_sql absent, signup creates customer and ignores role spoofing
+NOTICE:  PASS: anon cannot read tickets
+NOTICE:  PASS: anon cannot read customers
+NOTICE:  PASS: anon cannot read agents
+DO
+NOTICE:  PASS: anon can read published knowledge articles
+RESET
+SET
+ customer_claims_set
+---------------------
+ t
+(1 row)
+
+NOTICE:  PASS: customer cannot insert an agent/admin
+NOTICE:  PASS: customer cannot assign roles
+NOTICE:  PASS: customer cannot change ticket assignment
+NOTICE:  PASS: customer cannot message another customer ticket
+NOTICE:  PASS: customer cannot write internal messages
+NOTICE:  PASS: customer cannot invoke staff status transition
+NOTICE:  PASS: customer reads own SLA config/pauses but cannot pause tickets
+NOTICE:  PASS: customer can create own shipment but cannot fabricate fulfillment status
+NOTICE:  PASS: customer reads own rows, updates own profile, and sends own reply
+DO
+ admin_claims_set
+------------------
+ t
+(1 row)
+
+NOTICE:  PASS: status RPC rejects spoofed agent identity
+NOTICE:  PASS: admin reads work data and transitions open to in_progress with history
+DO
+RESET
+ROLLBACK
+```
+
+Second run output ends identically:
+
+```text
+
+NOTICE:  PASS: status RPC rejects spoofed agent identity
+NOTICE:  PASS: admin reads work data and transitions open to in_progress with history
+DO
+RESET
+ROLLBACK
+```
+
+An additional transaction-owned ticket was injected before assertions in a separate adversarial run; the fixture-scoped assertions passed and rolled back. Invalid SUPABASE_BIN and DOCKER_BIN checks produce clear missing-executable errors. Executable paths containing spaces and PATH discovery pass. All CJS/MJS syntax checks and git diff --check pass. Focused ESLint passes for realtime, attachments, teams and the browser script. AI/UI hook lint passes with existing unused-variable/any/prefer-const rules disabled; one existing inbox effect-dependency warning remains.
+
+#### (d) Browser check: PASS (operator run, outside the Codex sandbox)
+
+Codex could not launch Chromium inside its sandbox (Crashpad permission errors), so the operator ran the same script on the Mac mini outside the sandbox, after `supabase db reset`, an empty-key `pnpm build`, and with Playwright 1.64.1 from a temporary folder:
+
+```sh
+PLAYWRIGHT_MODULE=/tmp/swift-ship-round3-browser/node_modules/playwright node scripts/e2e/round3.mjs
+```
+
+Exit 0:
+
+```text
+PASS admin reply reaches customer within 10 seconds without reload
+PASS customer reply reaches admin within 10 seconds without reload
+PASS status reaches customer within 10 seconds with friendly label and no reload
+PASS admin and customer PNG attachments survive reload and download via signed URLs
+PASS customer ticket fits a 390px viewport and uses friendly status/author labels
+PASS admin /ai-support loads and replies AI not configured
+PASS admin /portal/ai-support loads and replies AI not configured
+PASS customer /ai-support loads and replies AI not configured
+PASS customer /portal/ai-support loads and replies AI not configured
+PASS overview contains the new ticket and no Invalid date
+PASS no page errors, console errors, realtime socket failures, or missing dialog descriptions
+PASS temporary fixtures removed; browser and owned app server stopped; Supabase left running
+```
+
+Extra operator browser checks against `pnpm start` on port 3000 (not scripted in the repo):
+- N6: a customer submitting /portal/tickets/new lands on /portal/tickets/<new id>, which shows the ticket, the description and the success toast.
+- N8/#11: Create Team shows a "Team Lead" select listing agents as "Name (email)"; the dialog has a description; 0 console errors.
+
+Not verified: real OpenAI or Radar calls, hosted Supabase, email delivery, screen readers, uploads above 1 KB in the browser (the 10 MB limit is enforced by the bucket and the metadata trigger).
+
+### Commits and cleanup
+
+Codex's sandbox could not create `.git/index.lock`, so the operator committed the Round 3 changes on `cyclops-fixes` in logical commits and pushed only that branch. The throwaway `.env.local` was removed and never staged. The local Supabase stack was stopped and Colima was stopped after testing.

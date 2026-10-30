@@ -126,5 +126,9 @@
   "bugs": {
     "url": "https://github.com/Audacity88/swift-ship/issues"
   },
-  "homepage": "https://github.com/Audacity88/swift-ship#readme"
+  "homepage": "https://github.com/Audacity88/swift-ship#readme",
+  "packageManager": "pnpm@10.34.0",
+  "engines": {
+    "node": ">=20"
+  }
 }
