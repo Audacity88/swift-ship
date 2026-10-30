@@ -20,3 +20,7 @@ Instruction inventory before this audit: only `AGENTS.md`; no CLAUDE.md, Cursor 
 | VERIFIED | Stop servers started for validation (`AGENTS.md:7`). | Process policy; zero servers started. |
 
 No build/test/lint/run command or protected-test claim appears in this instruction doc.
+
+## Cyclops fixes resolution
+
+Dan explicitly requested a replacement setup README for `cyclops-fixes`. This supersedes the prior README preservation rule; AGENTS.md now records the task-specific instruction. The old audit remains historical. Migration/schema, service signature and runtime configuration conflicts found by Cyclops are listed with current validation in REPORT.md.
