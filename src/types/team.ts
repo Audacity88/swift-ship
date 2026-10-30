@@ -29,10 +29,18 @@ export interface TeamSchedule extends WeeklySchedule {
 export interface TeamMember {
   teamId: string;
   userId: string;
+  name?: string;
+  email?: string;
   role: UserRole;
   schedule: WeeklySchedule;
   skills: string[];
   joinedAt: Date;
+}
+
+export interface TeamAgent {
+  id: string;
+  name: string;
+  email: string;
 }
 
 export interface TeamSkillSet {

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import type { Team } from '@/types/team';
+import { RoleType } from '@/types/role';
 import { teamService } from '@/lib/services';
 import {
   Table,
@@ -154,6 +155,7 @@ export const TeamList = ({
               Name {sortField === 'name' && (sortOrder === 'asc' ? '↑' : '↓')}
             </TableHead>
             <TableHead>Status</TableHead>
+            <TableHead>Team lead</TableHead>
             <TableHead>Metrics</TableHead>
             <TableHead className="w-[100px]">Actions</TableHead>
           </TableRow>
@@ -172,6 +174,15 @@ export const TeamList = ({
                 </div>
               </TableCell>
               <TableCell>{getTeamStatusBadge(team)}</TableCell>
+              <TableCell>
+                {team.members.filter(member => member.role === RoleType.SUPERVISOR).map(member => (
+                  <div key={member.userId}>
+                    <div className="font-medium">{member.name || 'Support agent'}</div>
+                    <div className="text-sm text-muted-foreground">{member.email || 'Email unavailable'}</div>
+                  </div>
+                ))}
+                {!team.members.some(member => member.role === RoleType.SUPERVISOR) && 'No team lead'}
+              </TableCell>
               <TableCell>{getMetricsSummary(team)}</TableCell>
               <TableCell>
                 <DropdownMenu>
@@ -226,4 +237,4 @@ export const TeamList = ({
       </Table>
     </div>
   );
-}; 
+};

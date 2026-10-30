@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import type { TeamMember, TeamMemberUpdate, WeeklySchedule, DaySchedule } from '@/types/team';
+import type { TeamMember, TeamMemberUpdate, WeeklySchedule, DaySchedule, TeamAgent } from '@/types/team';
 import { teamService } from '@/lib/services/team-service';
-import { RoleType } from '@/types/role';
+import { RoleType, AGENT_ROLES, getRoleLabel } from '@/types/role';
 import {
   Table,
   TableBody,
@@ -13,13 +13,13 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -57,6 +57,7 @@ const defaultWeeklySchedule: WeeklySchedule = {
 
 export const TeamMembers = ({ teamId, onUpdate }: TeamMembersProps) => {
   const [members, setMembers] = useState<TeamMember[]>([]);
+  const [agents, setAgents] = useState<TeamAgent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isAddingMember, setIsAddingMember] = useState(false);
@@ -68,8 +69,12 @@ export const TeamMembers = ({ teamId, onUpdate }: TeamMembersProps) => {
   useEffect(() => {
     const loadMembers = async () => {
       try {
-        const teamMembers = await teamService.getTeamMembers(undefined, teamId);
+        const [teamMembers, availableAgents] = await Promise.all([
+          teamService.getTeamMembers(undefined, teamId),
+          teamService.getAvailableAgents(undefined),
+        ]);
         setMembers(teamMembers);
+        setAgents(availableAgents);
         setError(null);
       } catch (err) {
         const error = err as Error;
@@ -85,7 +90,7 @@ export const TeamMembers = ({ teamId, onUpdate }: TeamMembersProps) => {
 
   const handleAddMember = async () => {
     if (!newMemberId.trim()) {
-      setError('Member ID is required');
+      setError('Select an agent to add');
       return;
     }
 
@@ -178,17 +183,26 @@ export const TeamMembers = ({ teamId, onUpdate }: TeamMembersProps) => {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Add Team Member</DialogTitle>
+              <DialogDescription>Select an agent and their role on this team.</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label htmlFor="userId">User ID</Label>
-                <Input
-                  id="userId"
+                <Label htmlFor="teamMember">Agent</Label>
+                <select
+                  id="teamMember"
                   value={newMemberId}
                   onChange={(e) => setNewMemberId(e.target.value)}
-                  placeholder="Enter user ID"
                   disabled={addingMemberLoading}
-                />
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                >
+                  <option value="">Select an agent</option>
+                  {agents.filter(agent => !members.some(member => member.userId === agent.id)).map(agent => (
+                    <option key={agent.id} value={agent.id}>{agent.name} ({agent.email})</option>
+                  ))}
+                </select>
+                {agents.every(agent => members.some(member => member.userId === agent.id)) && (
+                  <p className="text-sm text-muted-foreground">No more agents available to add.</p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="role">Role</Label>
@@ -201,9 +215,9 @@ export const TeamMembers = ({ teamId, onUpdate }: TeamMembersProps) => {
                     <SelectValue placeholder="Select a role" />
                   </SelectTrigger>
                   <SelectContent>
-                    {Object.values(RoleType).map((role) => (
+                    {AGENT_ROLES.map((role) => (
                       <SelectItem key={role} value={role}>
-                        {role}
+                        {getRoleLabel(role)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -224,7 +238,7 @@ export const TeamMembers = ({ teamId, onUpdate }: TeamMembersProps) => {
                 </Button>
                 <Button
                   onClick={handleAddMember}
-                  disabled={addingMemberLoading}
+                  disabled={addingMemberLoading || !newMemberId}
                 >
                   {addingMemberLoading ? (
                     <>
@@ -250,7 +264,7 @@ export const TeamMembers = ({ teamId, onUpdate }: TeamMembersProps) => {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>User ID</TableHead>
+            <TableHead>Agent</TableHead>
             <TableHead>Role</TableHead>
             <TableHead>Skills</TableHead>
             <TableHead>Joined</TableHead>
@@ -260,7 +274,10 @@ export const TeamMembers = ({ teamId, onUpdate }: TeamMembersProps) => {
         <TableBody>
           {members.map((member) => (
             <TableRow key={member.userId}>
-              <TableCell>{member.userId}</TableCell>
+              <TableCell>
+                <div className="font-medium">{member.name || 'Support agent'}</div>
+                <div className="text-sm text-muted-foreground">{member.email || 'Email unavailable'}</div>
+              </TableCell>
               <TableCell>
                 <Select
                   value={member.role}
@@ -270,9 +287,9 @@ export const TeamMembers = ({ teamId, onUpdate }: TeamMembersProps) => {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {Object.values(RoleType).map((role) => (
+                    {AGENT_ROLES.map((role) => (
                       <SelectItem key={role} value={role}>
-                        {role}
+                        {getRoleLabel(role)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -304,4 +321,4 @@ export const TeamMembers = ({ teamId, onUpdate }: TeamMembersProps) => {
       </Table>
     </div>
   );
-}; 
+};
