@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { Archive, RotateCcw, History, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import type { Ticket, Agent, TicketSnapshot } from '@/types/ticket'
@@ -120,6 +120,7 @@ export function ArchiveActions({
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Archive Ticket</DialogTitle>
+              <DialogDescription>Archive this ticket with an optional reason.</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <Textarea
@@ -166,6 +167,7 @@ export function ArchiveActions({
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Ticket History</DialogTitle>
+              <DialogDescription>Review saved snapshots and changes for this ticket.</DialogDescription>
           </DialogHeader>
           <ScrollArea className="h-[400px] pr-4">
             {snapshots.length > 0 ? (

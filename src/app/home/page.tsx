@@ -1,5 +1,6 @@
 'use client'
 
+import { formatTicketStatus } from '@/lib/ticket-labels'
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -139,7 +140,7 @@ export default function HomePage() {
                       <span className="text-muted-foreground">ETA: {shipment.estimated_delivery ? new Date(shipment.estimated_delivery).toLocaleDateString() : 'Not scheduled'}</span>
                     </div>
                   </div>
-                  <span className="text-sm font-medium text-primary">{shipment.status}</span>
+                  <span className="text-sm font-medium text-primary">{formatTicketStatus(shipment.status)}</span>
                 </div>
               ))}
             </div>

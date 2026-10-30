@@ -16,6 +16,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger
@@ -238,6 +239,7 @@ export default function TicketsOverviewPage() {
             <DialogContent className="max-w-3xl">
               <DialogHeader>
                 <DialogTitle>Create New Ticket</DialogTitle>
+              <DialogDescription>Enter the customer and issue details to create a support ticket.</DialogDescription>
               </DialogHeader>
               <CreateTicketForm 
                 onSubmit={handleCreateTicket}

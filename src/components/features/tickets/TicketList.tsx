@@ -1,8 +1,9 @@
 'use client'
 
+import { formatTicketStatus } from '@/lib/ticket-labels'
 import React, { useEffect, useState, useCallback } from 'react'
 import { fetchTickets, type TicketListItem } from '@/lib/services'
-import { format } from 'date-fns'
+import { format, isValid } from 'date-fns'
 import {
   Clock,
   Tag,
@@ -86,11 +87,8 @@ export const TicketList: React.FC<TicketListProps> = ({
   }
 
   const formatDate = (dateString: string) => {
-    try {
-      return format(new Date(dateString), 'MMM d, yyyy')
-    } catch (error) {
-      return 'Invalid date'
-    }
+    const date = new Date(dateString)
+    return isValid(date) ? format(date, 'MMM d, yyyy') : 'Date unavailable'
   }
 
   if (!tickets) return <div>No tickets found</div>
@@ -135,9 +133,9 @@ export const TicketList: React.FC<TicketListProps> = ({
                 <Badge variant="outline">{ticket.priority}</Badge>
               </TableCell>
               <TableCell>
-                <Badge>{ticket.status}</Badge>
+                <Badge>{formatTicketStatus(ticket.status)}</Badge>
               </TableCell>
-              <TableCell>{formatDate(ticket.created_at)}</TableCell>
+              <TableCell>{formatDate(ticket.createdAt)}</TableCell>
             </TableRow>
           ))}
         </TableBody>

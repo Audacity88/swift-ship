@@ -1,5 +1,6 @@
 'use client'
 
+import { formatTicketStatus } from '@/lib/ticket-labels'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -135,7 +136,7 @@ export function QuoteDetailView({
           <div className="flex flex-wrap items-start justify-between gap-2">
             <h3 className="font-medium">Quote Request #{quote.id.slice(0, 8)}</h3>
             <Badge className={getStatusBadgeColor(quote.status)}>
-              {quote.status}
+              {formatTicketStatus(quote.status)}
             </Badge>
           </div>
           
