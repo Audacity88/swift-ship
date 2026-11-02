@@ -2,7 +2,7 @@
 
 The [Round 4 section](#round-4) is the current result. Earlier sections are historical; Cyclops disproved some of their browser-completion claims.
 
-Validated on 2026-10-30 on the local Mac in `/Users/dan/codex-lanes/coding/cf1/work`. Branch remained `cyclops-fixes`, based on `8f079d994f65750c07c5d888f699b294f0ef4444`. No remote, branch, deploy, PR, CI, Jest configuration or protected test edits were made. Dependencies came from `pnpm install --frozen-lockfile`; the lockfile is unchanged.
+Validated on 2026-10-30 on the local Mac in `<repo-root>`. Branch remained `cyclops-fixes`, based on `8f079d994f65750c07c5d888f699b294f0ef4444`. No remote, branch, deploy, PR, CI, Jest configuration or protected test edits were made. Dependencies came from `pnpm install --frozen-lockfile`; the lockfile is unchanged.
 
 All 26 issues have implemented fixes. Issues 14 and 26 were verified afterwards in a headless Chromium pass (see "Follow-up browser verification"). These are implementation and verification statuses, not a claim that every experimental app feature works.
 
@@ -203,7 +203,7 @@ Full captured output:
 
 ```text
 
-> zendesk-clone@0.1.0 build /Users/dan/codex-lanes/coding/cf1/work
+> zendesk-clone@0.1.0 build <repo-root>
 > next build
 
    ▲ Next.js 15.1.6
@@ -503,7 +503,7 @@ d6d8131 migrations: repair fresh setup and enforce row security
 The next requested UI commit could not be staged. Two attempts, including the minimal `git add -- src/app/globals.css`, returned exit 128:
 
 ```text
-fatal: Unable to create '/Users/dan/codex-lanes/coding/cf1/work/.git/index.lock': Operation not permitted
+fatal: Unable to create '<repo-root>/.git/index.lock': Operation not permitted
 ```
 
 The remaining UI and documentation changes, avatar and this report are left in the working tree. Do not treat HEAD alone as containing the complete repair. No alternate index, branch, remote or permission workaround was used. The intended remaining commits are the UI fixes followed by setup/docs including REPORT.md.
@@ -538,7 +538,7 @@ Run after the lane, outside the sandbox, against `pnpm build && pnpm start` with
 
 ## Round 3
 
-Work completed on 2026-10-30 in `/Users/dan/codex-lanes/coding/cf1/work`, branch `cyclops-fixes`, HEAD `4b62aa6990b408b7013c38bdb95ef4f4038709c0`. All Round 2 findings have implementation changes. The clean reset, production build, API checks, two SQL RLS runs, realtime delivery and storage checks pass. Browser interaction remains unverified because the sandbox prevents Chromium from starting. Do not call this a Cyclops Round 3 acceptance pass until the browser script runs outside the sandbox.
+Work completed on 2026-10-30 in `<repo-root>`, branch `cyclops-fixes`, HEAD `4b62aa6990b408b7013c38bdb95ef4f4038709c0`. All Round 2 findings have implementation changes. The clean reset, production build, API checks, two SQL RLS runs, realtime delivery and storage checks pass. Browser interaction remains unverified because the sandbox prevents Chromium from starting. Do not call this a Cyclops Round 3 acceptance pass until the browser script runs outside the sandbox.
 
 ### Round 2 item status
 
@@ -570,13 +570,13 @@ Work completed on 2026-10-30 in `/Users/dan/codex-lanes/coding/cf1/work`, branch
 
 ### Finish-line commands and output
 
-Execution host for every check: this Mac. Working directory: `/Users/dan/codex-lanes/coding/cf1/work`. Stack commands and Node verify helpers use `DOCKER_HOST=unix:///Users/dan/.colima/default/docker.sock`. Docker reports 29.5.2, Supabase CLI 2.6.8, Node 23.5.0, Next 15.1.6. Only the local zendesk-clone stack was started; no real OpenAI/Radar request, hosted database, demo, cloud account, remote, PR, CI file or Jest test/config was used or changed.
+Execution host for every check: this Mac. Working directory: `<repo-root>`. Stack commands and Node verify helpers use `DOCKER_HOST=unix://$HOME/.colima/default/docker.sock`. Docker reports 29.5.2, Supabase CLI 2.6.8, Node 23.5.0, Next 15.1.6. Only the local zendesk-clone stack was started; no real OpenAI/Radar request, hosted database, demo, cloud account, remote, PR, CI file or Jest test/config was used or changed.
 
 #### (a) Clean reset: PASS
 
 ```sh
-DOCKER_HOST=unix:///Users/dan/.colima/default/docker.sock supabase start
-DOCKER_HOST=unix:///Users/dan/.colima/default/docker.sock supabase db reset > /tmp/swift-ship-round3-reset.log 2>&1
+DOCKER_HOST=unix://$HOME/.colima/default/docker.sock supabase start
+DOCKER_HOST=unix://$HOME/.colima/default/docker.sock supabase db reset > /tmp/swift-ship-round3-reset.log 2>&1
 ```
 
 Start and both reset runs returned exit 0. Start's credential output was captured in memory and suppressed. Final reset output:
@@ -656,10 +656,10 @@ The existing configuration still skips repository type/lint gates. `pnpm exec ts
 The app was started for HTTP checks with `npm exec --yes --package=pnpm@10.34.0 -- pnpm start` on port 3000, with the same empty optional keys. Commands below all returned exit 0:
 
 ```sh
-DOCKER_HOST=unix:///Users/dan/.colima/default/docker.sock node scripts/verify-schema.cjs
-DOCKER_HOST=unix:///Users/dan/.colima/default/docker.sock node scripts/verify-auth.cjs --app-url http://localhost:3000
-DOCKER_HOST=unix:///Users/dan/.colima/default/docker.sock node scripts/verify-ticket-flows.cjs --app-url http://localhost:3000
-DOCKER_HOST=unix:///Users/dan/.colima/default/docker.sock node scripts/verify-realtime-storage.cjs
+DOCKER_HOST=unix://$HOME/.colima/default/docker.sock node scripts/verify-schema.cjs
+DOCKER_HOST=unix://$HOME/.colima/default/docker.sock node scripts/verify-auth.cjs --app-url http://localhost:3000
+DOCKER_HOST=unix://$HOME/.colima/default/docker.sock node scripts/verify-ticket-flows.cjs --app-url http://localhost:3000
+DOCKER_HOST=unix://$HOME/.colima/default/docker.sock node scripts/verify-realtime-storage.cjs
 ```
 
 Exact helper output follows, excluding the repeated Node punycode warning:
@@ -742,8 +742,8 @@ PASS temporary realtime/storage fixtures removed
 The SQL command was run twice sequentially on the same database after the final reset. Both exited 0 and ended in ROLLBACK:
 
 ```sh
-DOCKER_HOST=unix:///Users/dan/.colima/default/docker.sock docker exec -i supabase_db_zendesk-clone psql -U postgres -d postgres -v ON_ERROR_STOP=1 < scripts/verify-rls.sql
-DOCKER_HOST=unix:///Users/dan/.colima/default/docker.sock docker exec -i supabase_db_zendesk-clone psql -U postgres -d postgres -v ON_ERROR_STOP=1 < scripts/verify-rls.sql
+DOCKER_HOST=unix://$HOME/.colima/default/docker.sock docker exec -i supabase_db_zendesk-clone psql -U postgres -d postgres -v ON_ERROR_STOP=1 < scripts/verify-rls.sql
+DOCKER_HOST=unix://$HOME/.colima/default/docker.sock docker exec -i supabase_db_zendesk-clone psql -U postgres -d postgres -v ON_ERROR_STOP=1 < scripts/verify-rls.sql
 ```
 
 First run output:
@@ -885,11 +885,11 @@ Documentation/code conflicts resolved: earlier README advice made Corepack the p
 
 ### Commands and outputs
 
-Execution host: local Mac; working directory for all commands: `/Users/dan/codex-lanes/coding/cf1/work`. Docker was reachable with the supplied socket and returned `29.5.2`. The existing Colima/Supabase stack was used and left running. Credentials from `supabase status -o json` were captured only in process memory, never printed or persisted in an env file. OpenAI/Radar and tracing keys were forced empty for build/runtime validation.
+Execution host: local Mac; working directory for all commands: `<repo-root>`. Docker was reachable with the supplied socket and returned `29.5.2`. The existing Colima/Supabase stack was used and left running. Credentials from `supabase status -o json` were captured only in process memory, never printed or persisted in an env file. OpenAI/Radar and tracing keys were forced empty for build/runtime validation.
 
 ```sh
-DOCKER_HOST=unix:///Users/dan/DevelopmentScratch/vm/default/docker.sock docker info --format '{{.ServerVersion}}'
-DOCKER_HOST=unix:///Users/dan/DevelopmentScratch/vm/default/docker.sock supabase db reset
+DOCKER_HOST=unix://<local-docker-socket> docker info --format '{{.ServerVersion}}'
+DOCKER_HOST=unix://<local-docker-socket> supabase db reset
 npx --yes pnpm@10.34.0 typecheck
 npx --yes pnpm@10.34.0 lint
 ```
@@ -908,7 +908,7 @@ Finished supabase db reset on branch cyclops-fixes.
 Typecheck and lint both returned exit 0 with only their script banners and no diagnostics. Final production validation used a temporary local runner to read local configuration into child-process environment memory, with no `.env.local` creation:
 
 ```sh
-DOCKER_HOST=unix:///Users/dan/DevelopmentScratch/vm/default/docker.sock node /tmp/swift-ship-round4-run.cjs verify
+DOCKER_HOST=unix://<local-docker-socket> node /tmp/swift-ship-round4-run.cjs verify
 ```
 
 The runner executed `npx --yes pnpm@10.34.0 verify` (which runs `pnpm typecheck && pnpm lint && pnpm build`). Final exit 0; `/tmp/swift-ship-round4-verify.log` includes:
@@ -928,7 +928,7 @@ The runner executed `npx --yes pnpm@10.34.0 verify` (which runs `pnpm typecheck 
 No ignored type/lint gates were present. The runner then started its own production server on `127.0.0.1:3014` with the same in-memory local settings:
 
 ```sh
-DOCKER_HOST=unix:///Users/dan/DevelopmentScratch/vm/default/docker.sock node /tmp/swift-ship-round4-run.cjs smoke
+DOCKER_HOST=unix://<local-docker-socket> node /tmp/swift-ship-round4-run.cjs smoke
 ```
 
 It executed every current `scripts/verify-*.cjs` file and the SQL check twice, sequentially:
