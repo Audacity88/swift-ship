@@ -168,6 +168,13 @@ async function main() {
     if (!denied.error) paths.push(objectPath)
     check(!!denied.error && /mime|type.*not.*supported|not.*allowed/i.test(denied.error.message), 'Bucket accepted a forbidden MIME type')
   }
+  // Storage object names must match the allowlist too, not just the declared MIME.
+  for (const [name, mime] of [['named.html', 'text/plain'], ['named.svg', 'text/plain'], ['noextension', 'text/plain'], ['named.png.html', 'text/plain'], ['named.png', 'text/plain']]) {
+    const objectPath = `${ticket}/public/${randomUUID()}/${name}`
+    const denied = await customer.client.storage.from(bucket).upload(objectPath, Buffer.from('<h1>blocked</h1>'), { contentType: mime })
+    if (!denied.error) paths.push(objectPath)
+    check(!!denied.error, 'Bucket accepted an object name whose extension/MIME pair is not allowed')
+  }
   for (const name of ['bad.html', 'bad.htm', 'bad.svg', 'bad.js', 'bad.mjs', 'bad.exe', 'bad.sh', 'bad.bat', 'bad.msi', 'bad.xml', 'bad.xhtml', 'bad.png.html', 'bad.unknown']) {
     // Spoof a harmless MIME as well: metadata must check names independently.
     const result = await customer.client.from('messages').insert({ ticket_id: ticket, content: 'Rejected attachment probe', author_id: customer.id, author_type: 'customer', attachments: [{ name, type: 'image/png', path: staffPath, size: png.length }] })
@@ -181,7 +188,7 @@ async function main() {
     const result = await customer.client.from('messages').insert({ ticket_id: ticket, content: 'Rejected MIME/path probe', author_id: customer.id, author_type: 'customer', attachments: [attachment] })
     check(!!result.error && /attachment metadata/i.test(result.error.message), 'Metadata accepted a mismatched MIME/path')
   }
-  pass('bucket rejects forbidden MIME types; metadata rejects forbidden names, mismatches and disguised paths')
+  pass('bucket rejects forbidden MIME types and disallowed object names; metadata rejects forbidden names, mismatches and disguised paths')
   stage = 'storage isolation'
   const anon = createClient(status.API_URL, status.ANON_KEY, options)
   clients.push(anon)
