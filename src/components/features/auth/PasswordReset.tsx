@@ -24,7 +24,7 @@ export function PasswordReset() {
   const searchParams = useSearchParams();
 
   // Check if we're in reset mode (have a token)
-  const token = searchParams.get('token');
+  const token = searchParams?.get('token');
   const isResetMode = !!token;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -45,14 +45,14 @@ export function PasswordReset() {
         }
 
         // Update password
-        await authService.resetPassword({}, formData.password);
+        await authService.resetPassword(undefined, formData.password);
         setSuccess('Password has been reset successfully');
         setTimeout(() => {
           router.push('/auth/signin');
         }, 2000);
       } else {
         // Send reset email
-        await authService.resetPassword({}, formData.email);
+        await authService.resetPassword(undefined, formData.email);
         setSuccess('Password reset instructions have been sent to your email');
       }
     } catch (err) {

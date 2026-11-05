@@ -1,14 +1,14 @@
 'use client'
 
-import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { Input } from '@/components/ui/input'
-import { useToast } from '@/components/ui/use-toast'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { quoteService } from '@/lib/services/quote-service'
-import { ticketService } from '@/lib/services'
 import { QuoteDetailView } from '@/components/features/quotes/QuoteDetailView'
+import { Input } from '@/components/ui/input'
+import { Tabs,TabsContent,TabsList,TabsTrigger } from '@/components/ui/tabs'
+import { useToast } from '@/components/ui/use-toast'
+import { ticketService } from '@/lib/services'
+import { quoteService } from '@/lib/services/quote-service'
+import { useQuery } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
+import { useState } from 'react'
 
 export default function QuotesPage() {
   const router = useRouter()
@@ -21,7 +21,7 @@ export default function QuotesPage() {
   const { data: quotes, isLoading, refetch } = useQuery({
     queryKey: ['quotes', activeTab, searchTerm],
     queryFn: async () => {
-      return quoteService.fetchQuotes({}, {
+      return quoteService.fetchQuotes(undefined, {
         status: activeTab === 'pending' ? 'open' : 'in_progress',
         searchTerm
       })
@@ -31,7 +31,7 @@ export default function QuotesPage() {
   // Submit quote price
   const handleSubmitQuote = async (quoteId: string, price: number) => {
     try {
-      await quoteService.submitQuote({}, quoteId, price)
+      await quoteService.submitQuote(undefined, quoteId, price)
       
       toast({
         title: 'Quote submitted',
@@ -50,7 +50,7 @@ export default function QuotesPage() {
   }
 
   // Handle edit quote
-  const handleEditQuote = (quote: any) => {
+  const handleEditQuote = (quote: { id: string }) => {
     router.push(`/admin/quotes/${quote.id}/edit`)
   }
 
@@ -60,7 +60,7 @@ export default function QuotesPage() {
 
     try {
       setIsDeleting(true)
-      await ticketService.updateTicket({}, quoteId, {
+      await ticketService.updateTicket(undefined, quoteId, {
         status: 'closed',
         is_archived: true
       })

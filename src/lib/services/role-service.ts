@@ -1,5 +1,16 @@
 import { getServerSupabase, type ServerContext } from '@/lib/supabase-client'
-import type { Role, Permission } from '@/types/role'
+import type { Permission } from '@/types/role'
+import { AGENT_ROLES, RoleType } from '@/types/role'
+
+export interface Role {
+  id: string
+  name: string
+  description?: string
+  permissions?: Permission[]
+  is_system?: boolean
+  created_at?: string
+  updated_at?: string
+}
 
 export const roleService = {
   async listRoles(context: ServerContext): Promise<Role[]> {
@@ -160,32 +171,22 @@ export const roleService = {
     }
   },
 
-  async assignRole(context: ServerContext, userId: string, roleId: string): Promise<void> {
-    try {
-      const supabase = getServerSupabase(context)
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      
-      if (userError || !user) {
-        throw new Error('Unauthorized')
-      }
+  async assignRole(context: ServerContext, userId: string, role: RoleType): Promise<void> {
+    if (!AGENT_ROLES.includes(role)) throw new Error('Select a valid staff role')
+    const supabase = getServerSupabase(context)
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) throw new Error('Unauthorized')
+    const { data: actor, error: actorError } = await supabase.from('agents')
+      .select('role').eq('id', user.id).maybeSingle()
+    if (actorError || actor?.role !== RoleType.ADMIN) throw new Error('Admin access required')
 
-      const { error } = await supabase
-        .from('user_roles')
-        .upsert({
-          user_id: userId,
-          role_id: roleId,
-          assigned_by: user.id,
-          assigned_at: new Date().toISOString()
-        })
-
-      if (error) {
-        console.error('Failed to assign role:', error)
-        throw error
-      }
-    } catch (error) {
-      console.error('Error in assignRole:', error)
-      throw error
-    }
+    // Updating an existing row cannot turn a customer into a staff member.
+    // RLS independently restricts this write to admins.
+    const { data: agent, error } = await supabase.from('agents')
+      .update({ role, updated_at: new Date().toISOString() })
+      .eq('id', userId).select('id').maybeSingle()
+    if (error) throw error
+    if (!agent) throw new Error('Agent not found. Use the agent creation workflow for new staff.')
   },
 
   async getRolePermissions(context: ServerContext, roleId: string): Promise<Permission[]> {

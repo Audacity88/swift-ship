@@ -1,13 +1,12 @@
 'use client'
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { useState, createContext, useContext, useRef, type PropsWithChildren, useEffect } from 'react'
-import type { SupabaseClient } from '@supabase/ssr'
-import { Database } from '@/types/supabase'
-import { getServerSupabase } from '@/lib/supabase-client'
 import { ThemeProvider } from '@/lib/hooks/useTheme'
+import { getServerSupabase } from '@/lib/supabase-client'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import { QueryClient,QueryClientProvider } from '@tanstack/react-query'
+import { createContext,useContext,useEffect,useRef,useState,type PropsWithChildren } from 'react'
 
-const SupabaseContext = createContext<SupabaseClient<Database> | null>(null)
+const SupabaseContext = createContext<SupabaseClient | null>(null)
 
 export const useSupabase = () => {
   const context = useContext(SupabaseContext)
@@ -19,8 +18,8 @@ export const useSupabase = () => {
 
 function Providers({ children }: PropsWithChildren) {
   const [isClient, setIsClient] = useState(false)
-  const queryClientRef = useRef<QueryClient>()
-  const supabaseClientRef = useRef<SupabaseClient<Database> | null>(null)
+  const queryClientRef = useRef<QueryClient | null>(null)
+  const supabaseClientRef = useRef<SupabaseClient | null>(null)
   
   // Initialize clients only once on mount
   useEffect(() => {

@@ -1,21 +1,18 @@
 'use client'
 
-import { useState } from 'react'
-import { 
-  Bell,
-  Package,
-  CreditCard,
-  Calendar,
-  AlertCircle,
-  CheckCircle2,
-  Clock,
-  Filter,
-  MoreVertical,
-  Truck,
-  X
-} from 'lucide-react'
 import { COLORS } from '@/lib/constants'
-import { useNotificationStore, NotificationType } from '@/lib/store/notifications'
+import { NotificationType,useNotificationStore } from '@/lib/store/notifications'
+import {
+AlertCircle,
+Bell,
+CheckCircle2,
+Clock,
+CreditCard,
+Package,
+Truck,
+X
+} from 'lucide-react'
+import { useState } from 'react'
 
 const filterOptions = [
   { value: 'all', label: 'All Notifications', icon: Bell },
@@ -163,18 +160,6 @@ export default function NotificationsPage() {
                         )}
                         {notification.type === 'payment' && (
                           <CreditCard className={`w-5 h-5 ${
-                            notification.status === 'unread' 
-                              ? 'text-primary' 
-                              : 'text-gray-500'
-                            }`}
-                            style={notification.status === 'unread' 
-                              ? { color: COLORS.primary } 
-                              : {}
-                            }
-                          />
-                        )}
-                        {notification.type === 'pickup' && (
-                          <Calendar className={`w-5 h-5 ${
                             notification.status === 'unread' 
                               ? 'text-primary' 
                               : 'text-gray-500'

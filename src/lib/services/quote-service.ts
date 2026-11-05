@@ -1,8 +1,5 @@
 import type { QuoteRequest } from '@/types/quote'
 import { getServerSupabase, type ServerContext } from '@/lib/supabase-client'
-import { getSupabase } from '@/lib/supabase-client'
-import { SupabaseClient } from '@supabase/supabase-js'
-import { tagService } from './tag-service'
 
 export const quoteService = {
   async fetchQuotes(
@@ -42,7 +39,7 @@ export const quoteService = {
         query = query.eq('status', options.status)
       }
 
-      const { data, error } = await query
+      const { data, error } = await query.returns<QuoteRequest[]>()
 
       if (error) throw error
 
@@ -59,7 +56,7 @@ export const quoteService = {
         .filter(ticket => {
           const metadata = ticket.metadata || {}
           return metadata.destination && metadata.packageDetails
-        }) as QuoteRequest[]
+        })
     } catch (error) {
       console.error('Error in fetchQuotes:', error)
       throw error
@@ -72,7 +69,7 @@ export const quoteService = {
       title: string
       description: string
       customerId: string
-      metadata: any
+      metadata: QuoteRequest['metadata']
     }
   ): Promise<QuoteRequest> {
     const supabase = getServerSupabase(context)
@@ -80,7 +77,7 @@ export const quoteService = {
     try {
       // Determine priority based on delivery time and shipment type
       let priority = 'medium'
-      if (data.metadata?.packageDetails?.type === 'eco-freight') {
+      if (data.metadata?.selectedService === 'eco_freight') {
         priority = 'low'
       } else if (data.metadata?.destination?.pickupDate) {
         const pickupDate = new Date(data.metadata.destination.pickupDate)
@@ -120,18 +117,6 @@ export const quoteService = {
 
       if (ticketError) throw ticketError
       if (!ticket) throw new Error('Failed to create ticket')
-
-      // Create initial message for the quote
-      const { error: messageError } = await supabase
-        .from('messages')
-        .insert({
-          ticket_id: ticket.id,
-          content: `New quote request received for ${data.metadata.packageDetails.type} shipment from ${data.metadata.destination.from.address} to ${data.metadata.destination.to.address}.`,
-          author_type: 'agent',
-          author_id: '00000000-0000-0000-0000-000000000000'
-        })
-
-      if (messageError) throw messageError
 
       // Return the created quote request
       return {

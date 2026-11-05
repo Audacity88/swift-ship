@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import type { Team, TeamCreationData, TeamUpdateData } from '@/types/team';
+import type { TeamCreationData, TeamUpdateData, DaySchedule, WeeklySchedule, TeamAgent, TeamMember } from '@/types/team';
 import { teamService } from '@/lib/services/team-service';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,13 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2 } from 'lucide-react';
 import { RoleType } from '@/types/role';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+
 
 interface TeamFormProps {
   teamId?: string;
@@ -49,24 +43,26 @@ export const TeamForm = ({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [teamLead, setTeamLead] = useState('');
+  const [agents, setAgents] = useState<TeamAgent[]>([]);
+  const [members, setMembers] = useState<TeamMember[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [initialLoading, setInitialLoading] = useState(!!teamId);
+  const [initialLoading, setInitialLoading] = useState(true);
 
   // Load team data if editing
   useEffect(() => {
     const loadTeam = async () => {
-      if (!teamId) {
-        setInitialLoading(false);
-        return;
-      }
-
       try {
-        const team = await teamService.getTeamById(teamId);
+        const [availableAgents, team] = await Promise.all([
+          teamService.getAvailableAgents(undefined),
+          teamId ? teamService.getTeamById(undefined, teamId) : Promise.resolve(null),
+        ]);
+        setAgents(availableAgents);
         if (team) {
           setName(team.name);
           setDescription(team.description || '');
-          const lead = team.members.find(m => m.role === UserRole.MANAGER);
+          setMembers(team.members);
+          const lead = team.members.find(m => m.role === RoleType.SUPERVISOR);
           if (lead) {
             setTeamLead(lead.userId);
           }
@@ -107,7 +103,21 @@ export const TeamForm = ({
           name,
           description: description || undefined,
         };
-        success = await teamService.updateTeam(updateData);
+        success = await teamService.updateTeam(undefined, updateData);
+        if (success) {
+          const leadMember = members.find(member => member.userId === teamLead);
+          if (teamLead && !leadMember) {
+            await teamService.addTeamMember(undefined, teamId, {
+              userId: teamLead, role: RoleType.SUPERVISOR,
+              schedule: defaultWeeklySchedule, skills: [],
+            });
+          } else if (leadMember && leadMember.role !== RoleType.SUPERVISOR) {
+            await teamService.updateTeamMember({ teamId, userId: teamLead, role: RoleType.SUPERVISOR });
+          }
+          for (const member of members.filter(member => member.role === RoleType.SUPERVISOR && member.userId !== teamLead)) {
+            await teamService.updateTeamMember({ teamId, userId: member.userId, role: RoleType.AGENT });
+          }
+        }
       } else {
         // Create new team
         const creationData: TeamCreationData = {
@@ -115,20 +125,14 @@ export const TeamForm = ({
           description: description || undefined,
           schedule: defaultWeeklySchedule,
         };
-        const team = await teamService.createTeam(creationData);
+        const team = await teamService.createTeam(undefined, {
+          ...creationData,
+          members: teamLead ? [{
+            userId: teamLead, role: RoleType.SUPERVISOR,
+            schedule: defaultWeeklySchedule, skills: [],
+          }] : [],
+        });
         success = !!team;
-
-        // If team was created and team lead is specified, add them as a member
-        if (success && team && teamLead) {
-          await teamService.addTeamMember({
-            teamId: team.id,
-            userId: teamLead,
-            role: UserRole.MANAGER,
-            schedule: defaultWeeklySchedule,
-            skills: [],
-            joinedAt: new Date(),
-          });
-        }
       }
 
       if (success) {
@@ -177,13 +181,17 @@ export const TeamForm = ({
 
       <div className="space-y-2">
         <Label htmlFor="teamLead">Team Lead</Label>
-        <Input
+        <select
           id="teamLead"
           value={teamLead}
           onChange={(e) => setTeamLead(e.target.value)}
-          placeholder="Enter team lead's user ID"
           disabled={isLoading}
-        />
+          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+        >
+          <option value="">No team lead</option>
+          {agents.map(agent => <option key={agent.id} value={agent.id}>{agent.name} ({agent.email})</option>)}
+        </select>
+        {!agents.length && <p className="text-sm text-muted-foreground">No agents available. Ask an administrator to add an agent first.</p>}
       </div>
 
       {error && (
@@ -216,4 +224,4 @@ export const TeamForm = ({
       </div>
     </div>
   );
-}; 
+};

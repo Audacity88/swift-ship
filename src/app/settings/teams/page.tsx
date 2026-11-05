@@ -7,6 +7,7 @@ import { TeamForm } from '@/components/features/teams/TeamForm';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -14,6 +15,7 @@ import {
 export default function TeamsPage() {
   const router = useRouter();
   const [isCreatingTeam, setIsCreatingTeam] = useState(false);
+  const [listVersion, setListVersion] = useState(0);
 
   const handleCreateTeam = () => {
     setIsCreatingTeam(true);
@@ -22,6 +24,7 @@ export default function TeamsPage() {
   const handleTeamCreated = (success: boolean) => {
     if (success) {
       setIsCreatingTeam(false);
+      setListVersion(value => value + 1);
       router.refresh();
     }
   };
@@ -49,6 +52,7 @@ export default function TeamsPage() {
       </div>
 
       <TeamList
+        key={listVersion}
         onCreateTeam={handleCreateTeam}
         onEditTeam={handleEditTeam}
         onViewMembers={handleViewMembers}
@@ -60,6 +64,7 @@ export default function TeamsPage() {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Create New Team</DialogTitle>
+            <DialogDescription>Set the team name, description and optional team lead.</DialogDescription>
           </DialogHeader>
           <TeamForm
             onSubmit={handleTeamCreated}
@@ -69,4 +74,4 @@ export default function TeamsPage() {
       </Dialog>
     </div>
   );
-} 
+}

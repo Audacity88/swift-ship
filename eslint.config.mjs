@@ -10,6 +10,8 @@ const compat = new FlatCompat({
 });
 
 const eslintConfig = [
+  // Jest fixtures have a separate runner/config and are maintained independently.
+  { ignores: ['src/__tests__/**', 'src/**/__mocks__/**', 'src/**/*.test.{ts,tsx}', 'src/**/*.spec.{ts,tsx}'] },
   ...compat.extends("next/core-web-vitals", "next/typescript"),
 ];
 

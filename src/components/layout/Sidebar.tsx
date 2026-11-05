@@ -4,15 +4,15 @@ import * as React from 'react'
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { 
-  Home, Inbox, Quote, BarChart, Truck, Package, Settings, Ticket, 
-  ListChecks, Search, Users, MessageSquare, FileText, Bell, 
-  ShoppingCart, UserCircle, UserCog, UsersRound, LifeBuoy, Ship,
+import {
+  Home, Inbox, Quote, Truck, Settings, Ticket,
+  MessageSquare, FileText, Bell,
+  ShoppingCart, UserCog, UsersRound, LifeBuoy, Ship,
   Moon, Sun, BarChart2
 } from 'lucide-react'
-import { ROUTES, COLORS } from '@/lib/constants'
+import { ROUTES } from '@/lib/constants'
 import { useTicketStore } from '@/lib/store/tickets'
-import { useAuth } from '@/lib/hooks/useAuth'
+import { useAuth, type User } from '@/lib/hooks/useAuth'
 import { RoleType, USER_ROLE_LABELS } from '@/types/role'
 import { RainbowButton } from '@/components/ui/rainbow-button'
 import { useTheme } from '@/lib/hooks/useTheme'
@@ -20,7 +20,7 @@ import { cn } from '@/lib/utils'
 
 interface NavItem {
   icon: React.ElementType
-  label: string | ((user: any) => string)
+  label: string | ((user: User | null) => string)
   href: string
   roles?: RoleType[]
   badge?: () => number | undefined
@@ -36,7 +36,7 @@ const navItems: NavItem[] = [
     icon: Ticket,
     label: 'Tickets',
     href: '/tickets/active',
-    roles: [RoleType.AGENT, RoleType.ADMIN],
+    roles: [RoleType.AGENT, RoleType.ADMIN, RoleType.SUPERVISOR],
   },
   {
     icon: Quote,
@@ -83,34 +83,37 @@ const navItems: NavItem[] = [
   {
     icon: UsersRound,
     label: 'Teams',
-    href: '/teams',
+    href: '/settings/teams',
     roles: [RoleType.ADMIN],
   }
 ]
 
 const quickAccessItems: NavItem[] = [
-  { 
-    icon: Inbox, 
-    label: 'Inbox', 
+  {
+    icon: Inbox,
+    label: 'Inbox',
     href: ROUTES.inbox,
+    roles: [RoleType.AGENT, RoleType.ADMIN, RoleType.SUPERVISOR],
     badge: () => useTicketStore.getState().tickets.filter(t => !t.assigneeId).length
   },
-  { 
-    icon: Bell, 
-    label: 'Notifications', 
+  {
+    icon: Bell,
+    label: 'Notifications',
     href: ROUTES.notifications,
     badge: () => 0 // TODO: Implement notifications count
   },
-  { 
-    icon: ShoppingCart, 
-    label: 'Upgrade', 
+  {
+    icon: ShoppingCart,
+    label: 'Upgrade',
     href: ROUTES.upgrade,
     roles: [RoleType.CUSTOMER, RoleType.SUPERVISOR]
   },
-  { 
-    icon: Settings, 
-    label: 'Settings', 
-    href: ROUTES.settings.root
+  { icon: UserCog, label: 'My Profile', href: '/portal/profile', roles: [RoleType.CUSTOMER] },
+  {
+    icon: Settings,
+    label: 'Settings',
+    href: ROUTES.settings.root,
+    roles: [RoleType.AGENT, RoleType.ADMIN, RoleType.SUPERVISOR]
   },
 ]
 
@@ -134,12 +137,12 @@ export function Sidebar() {
 
   return (
     <div className={cn(
-      "h-full flex flex-col border-r",
+      "h-full min-h-0 flex flex-col border-r pt-10 lg:pt-0",
       "bg-white dark:bg-gray-900",
       "border-gray-200 dark:border-gray-800"
     )}>
       {/* Navigation */}
-      <nav className="flex-1 px-4 space-y-1 py-4">
+      <nav className="flex-1 overflow-y-auto px-4 space-y-1 py-4">
         {navItems.map((item) => {
           if (!isAllowed(item)) return null
           const Icon = item.icon
@@ -163,8 +166,8 @@ export function Sidebar() {
               {badge !== undefined && (
                 <span className={cn(
                   "ml-auto inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium",
-                  active 
-                    ? "bg-white dark:bg-gray-900 text-primary dark:text-white" 
+                  active
+                    ? "bg-white dark:bg-gray-900 text-primary dark:text-white"
                     : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400"
                 )}>
                   {badge}
@@ -202,8 +205,8 @@ export function Sidebar() {
                 {badge !== undefined && (
                   <span className={cn(
                     "ml-auto inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium",
-                    active 
-                      ? "bg-white dark:bg-gray-900 text-primary dark:text-white" 
+                    active
+                      ? "bg-white dark:bg-gray-900 text-primary dark:text-white"
                       : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400"
                   )}>
                     {badge}
@@ -253,4 +256,4 @@ export function Sidebar() {
       )}
     </div>
   )
-} 
+}

@@ -3,7 +3,7 @@ import { type AuthOptions, type DefaultSession, type User as NextAuthUser } from
 import { type JWT } from 'next-auth/jwt';
 import GithubProvider from 'next-auth/providers/github';
 import GoogleProvider from 'next-auth/providers/google';
-import { UserRole, RoleType } from '@/types/role';
+import { UserRole } from '@/types/role';
 
 declare module 'next-auth' {
   interface Session extends DefaultSession {
@@ -13,17 +13,6 @@ declare module 'next-auth' {
       type: 'agent' | 'customer' | null;
     } & DefaultSession['user'];
   }
-}
-
-interface ExtendedSession extends DefaultSession {
-  user: {
-    id: string;
-    role: UserRole | null;
-    type: 'agent' | 'customer' | null;
-    name?: string | null;
-    email?: string | null;
-    image?: string | null;
-  };
 }
 
 const supabase = getServerSupabase();
@@ -46,7 +35,7 @@ export const authOptions: AuthOptions = {
       }
       return token;
     },
-    async signIn({ user, account, profile }) {
+    async signIn({ user }) {
       try {
         const { data: agent, error } = await supabase
           .from('agents')

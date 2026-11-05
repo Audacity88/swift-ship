@@ -4,7 +4,7 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 
 export async function auth(context?: GetServerSidePropsContext | { req: NextApiRequest; res: NextApiResponse }) {
   try {
-    const supabase = getServerSupabase()
+    const supabase = getServerSupabase(context)
     const { data: { user }, error } = await supabase.auth.getUser()
 
     if (error || !user) {
@@ -47,7 +47,7 @@ export async function getUserRole() {
       .from('agents')
       .select('role')
       .eq('id', user.id)
-      .single()
+      .maybeSingle()
 
     if (agent) {
       return agent.role
@@ -73,7 +73,7 @@ export async function getUserPermissions() {
       .from('agents')
       .select('role')
       .eq('id', user.id)
-      .single()
+      .maybeSingle()
 
     if (!agent) {
       return ['customer']

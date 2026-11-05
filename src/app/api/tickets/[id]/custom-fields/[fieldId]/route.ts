@@ -1,11 +1,8 @@
 import { NextResponse } from 'next/server'
 
-export async function PUT(
-  request: Request,
-  { params }: { params: { id: string; fieldId: string } }
-) {
+export async function PUT(request: Request) {
   try {
-    const { value } = await request.json()
+    await request.json()
 
     // In a real implementation, we would:
     // 1. Validate the value against the field type

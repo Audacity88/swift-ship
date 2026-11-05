@@ -1,6 +1,7 @@
 import type { CustomFieldValue } from './custom-field'
 import { User } from './user'
 import { z } from 'zod'
+import type { QuoteRequest } from './quote'
 
 export enum TicketStatus {
   OPEN = 'open',
@@ -95,7 +96,7 @@ export interface Ticket {
   priority: TicketPriority
   type: TicketType
   isArchived: boolean
-  metadata: {
+  metadata: Partial<QuoteRequest['metadata']> & {
     createdAt: string
     updatedAt: string
     lastSnapshotAt?: string
@@ -103,7 +104,7 @@ export interface Ticket {
     archivedBy?: Agent
     archiveReason?: string
     tags: Tag[]
-    customFields?: Record<string, any>
+    customFields?: Record<string, CustomFieldValue>
     company?: string
   }
   customerId: string

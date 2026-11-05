@@ -19,7 +19,7 @@ export interface CustomField {
     minLength?: number
     maxLength?: number
   }
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 }
 
 export type CustomFieldValue = string | number | boolean | Date | null
@@ -50,7 +50,7 @@ export type CustomFieldValidation = {
 }
 
 // Type guard to check if a value is valid for a given field type
-export const isValidFieldValue = (value: any, type: CustomFieldType): boolean => {
+export const isValidFieldValue = (value: unknown, type: CustomFieldType): boolean => {
   switch (type) {
     case 'text':
     case 'url':

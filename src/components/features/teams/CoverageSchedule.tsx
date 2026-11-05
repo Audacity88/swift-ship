@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import type { WeeklySchedule, DaySchedule, TeamSchedule } from '@/types/team';
+import type { DaySchedule, TeamSchedule } from '@/types/team';
 import { teamService } from '@/lib/services/team-service';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -56,7 +56,7 @@ export const CoverageSchedule = ({ teamId, onUpdate }: CoverageScheduleProps) =>
       try {
         const teamSchedule = await teamService.getTeamSchedule(teamId);
         if (teamSchedule) {
-          setSchedule(teamSchedule);
+          setSchedule({ ...defaultSchedule, ...teamSchedule });
         }
       } catch (err) {
         const error = err as Error;
@@ -68,7 +68,8 @@ export const CoverageSchedule = ({ teamId, onUpdate }: CoverageScheduleProps) =>
     };
 
     // Get list of available timezones
-    const zones = Intl.supportedValuesOf('timeZone');
+    const zones = typeof Intl.supportedValuesOf === 'function'
+      ? Intl.supportedValuesOf('timeZone') : [defaultSchedule.timezone || 'UTC'];
     setAvailableTimezones(zones);
 
     loadSchedule();

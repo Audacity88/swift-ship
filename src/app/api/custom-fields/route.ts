@@ -2,42 +2,6 @@ import { NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase-client'
 import type { CustomFieldDefinition } from '@/types/custom-field'
 
-const mockCustomFields: CustomFieldDefinition[] = [
-  {
-    id: 'browser_version',
-    name: 'Browser Version',
-    type: 'text',
-    description: 'The browser version where the issue occurred',
-    required: true,
-    is_system: false,
-    is_archived: false,
-    created_at: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-    updated_at: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-    created_by_id: '1',
-    displayOrder: 1,
-    isActive: true,
-  },
-  {
-    id: 'impact_level',
-    name: 'Impact Level',
-    type: 'select',
-    description: 'The impact level of the issue',
-    required: true,
-    options: [
-      { value: 'low', label: 'Low' },
-      { value: 'medium', label: 'Medium' },
-      { value: 'high', label: 'High' }
-    ],
-    is_system: false,
-    is_archived: false,
-    created_at: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-    updated_at: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-    created_by_id: '1',
-    displayOrder: 2,
-    isActive: true,
-  }
-]
-
 export async function GET() {
   try {
     const supabase = getServerSupabase()

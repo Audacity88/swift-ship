@@ -14,16 +14,17 @@ interface User {
 }
 
 export default function WelcomePage() {
-  const { user: authUser } = useAuth();
+  const { user: authUser, loading: authLoading, error: authError } = useAuth();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
   useEffect(() => {
+    if (authLoading) return;
     const fetchUser = async () => {
       try {
         if (!authUser) {
-          router.push('/auth/signin');
+          router.replace(authError ? '/auth/signin?error=profile_missing' : '/auth/signin');
           return;
         }
 
@@ -37,14 +38,14 @@ export default function WelcomePage() {
         });
       } catch (error) {
         console.error('Error fetching user:', error);
-        router.push('/auth/error');
+        router.replace('/auth/signin?error=profile_missing');
       } finally {
         setLoading(false);
       }
     };
 
     fetchUser();
-  }, [router, authUser]);
+  }, [router, authUser, authLoading, authError]);
 
   if (loading) {
     return (
@@ -66,11 +67,11 @@ export default function WelcomePage() {
         </h1>
 
         <p className="mb-4 text-muted-foreground">
-          Thank you for creating an account. We're excited to help you manage your support requests.
+          Thank you for creating an account. We&apos;re excited to help you manage your support requests.
         </p>
 
         <div className="space-y-4">
-          <h2 className="text-lg font-medium">What's Next?</h2>
+          <h2 className="text-lg font-medium">What&apos;s Next?</h2>
           <ul className="list-inside list-disc space-y-2 text-muted-foreground">
             <li>Browse our knowledge base for quick answers</li>
             <li>Create your first support ticket</li>
@@ -79,7 +80,7 @@ export default function WelcomePage() {
         </div>
 
         <div className="mt-8 space-x-4">
-          <Button onClick={() => router.push('/portal/dashboard')}>
+          <Button onClick={() => router.push('/support')}>
             Go to Dashboard
           </Button>
           <Button

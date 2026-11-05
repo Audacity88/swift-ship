@@ -1,7 +1,6 @@
 'use client';
 
-import { useState } from 'react';
-import { CustomerProfile } from '@/components/features/portal/CustomerProfile';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -50,6 +49,9 @@ type PreferencesFormValues = z.infer<typeof preferencesFormSchema>;
 
 export default function ProfilePage() {
   const [isLoading, setIsLoading] = useState(false);
+  const [isFetching, setIsFetching] = useState(true);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const profileForm = useForm<ProfileFormValues>({
     resolver: zodResolver(profileFormSchema),
@@ -73,30 +75,48 @@ export default function ProfilePage() {
     },
   });
 
-  const onSubmitProfile = async (values: ProfileFormValues) => {
+  useEffect(() => {
+    let mounted = true;
+    const loadProfile = async () => {
+      try {
+        const response = await fetch('/api/portal/profile');
+        const profile = await response.json();
+        if (!response.ok) throw new Error(profile.error || 'Unable to load your profile.');
+        if (!mounted) return;
+        profileForm.reset({ name: profile.name, email: profile.email, company: profile.company || '', jobTitle: profile.job_title || '' });
+        if (profile.preferences) preferencesForm.reset({ ...preferencesForm.getValues(), ...profile.preferences });
+      } catch (error) {
+        if (mounted) { setLoadFailed(true); setFeedback(error instanceof Error ? error.message : 'Unable to load your profile.'); }
+      } finally { if (mounted) setIsFetching(false); }
+    };
+    void loadProfile();
+    return () => { mounted = false; };
+  }, [profileForm, preferencesForm]);
+
+  const saveProfile = async (updates: object) => {
     setIsLoading(true);
+    setFeedback(null);
     try {
-      // In a real app, this would call the API to update the profile
-      console.log('Update profile:', values);
-    } finally {
-      setIsLoading(false);
-    }
+      const response = await fetch('/api/portal/profile', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updates),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Unable to save your profile.');
+      setFeedback('Your changes have been saved.');
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : 'Unable to save your profile.');
+    } finally { setIsLoading(false); }
   };
 
-  const onSubmitPreferences = async (values: PreferencesFormValues) => {
-    setIsLoading(true);
-    try {
-      // In a real app, this would call the API to update preferences
-      console.log('Update preferences:', values);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const onSubmitProfile = async (values: ProfileFormValues) => saveProfile({ name: values.name, company: values.company, jobTitle: values.jobTitle });
+  const onSubmitPreferences = async (values: PreferencesFormValues) => saveProfile({ preferences: values });
 
   return (
-    <div className="container mx-auto py-8 space-y-8">
+    <div className="container mx-auto px-4 py-8 space-y-8">
+      {isFetching && <p role="status">Loading your profile...</p>}
+      {feedback && <p role="status" className="rounded border p-3">{feedback}</p>}
       <div>
-        <Link href="/portal" className="inline-flex items-center text-muted-foreground hover:text-foreground">
+        <Link href="/home" className="inline-flex items-center text-muted-foreground hover:text-foreground">
           <ChevronLeft className="mr-2 h-4 w-4" />
           Back to Home
         </Link>
@@ -149,7 +169,7 @@ export default function ProfilePage() {
                         <FormItem>
                           <FormLabel>Email</FormLabel>
                           <FormControl>
-                            <Input {...field} type="email" />
+                            <Input {...field} type="email" readOnly aria-readonly="true" />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -182,7 +202,7 @@ export default function ProfilePage() {
                       )}
                     />
                   </div>
-                  <Button type="submit" disabled={isLoading}>
+                  <Button type="submit" disabled={isLoading || isFetching || loadFailed}>
                     {isLoading ? 'Saving...' : 'Save Changes'}
                   </Button>
                 </form>
@@ -284,7 +304,7 @@ export default function ProfilePage() {
                       )}
                     />
                   </div>
-                  <Button type="submit" disabled={isLoading}>
+                  <Button type="submit" disabled={isLoading || isFetching || loadFailed}>
                     {isLoading ? 'Saving...' : 'Save Preferences'}
                   </Button>
                 </form>

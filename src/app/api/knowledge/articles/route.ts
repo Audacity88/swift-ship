@@ -1,17 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ArticleStatus } from '@/types/knowledge';
-import { Permission } from '@/types/role';
-import { checkUserPermissions } from '@/lib/auth/check-permissions';
 import { getServerSupabase } from '@/lib/supabase-client';
-import { z } from 'zod';
-
-const createArticleSchema = z.object({
-  title: z.string().min(1),
-  content: z.string().min(1),
-  categoryId: z.string().uuid(),
-  status: z.nativeEnum(ArticleStatus).optional(),
-  tags: z.array(z.string().uuid()).optional()
-});
 
 // GET /api/knowledge/articles - List articles with filtering
 export async function GET(request: NextRequest) {

@@ -111,7 +111,7 @@ export const archiveService = {
         throw error
       }
 
-      return (data || []).map((s: any) => ({
+      return (data || []).map((s) => ({
         id: s.id,
         ticketId: s.ticket_id,
         snapshotAt: s.snapshot_at,
@@ -173,7 +173,7 @@ export const archiveService = {
     }
   },
 
-  async createSnapshot(context: ServerContext, ticketData: any, agent: Agent, reason?: string) {
+  async createSnapshot(context: ServerContext, ticketData: { id: string } & object, agent: Agent, reason?: string) {
     try {
       const supabase = getServerSupabase(context)
       const { data: { user }, error: userError } = await supabase.auth.getUser()

@@ -1,9 +1,8 @@
 'use client'
 
-import { useState } from 'react'
-import { useParams } from 'next/navigation'
-import { FileText, AlertCircle, HelpCircle, Wrench, Check } from 'lucide-react'
 import type { TicketType } from '@/types/ticket'
+import { AlertCircle,Check,FileText,HelpCircle,Wrench } from 'lucide-react'
+import { useState } from 'react'
 
 interface TypeOption {
   type: TicketType
@@ -72,8 +71,6 @@ const impactLevels = [
 ]
 
 export default function TicketTypePage() {
-  const params = useParams()
-  const ticketId = params?.id as string
   const [selectedType, setSelectedType] = useState<TicketType>('problem')
   const [selectedImpact, setSelectedImpact] = useState<string>('3')
   const [isUpdating, setIsUpdating] = useState(false)
@@ -241,4 +238,4 @@ export default function TicketTypePage() {
       </div>
     </div>
   )
-} 
+}

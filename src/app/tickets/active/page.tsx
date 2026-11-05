@@ -1,20 +1,16 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { Filter, SortAsc, SortDesc } from 'lucide-react'
 import TicketList from '@/components/features/tickets/TicketList'
-import { TicketStatus, TicketPriority } from '@/types/enums'
-import { RoleType } from '@/types/role'
-import { useAuth } from '@/lib/hooks/useAuth'
+import { TicketPriority,TicketStatus } from '@/types/enums'
 import type { TicketListItem } from '@/types/ticket'
 import { useQuery } from '@tanstack/react-query'
-import { getServerSupabase } from '@/lib/supabase-client'
+import { Filter,SortAsc,SortDesc } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { useState } from 'react'
 
 export default function ActiveTicketsPage() {
   const router = useRouter()
-  const { user } = useAuth()
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list')
+  const [viewMode] = useState<'list' | 'grid'>('list')
   const [selectedStatus, setSelectedStatus] = useState<TicketStatus[]>([])
   const [selectedPriority, setSelectedPriority] = useState<TicketPriority[]>([])
   const [showUnassigned, setShowUnassigned] = useState(false)

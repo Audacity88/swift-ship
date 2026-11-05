@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -135,6 +136,7 @@ export default function AgentsPage() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Add New Agent</DialogTitle>
+              <DialogDescription>Add a staff member with a name, email address and role.</DialogDescription>
             </DialogHeader>
             <form onSubmit={handleAddAgent} className="space-y-4">
               <div className="space-y-2">

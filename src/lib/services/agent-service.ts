@@ -1,5 +1,4 @@
 import { createClient } from '@/lib/supabase/server'
-import { cookies } from 'next/headers'
 
 export interface Agent {
   id: string
@@ -13,8 +12,7 @@ export interface Agent {
 
 export const agentService = {
   async fetchAgents() {
-    const cookieStore = cookies()
-    const supabase = createClient(cookieStore)
+    const supabase = await createClient()
 
     const { data: agents, error } = await supabase
       .from('agents')
@@ -30,8 +28,7 @@ export const agentService = {
   },
 
   async fetchAgent(id: string) {
-    const cookieStore = cookies()
-    const supabase = createClient(cookieStore)
+    const supabase = await createClient()
 
     const { data: agent, error } = await supabase
       .from('agents')
@@ -48,8 +45,7 @@ export const agentService = {
   },
 
   async updateAgent(id: string, updates: Partial<Agent>) {
-    const cookieStore = cookies()
-    const supabase = createClient(cookieStore)
+    const supabase = await createClient()
 
     const { data: agent, error } = await supabase
       .from('agents')

@@ -119,7 +119,7 @@ export const TagSelect = ({
             aria-expanded={open}
             className="w-full justify-between"
           >
-            Select tags...
+            {isLoading ? 'Loading tags...' : 'Select tags...'}
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-[300px] p-0">

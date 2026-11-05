@@ -7,16 +7,15 @@ import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/hooks/useAuth';
-import { createBrowserClient } from '@supabase/ssr';
 import { QuoteMetadata } from '@/types/quote';
 import { quoteMetadataService } from '@/lib/services/quote-metadata-service';
 import { shipmentService } from '@/lib/services';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { type Components } from 'react-markdown';
+import type { Shipment } from '@/types/shipment';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize from 'rehype-sanitize';
 import rehypeHighlight from 'rehype-highlight';
-import hljs from 'highlight.js';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -39,6 +38,18 @@ interface AIRequestPayload {
   metadata: RequestMetadata;
 }
 
+type CustomerShipment = Pick<Shipment, 'id' | 'status' | 'type' | 'origin' | 'destination' | 'tracking_number' | 'scheduled_pickup' | 'estimated_delivery' | 'actual_delivery' | 'metadata'>;
+interface MatchedDocument {
+  title: string;
+  url: string;
+  score: number;
+  preview?: string;
+}
+type StreamEvent =
+  | { type: 'chunk'; content: string }
+  | { type: 'metadata'; metadata: NonNullable<Message['metadata']> & { matchedDocs?: MatchedDocument[]; quote?: Partial<QuoteMetadata> } }
+  | { type: 'sources'; sources: MatchedDocument[] };
+
 interface RequestMetadata {
   userId: string;
   customer: {
@@ -46,10 +57,8 @@ interface RequestMetadata {
     name: string;
     email: string;
   };
-  token?: string;
-  session?: any;
   quote?: QuoteMetadata;
-  shipments?: any[];
+  shipments?: CustomerShipment[];
 }
 
 interface AISupportChatProps {
@@ -61,7 +70,6 @@ interface AISupportChatProps {
 const STREAM_INTERVAL = 50; // ms per word for streaming simulation
 
 export function AISupportChat({ agentType, initialMessage, className }: AISupportChatProps) {
-  const scrollAreaRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [messages, setMessages] = useState<Message[]>(() => 
     initialMessage ? [{
@@ -73,8 +81,8 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [quoteMetadataState, setQuoteMetadataState] = useState<QuoteMetadata>({ isQuote: true });
-  const { user } = useAuth();
-  const [customerShipments, setCustomerShipments] = useState<any[]>([]);
+  const { user, loading: authLoading } = useAuth();
+  const [customerShipments, setCustomerShipments] = useState<CustomerShipment[]>([]);
 
   // Reset conversation when agent type changes
   useEffect(() => {
@@ -113,18 +121,14 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
           const optimizedShipments = shipments.slice(-5).map(shipment => ({
             id: shipment.id,
             status: shipment.status,
-            type: shipment.package_type || 'standard',
-            origin: shipment.from_address?.formatted_address || '',
-            destination: shipment.to_address?.formatted_address || '',
+            type: shipment.type || 'standard',
+            origin: shipment.origin,
+            destination: shipment.destination,
             tracking_number: shipment.tracking_number,
-            scheduled_pickup: shipment.pickup_date,
+            scheduled_pickup: shipment.scheduled_pickup,
             estimated_delivery: shipment.estimated_delivery,
-            actual_delivery: shipment.delivered_at,
-            metadata: {
-              service_level: shipment.service_level,
-              weight: shipment.package_details?.weight,
-              volume: shipment.package_details?.volume
-            }
+            actual_delivery: shipment.actual_delivery,
+            metadata: shipment.metadata
           }));
           setCustomerShipments(optimizedShipments);
         } catch (error) {
@@ -135,11 +139,6 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
 
     void fetchShipments();
   }, [agentType, user?.id]);
-
-  // Add useEffect for highlight.js initialization
-  useEffect(() => {
-    hljs.highlightAll();
-  }, [messages]); // Re-run when messages change
 
   const simulateStreaming = async (content: string, updateMessage: (text: string) => void) => {
     const words = content.split(/(\s+)/); // Split by whitespace but keep the separators
@@ -155,7 +154,7 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
     }
   };
 
-  const handleChunkUpdate = async (chunk: string, accumulatedContent: string, lastMessage: Message) => {
+  const handleChunkUpdate = async (chunk: string, accumulatedContent: string) => {
     if (agentType === 'quote') {
       // Use streaming effect for quote agent
       await simulateStreaming(
@@ -196,14 +195,9 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || isLoading) return;
+    if (!input.trim() || isLoading || authLoading || !user) return;
 
-    const supabase = createBrowserClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    );
 
-    const { data: { session } } = await supabase.auth.getSession();
 
     const userMessage: Message = {
       role: 'user',
@@ -219,25 +213,14 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
     setIsLoading(true);
 
     try {
-      let metadata: RequestMetadata = {
+      const metadata: RequestMetadata = {
         userId: user?.id || '',
         customer: {
           id: user?.id || '',
           name: user?.email?.split('@')[0] || 'Anonymous',
           email: user?.email || 'anonymous@example.com'
         },
-        token: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-        session: session ? {
-          ...session,
-          user: {
-            id: user?.id,
-            email: user?.email,
-            user_metadata: user?.user_metadata,
-            app_metadata: user?.app_metadata,
-            aud: user?.aud,
-            created_at: user?.created_at
-          }
-        } : undefined
+
       };
 
       // Add shipments to metadata if using shipments agent
@@ -281,8 +264,7 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
               '3': 'eco_freight'
             } as const;
             const selectedService = serviceMap[serviceType as keyof typeof serviceMap];
-            
-            // Update metadata with selected service
+             // Update metadata with selected service
             const updatedMetadata: QuoteMetadata = {
               ...quoteMetadataState,
               selectedService
@@ -507,14 +489,11 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
       console.error('Error in request:', error);
       setMessages(prev => {
         const newMessages = [...prev];
-        newMessages[newMessages.length - 1] = {
+        newMessages.push({
           role: 'assistant',
-          content: 'Sorry, I encountered an error while processing your request. Please try again.',
-          metadata: {
-            timestamp: Date.now(),
-            agent: agentType
-          },
-        };
+          content: error instanceof Error ? error.message : 'AI support is unavailable. Please try again or create a support ticket.',
+          metadata: { timestamp: Date.now(), agent: agentType },
+        });
         return newMessages;
       });
     } finally {
@@ -542,7 +521,6 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let accumulatedContent = '';
-    let lastMetadata = {};
     let buffer = '';
 
     try {
@@ -561,14 +539,13 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
 
           try {
             const jsonStr = message.replace(/^data: /, '').trim();
-            const data = JSON.parse(jsonStr);
+            const data = JSON.parse(jsonStr) as StreamEvent;
 
             if (data.type === 'chunk') {
               const newContent = data.content;
-              await handleChunkUpdate(newContent, accumulatedContent, assistantMessage);
+              await handleChunkUpdate(newContent, accumulatedContent);
               accumulatedContent += newContent;
             } else if (data.type === 'metadata') {
-              lastMetadata = data.metadata;
               setMessages(prev => {
                 const newMessages = [...prev];
                 const lastMessage = newMessages[newMessages.length - 1];
@@ -578,7 +555,7 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
                     ...lastMessage.metadata,
                     ...data.metadata,
                     // Map matched docs to context format for consistent display
-                    context: data.metadata?.matchedDocs?.map((doc: any) => ({
+                    context: data.metadata?.matchedDocs?.map((doc) => ({
                       title: doc.title,
                       url: doc.url,
                       score: doc.score,
@@ -644,17 +621,17 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
   `;
 
   // Custom components for markdown rendering
-  const MarkdownComponents = {
+  const MarkdownComponents: Components = {
     // Style paragraphs
-    p: ({ children }: { children: React.ReactNode }) => (
+    p: ({ children }) => (
       <p className="mb-2 last:mb-0">{children}</p>
     ),
     // Style code blocks
-    code: ({ node, inline, className, children, ...props }: any) => {
+    code: ({ className, children }) => {
       const match = /language-(\w+)/.exec(className || '');
-      const isInline = inline || !match;
+      const isInline = !match;
       return isInline ? (
-        <code className="px-1 py-0.5 rounded-md bg-muted font-mono text-sm" {...props}>
+        <code className="px-1 py-0.5 rounded-md bg-muted font-mono text-sm">
           {children}
         </code>
       ) : (
@@ -667,7 +644,6 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
               'block p-4 rounded-lg bg-muted font-mono text-sm overflow-x-auto',
               className
             )}
-            {...props}
           >
             {children}
           </code>
@@ -675,7 +651,7 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
       );
     },
     // Style links
-    a: ({ href, children }: { href?: string; children: React.ReactNode }) => (
+    a: ({ href, children }) => (
       <a
         href={href}
         target="_blank"
@@ -686,40 +662,40 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
       </a>
     ),
     // Style lists
-    ul: ({ children }: { children: React.ReactNode }) => (
+    ul: ({ children }) => (
       <ul className="list-disc pl-6 mb-2 space-y-1">{children}</ul>
     ),
-    ol: ({ children }: { children: React.ReactNode }) => (
+    ol: ({ children }) => (
       <ol className="list-decimal pl-6 mb-2 space-y-1">{children}</ol>
     ),
     // Style headings
-    h1: ({ children }: { children: React.ReactNode }) => (
+    h1: ({ children }) => (
       <h1 className="text-2xl font-bold mb-4">{children}</h1>
     ),
-    h2: ({ children }: { children: React.ReactNode }) => (
+    h2: ({ children }) => (
       <h2 className="text-xl font-bold mb-3">{children}</h2>
     ),
-    h3: ({ children }: { children: React.ReactNode }) => (
+    h3: ({ children }) => (
       <h3 className="text-lg font-bold mb-2">{children}</h3>
     ),
     // Style blockquotes
-    blockquote: ({ children }: { children: React.ReactNode }) => (
+    blockquote: ({ children }) => (
       <blockquote className="border-l-4 border-primary pl-4 italic my-2">
         {children}
       </blockquote>
     ),
     // Style tables
-    table: ({ children }: { children: React.ReactNode }) => (
+    table: ({ children }) => (
       <div className="overflow-x-auto my-4">
         <table className="min-w-full divide-y divide-border">
           {children}
         </table>
       </div>
     ),
-    th: ({ children }: { children: React.ReactNode }) => (
+    th: ({ children }) => (
       <th className="px-4 py-2 bg-muted font-medium">{children}</th>
     ),
-    td: ({ children }: { children: React.ReactNode }) => (
+    td: ({ children }) => (
       <td className="px-4 py-2 border-t">{children}</td>
     ),
   };
@@ -785,6 +761,8 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
             <Textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
+              aria-label="Message AI support"
+              disabled={authLoading || !user || isLoading}
               placeholder="Type your message..."
               className="min-h-[60px]"
               onKeyDown={(e) => {
@@ -794,7 +772,7 @@ export function AISupportChat({ agentType, initialMessage, className }: AISuppor
                 }
               }}
             />
-            <Button type="submit" size="icon" disabled={isLoading}>
+            <Button type="submit" size="icon" aria-label="Send AI message" disabled={isLoading || authLoading || !user || !input.trim()}>
               <Send className="h-4 w-4" />
             </Button>
           </div>

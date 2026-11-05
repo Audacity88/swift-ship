@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { RoleType } from '@/types/role';
 import { roleService } from '@/lib/services/role-service';
+import { AGENT_ROLES } from '@/types/role';
 import {
   Select,
   SelectContent,
@@ -27,20 +28,11 @@ export const RoleAssignment = ({
   initialRole,
   onAssign,
 }: RoleAssignmentProps) => {
-  const [selectedRole, setSelectedRole] = useState<RoleType | null>(initialRole || null);
+  const [selectedRole, setSelectedRole] = useState<RoleType | null>(initialRole && AGENT_ROLES.includes(initialRole) ? initialRole : null);
   const [targetUserId, setTargetUserId] = useState(userId || '');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [availableRoles, setAvailableRoles] = useState<RoleType[]>([]);
-
-  // Load available roles on mount
-  useEffect(() => {
-    const loadRoles = async () => {
-      const roles = await roleService.getAllRoles();
-      setAvailableRoles(roles);
-    };
-    loadRoles();
-  }, []);
+  const availableRoles = AGENT_ROLES;
 
   const handleAssign = async () => {
     if (!selectedRole || !targetUserId) {
@@ -52,20 +44,8 @@ export const RoleAssignment = ({
     setError(null);
 
     try {
-      const success = await roleService.assignRole({
-        userId: targetUserId,
-        role: selectedRole,
-        assignedBy: 'current-user', // TODO: Get from auth context
-        assignedAt: new Date(),
-        customPermissions: undefined,
-      });
-
-      if (success) {
-        onAssign?.(true);
-      } else {
-        setError('Failed to assign role. Please try again.');
-        onAssign?.(false);
-      }
+      await roleService.assignRole(undefined, targetUserId, selectedRole);
+      onAssign?.(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
       onAssign?.(false);
@@ -76,13 +56,14 @@ export const RoleAssignment = ({
 
   return (
     <div className="space-y-6">
+      <p className="text-sm text-muted-foreground">Change the role of an existing agent. Customer accounts cannot be promoted through this form.</p>
       <div className="space-y-2">
-        <Label htmlFor="userId">User ID</Label>
+        <Label htmlFor="userId">Existing agent ID</Label>
         <Input
           id="userId"
           value={targetUserId}
           onChange={(e) => setTargetUserId(e.target.value)}
-          placeholder="Enter user ID"
+          placeholder="Enter an existing agent ID"
           disabled={isLoading || !!userId}
         />
       </div>

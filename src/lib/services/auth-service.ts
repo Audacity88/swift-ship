@@ -1,5 +1,6 @@
 import { getServerSupabase, type ServerContext } from '@/lib/supabase-client'
 import { createBrowserClient } from '@supabase/ssr'
+import { ensureUserProfile, PROFILE_MISSING_MESSAGE } from '@/lib/auth/profile'
 
 const getBrowserSupabase = () => {
   return createBrowserClient(
@@ -58,14 +59,16 @@ export const authService = {
       email: data.email,
       password: data.password,
       options: {
+        emailRedirectTo: `${window.location.origin}/auth/callback?next=/portal/welcome`,
         data: {
           name: data.name,
           company: data.company,
-          role: 'customer'
+          type: 'customer'
         }
       }
     })
     if (error) throw error
+    if (authData.session && authData.user) await ensureUserProfile(supabase, authData.user)
     return authData
   },
 
@@ -99,7 +102,6 @@ export const authService = {
   ): Promise<{ success: boolean; error?: string }> {
     try {
       const supabase = getBrowserSupabase()
-      console.log('[Auth Service] Attempting sign in for:', data.email)
 
       const { data: signInData, error } = await supabase.auth.signInWithPassword({
         email: data.email,
@@ -116,7 +118,11 @@ export const authService = {
         return { success: false, error: 'No session returned from sign in' }
       }
 
-      console.log('[Auth Service] Sign in successful, session established')
+      try {
+        await ensureUserProfile(supabase, signInData.user)
+      } catch {
+        return { success: false, error: PROFILE_MISSING_MESSAGE }
+      }
       return { success: true }
     } catch (err) {
       console.error('[Auth Service] Unexpected error:', err)

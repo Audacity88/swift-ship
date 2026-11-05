@@ -2,10 +2,11 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { ChevronLeft } from 'lucide-react';
 import { TicketList } from '@/components/features/portal/TicketList';
 import { customerTicketService } from '@/lib/services';
-import type { Ticket, TicketStatus } from '@/types/ticket';
+import type { Ticket } from '@/types/ticket';
 import { useToast } from '@/components/ui/use-toast';
 
 interface TicketListState {
@@ -21,6 +22,7 @@ interface TicketListState {
 
 export default function TicketsPage() {
   const { toast } = useToast();
+  const router = useRouter();
   const [state, setState] = useState<TicketListState>({
     tickets: [],
     pagination: {
@@ -35,15 +37,15 @@ export default function TicketsPage() {
   const fetchTickets = useCallback(async (page = 1) => {
     setState(prev => ({ ...prev, isLoading: true }));
     try {
-      const response = await customerTicketService.getTickets(page);
+      const response = await customerTicketService.getCustomerTickets(undefined, { page });
       setState(prev => ({
         ...prev,
         tickets: response.tickets,
         pagination: {
           ...prev.pagination,
           page,
-          total: response.total,
-          totalPages: Math.ceil(response.total / prev.pagination.limit)
+          total: response.pagination.total,
+          totalPages: response.pagination.totalPages
         }
       }));
     } catch (error) {
@@ -61,7 +63,7 @@ export default function TicketsPage() {
   const handleCreateTicket = useCallback(async (data: { description: string }) => {
     setState(prev => ({ ...prev, isLoading: true }));
     try {
-      await customerTicketService.createTicket({
+      const ticket = await customerTicketService.createTicket(undefined, {
         description: data.description,
         priority: 'medium'
       });
@@ -69,7 +71,7 @@ export default function TicketsPage() {
         title: 'Success',
         description: 'Ticket created successfully.',
       });
-      void fetchTickets(1); // Refresh the list
+      router.push(`/portal/tickets/${ticket.id}`);
     } catch (error) {
       console.error('Error creating ticket:', error);
       toast({
@@ -80,12 +82,12 @@ export default function TicketsPage() {
     } finally {
       setState(prev => ({ ...prev, isLoading: false }));
     }
-  }, [fetchTickets, toast]);
+  }, [router, toast]);
 
   const handleAddComment = useCallback(async (ticketId: string, content: string) => {
     setState(prev => ({ ...prev, isLoading: true }));
     try {
-      await customerTicketService.addComment(ticketId, content);
+      await customerTicketService.addComment(undefined, ticketId, content);
       toast({
         title: 'Success',
         description: 'Comment added successfully.',
@@ -103,27 +105,6 @@ export default function TicketsPage() {
     }
   }, [fetchTickets, state.pagination.page, toast]);
 
-  const handleUpdateStatus = useCallback(async (ticketId: string, status: TicketStatus) => {
-    setState(prev => ({ ...prev, isLoading: true }));
-    try {
-      await customerTicketService.updateTicketStatus(ticketId, status);
-      toast({
-        title: 'Success',
-        description: 'Ticket status updated successfully.',
-      });
-      void fetchTickets(state.pagination.page); // Refresh current page
-    } catch (error) {
-      console.error('Error updating status:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to update ticket status. Please try again.',
-        variant: 'destructive',
-      });
-    } finally {
-      setState(prev => ({ ...prev, isLoading: false }));
-    }
-  }, [fetchTickets, state.pagination.page, toast]);
-
   useEffect(() => {
     void fetchTickets();
   }, [fetchTickets]);
@@ -131,7 +112,7 @@ export default function TicketsPage() {
   return (
     <div className="container mx-auto py-8 space-y-8">
       <div>
-        <Link href="/portal" className="inline-flex items-center text-muted-foreground hover:text-foreground">
+        <Link href="/home" className="inline-flex items-center text-muted-foreground hover:text-foreground">
           <ChevronLeft className="mr-2 h-4 w-4" />
           Back to Home
         </Link>
@@ -148,7 +129,6 @@ export default function TicketsPage() {
         tickets={state.tickets}
         onCreateTicket={handleCreateTicket}
         onAddComment={handleAddComment}
-        onUpdateStatus={handleUpdateStatus}
         isLoading={state.isLoading}
         pagination={state.pagination}
         onPageChange={fetchTickets}

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, X, Tag as TagIcon, ChevronDown } from 'lucide-react'
+import { Plus, X, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button'
 import { Command, CommandInput, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -34,7 +34,7 @@ export function TagManager({
   useEffect(() => {
     const loadSuggestions = async () => {
       try {
-        const tagSuggestions = await tagService.getSuggestions(ticketId)
+        const tagSuggestions = await tagService.getSuggestions(undefined, ticketId)
         setSuggestions(tagSuggestions)
       } catch (error) {
         console.error('Failed to load tag suggestions:', error)
@@ -54,7 +54,7 @@ export function TagManager({
 
       setIsLoading(true)
       try {
-        const results = await tagService.searchTags(searchValue)
+        const results = await tagService.searchTags(undefined, searchValue)
         setSearchResults(results)
       } catch (error) {
         console.error('Failed to search tags:', error)
@@ -145,7 +145,7 @@ export function TagManager({
                   {/* Suggestions */}
                   {suggestions.length > 0 && !searchValue && (
                     <CommandGroup heading="Suggested Tags">
-                      {suggestions.map(({ tag, score, reason }) => (
+                      {suggestions.map(({ tag, reason }) => (
                         <CommandItem
                           key={tag.id}
                           value={tag.id}

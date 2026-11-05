@@ -3,6 +3,8 @@ export interface Tag {
   name: string
   slug: string // URL-friendly version of name
   color: string
+  created_at?: string
+  created_by?: string
   description?: string
   parentId?: string // For hierarchical structure
   metadata?: {

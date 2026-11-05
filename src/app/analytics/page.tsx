@@ -5,8 +5,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line, AreaChart, Area, PieChart, Pie, Cell
 } from 'recharts'
-import { Download, Filter, Calendar, BarChart3, Clock, Users, MessageSquare } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
+import { Download, Filter, BarChart3, Clock, Users, MessageSquare } from 'lucide-react'
 import { COLORS } from '@/lib/constants'
 import { useQuery } from '@tanstack/react-query'
 import { subDays } from 'date-fns'
@@ -65,7 +64,7 @@ export default function AnalyticsPage() {
   })
 
   // Fetch stats with date range
-  const { data: stats, isLoading: isLoadingStats } = useQuery({
+  const { data: stats } = useQuery({
     queryKey: ['ticketStats', { from: dateRange.from.toISOString(), to: dateRange.to.toISOString() }],
     queryFn: async () => {
       const response = await fetch(`/api/tickets/stats?from=${dateRange.from.toISOString()}&to=${dateRange.to.toISOString()}`, {
@@ -97,28 +96,24 @@ export default function AnalyticsPage() {
     {
       label: 'Open Tickets',
       value: (stats?.openTickets ?? 0).toString(),
-      change: '+12%',
       icon: BarChart3,
       color: '#0052CC',
     },
     {
       label: 'Avg Response Time',
       value: stats?.avgResponseTime ?? '0h',
-      change: '-30m',
       icon: Clock,
       color: '#00B8D9',
     },
     {
       label: 'Customer Satisfaction',
       value: `${stats?.customerSatisfaction ?? 0}%`,
-      change: '+2%',
       icon: Users,
       color: '#36B37E',
     },
     {
       label: 'Total Conversations',
       value: (stats?.totalConversations ?? 0).toLocaleString(),
-      change: '+15%',
       icon: MessageSquare,
       color: '#6554C0',
     },
@@ -127,9 +122,9 @@ export default function AnalyticsPage() {
   return (
     <div className="space-y-8">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap gap-3 items-center justify-between">
         <h1 className="text-2xl font-semibold text-gray-900">Analytics Dashboard</h1>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4">
           <select
             value={selectedRange}
             onChange={(e) => {
@@ -170,7 +165,8 @@ export default function AnalyticsPage() {
 
       {/* Shipping Section */}
       <div>
-        <h2 className="text-lg font-semibold mb-4">Shipping Analytics</h2>
+        <h2 className="text-lg font-semibold mb-4">Shipping Analytics <span className="text-sm font-normal text-muted-foreground">Sample data</span></h2>
+        <p className="mb-4 text-sm text-muted-foreground">These shipping metrics are demonstration data, not records from your account.</p>
         
         {/* Shipping Metrics Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -203,13 +199,11 @@ export default function AnalyticsPage() {
                 key={stat.label} 
                 className="bg-white p-6 rounded-xl border border-gray-200 transition-all hover:shadow-md"
               >
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap gap-3 items-center justify-between">
                   <div className="p-2 rounded-lg" style={{ backgroundColor: `${stat.color}20` }}>
                     <Icon className="w-5 h-5" style={{ color: stat.color }} />
                   </div>
-                  <Badge variant={stat.change.startsWith('+') ? 'default' : 'secondary'}>
-                    {stat.change}
-                  </Badge>
+
                 </div>
                 <h3 className="mt-4 text-2xl font-semibold text-gray-900">{stat.value}</h3>
                 <p className="mt-1 text-sm text-gray-600">{stat.label}</p>
@@ -219,6 +213,7 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
+      <p className="text-sm text-muted-foreground">The charts below use sample data. Ticket metrics above come from your database.</p>
       {/* Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Monthly Tickets */}
@@ -309,7 +304,7 @@ export default function AnalyticsPage() {
                 />
               </PieChart>
             </ResponsiveContainer>
-            <div className="flex justify-center gap-6 mt-4">
+            <div className="flex flex-wrap justify-center gap-3 mt-4">
               {priorityData.map((entry, index) => (
                 <div key={entry.name} className="flex items-center gap-2">
                   <div className="w-3 h-3 rounded-full"

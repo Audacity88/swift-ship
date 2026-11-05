@@ -1,17 +1,17 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useParams } from 'next/navigation'
-import { getServerSupabase } from '@/lib/supabase-client'
 import { ConversationView } from '@/components/features/inbox/ConversationView'
 import { ticketService } from '@/lib/services'
+import { getServerSupabase } from '@/lib/supabase-client'
+import { useParams } from 'next/navigation'
+import { useEffect,useState } from 'react'
 
 export default function MessagesPage() {
   const params = useParams()
   const ticketId = params?.id as string
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
-  const [ticket, setTicket] = useState<any>(null)
+  const [ticket, setTicket] = useState<Awaited<ReturnType<typeof ticketService.getTicket>>>(null)
   const [error, setError] = useState<string | null>(null)
 
   // Check auth status first

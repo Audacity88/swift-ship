@@ -31,7 +31,7 @@ export const metricsService = {
         .from('team_metrics')
         .select('*')
         .eq('team_id', teamId)
-        .single()
+        .maybeSingle()
 
       if (currentError) {
         console.error('Failed to get current team metrics:', currentError)
@@ -40,6 +40,8 @@ export const metricsService = {
 
       const current: TeamMetricsData = currentData || {
         team_id: teamId,
+        response_count: 0,
+        resolution_count: 0,
         average_response_time: 0,
         average_resolution_time: 0,
         customer_satisfaction_score: 0,
@@ -53,6 +55,7 @@ export const metricsService = {
         .from('team_metrics_history')
         .select('*')
         .eq('team_id', teamId)
+        .gte('timestamp', new Date(Date.now() - ({ day: 1, week: 7, month: 30 })[period] * 86400000).toISOString())
         .order('timestamp', { ascending: false })
         .limit(30)
 
@@ -61,22 +64,20 @@ export const metricsService = {
         throw historyError
       }
 
-      const historical = (historyData || []).map((row: any) => ({
-        team_id: row.team_id,
-        average_response_time: row.average_response_time,
-        average_resolution_time: row.average_resolution_time,
-        customer_satisfaction_score: row.customer_satisfaction_score,
-        open_tickets: row.open_tickets,
-        resolved_tickets: row.resolved_tickets,
-        timestamp: row.timestamp,
+      const historical: TeamMetricsData[] = (historyData || []).map((row: Record<string, string | number>) => ({
+        team_id: String(row.team_id),
+        average_response_time: Number(row.average_response_time),
+        average_resolution_time: Number(row.average_resolution_time),
+        customer_satisfaction_score: Number(row.customer_satisfaction_score),
+        open_tickets: Number(row.open_tickets), resolved_tickets: Number(row.resolved_tickets),
+        updated_at: String(row.timestamp), response_count: 0, resolution_count: 0,
       }))
 
       // Calculate trends
       const trends: MetricsTrends = {
-        response_time: this.calculateTrend(historical, 'average_response_time'),
-        resolution_time: this.calculateTrend(historical, 'average_resolution_time'),
+        responseTime: this.calculateTrend(historical, 'average_response_time'),
+        resolutionTime: this.calculateTrend(historical, 'average_resolution_time'),
         satisfaction: this.calculateTrend(historical, 'customer_satisfaction_score'),
-        volume: this.calculateTrend(historical, 'open_tickets'),
       }
 
       return {
@@ -104,20 +105,21 @@ export const metricsService = {
         .from('agent_metrics')
         .select('*')
         .eq('user_id', userId)
-        .single()
+        .maybeSingle()
 
       if (currentError) {
         console.error('Failed to get current agent metrics:', currentError)
         throw currentError
       }
 
-      const current: AgentMetricsData = currentData || {
-        user_id: userId,
-        tickets_resolved: 0,
-        average_response_time: 0,
-        average_resolution_time: 0,
-        customer_satisfaction_score: 0,
-        updated_at: new Date().toISOString(),
+      const current: AgentMetricsData = {
+        agent_id: userId,
+        tickets_handled: currentData?.tickets_resolved || 0,
+        average_response_time: currentData?.average_response_time || 0,
+        average_resolution_time: currentData?.average_resolution_time || 0,
+        satisfaction_score: currentData?.customer_satisfaction_score || 0,
+        response_count: 0, resolution_count: 0,
+        updated_at: currentData?.updated_at || new Date().toISOString(),
       }
 
       // Get historical data
@@ -125,6 +127,7 @@ export const metricsService = {
         .from('agent_metrics_history')
         .select('*')
         .eq('user_id', userId)
+        .gte('timestamp', new Date(Date.now() - ({ day: 1, week: 7, month: 30 })[period] * 86400000).toISOString())
         .order('timestamp', { ascending: false })
         .limit(30)
 
@@ -133,21 +136,19 @@ export const metricsService = {
         throw historyError
       }
 
-      const historical = (historyData || []).map((row: any) => ({
-        user_id: row.user_id,
-        tickets_resolved: row.tickets_resolved,
-        average_response_time: row.average_response_time,
-        average_resolution_time: row.average_resolution_time,
-        customer_satisfaction_score: row.customer_satisfaction_score,
-        timestamp: row.timestamp,
+      const historical: AgentMetricsData[] = (historyData || []).map(row => ({
+        agent_id: userId, tickets_handled: row.tickets_resolved || 0,
+        average_response_time: row.average_response_time || 0,
+        average_resolution_time: row.average_resolution_time || 0,
+        satisfaction_score: row.customer_satisfaction_score || 0,
+        response_count: 0, resolution_count: 0, updated_at: row.timestamp,
       }))
 
       // Calculate trends
       const trends: MetricsTrends = {
-        response_time: this.calculateTrend(historical, 'average_response_time'),
-        resolution_time: this.calculateTrend(historical, 'average_resolution_time'),
-        satisfaction: this.calculateTrend(historical, 'customer_satisfaction_score'),
-        volume: this.calculateTrend(historical, 'tickets_resolved'),
+        responseTime: this.calculateTrend(historical, 'average_response_time'),
+        resolutionTime: this.calculateTrend(historical, 'average_resolution_time'),
+        satisfaction: this.calculateTrend(historical, 'satisfaction_score'),
       }
 
       return {
@@ -161,11 +162,12 @@ export const metricsService = {
     }
   },
 
-  calculateTrend(data: any[], field: string): number {
+  calculateTrend(data: object[], field: string): number {
     if (!data || data.length < 2) return 0
 
-    const latest = data[0][field]
-    const previous = data[data.length - 1][field]
+    const latest = Number((data[0] as Record<string, unknown>)[field])
+    const previous = Number((data[data.length - 1] as Record<string, unknown>)[field])
+    if (!Number.isFinite(latest) || !Number.isFinite(previous) || previous === 0) return 0
 
     return ((latest - previous) / previous) * 100
   }

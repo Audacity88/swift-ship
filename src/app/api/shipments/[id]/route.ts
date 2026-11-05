@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase-client'
 
-export async function GET(request: Request, context: { params: { id: string } }) {
+export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const supabase = getServerSupabase()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
@@ -13,7 +13,7 @@ export async function GET(request: Request, context: { params: { id: string } })
       )
     }
 
-    const { id } = context.params
+    const { id } = await context.params
 
     // Get shipment with all related data
     const { data: shipment, error: shipmentError } = await supabase
@@ -63,7 +63,7 @@ export async function GET(request: Request, context: { params: { id: string } })
   }
 }
 
-export async function PATCH(request: Request, context: { params: { id: string } }) {
+export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const supabase = getServerSupabase()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
@@ -75,7 +75,7 @@ export async function PATCH(request: Request, context: { params: { id: string } 
       )
     }
 
-    const { id } = context.params
+    const { id } = await context.params
     const updates = await request.json()
 
     // Check if user has permission to update this shipment
@@ -126,8 +126,9 @@ export async function PATCH(request: Request, context: { params: { id: string } 
 
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  props: { params: Promise<{ id: string }> }
 ) {
+  const params = await props.params
   try {
     const supabase = getServerSupabase()
 

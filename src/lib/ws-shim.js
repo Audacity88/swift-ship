@@ -1,5 +1,5 @@
 // WebSocket shim loader for browser environment
-module.exports = function loader(source) {
+module.exports = function loader() {
   return `
     const WebSocketShim = class extends WebSocket {
       constructor(url, protocols, options = {}) {

@@ -1,6 +1,7 @@
 import { getServerSupabase, type ServerContext } from '@/lib/supabase-client'
-import type { Article, Category, ArticleStatus } from '@/types/knowledge'
-import type { ArticleInteraction, ArticleRating } from '@/types/portal'
+import type { Article, ArticleStatus } from '@/types/knowledge'
+
+type ArticleRow = Omit<Article, 'createdAt' | 'updatedAt' | 'categoryId'> & { category_id: string; created_at: string; updated_at: string }
 
 interface GetArticlesOptions {
   page?: number
@@ -52,7 +53,7 @@ export const knowledgeService = {
         throw error
       }
 
-      const articles = (data || []).map((row: any) => ({
+      const articles = (data || []).map((row: ArticleRow) => ({
         id: row.id,
         title: row.title,
         content: row.content,
@@ -89,6 +90,11 @@ export const knowledgeService = {
         throw new Error('Unauthorized')
       }
 
+      const { data: author, error: authorError } = await supabase.from('agents')
+        .select('id,name').eq('id', user.id).maybeSingle()
+      if (authorError) throw authorError
+      if (!author) throw new Error('Staff access required')
+
       const { data, error } = await supabase
         .from('knowledge_articles')
         .insert({
@@ -98,7 +104,8 @@ export const knowledgeService = {
           status: article.status || 'draft',
           category_id: article.categoryId,
           tags: article.tags || [],
-          author: user,
+          author_id: author.id,
+          author: { id: author.id, name: author.name },
           metadata: article.metadata || {},
           created_by: user.id,
           updated_by: user.id,

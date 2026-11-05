@@ -1,5 +1,6 @@
 'use client'
 
+import { formatTicketStatus } from '@/lib/ticket-labels'
 import { useState, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { Search, Link as LinkIcon, Plus, X } from 'lucide-react'
@@ -168,7 +169,7 @@ export default function LinkedProblemPage() {
                   <span>{ticket.title}</span>
                 </div>
                 <div className="flex items-center gap-2 text-xs">
-                  <span className="px-2 py-1 rounded-full bg-gray-100">{ticket.status}</span>
+                  <span className="px-2 py-1 rounded-full bg-gray-100">{formatTicketStatus(ticket.status)}</span>
                   <span className="px-2 py-1 rounded-full bg-gray-100">{ticket.priority}</span>
                 </div>
               </button>

@@ -25,6 +25,11 @@ export const shipmentService = {
         throw quoteError
       }
 
+      if (quote.customer_id !== customerId) throw new Error('The quote belongs to a different customer')
+      if (!quote.metadata?.destination?.from?.address || !quote.metadata?.destination?.to?.address || !quote.metadata?.packageDetails?.type) {
+        throw new Error('The quote is missing shipment details')
+      }
+
       // Create shipment
       const { data, error } = await supabase
         .from('shipments')
@@ -32,11 +37,12 @@ export const shipmentService = {
           quote_id: quoteId,
           customer_id: customerId,
           type: quote.metadata.packageDetails.type,
-          status: 'shipment_created',
-          origin: quote.metadata.destination.from,
-          destination: quote.metadata.destination.to,
+          status: 'quote_accepted',
+          origin: quote.metadata.destination.from.address,
+          destination: quote.metadata.destination.to.address,
           scheduled_pickup: quote.metadata.destination.pickupDate,
           tracking_number: generateTrackingNumber(),
+          created_by: user.id,
           metadata: {
             weight: quote.metadata.packageDetails.weight,
             volume: quote.metadata.packageDetails.volume,
@@ -58,33 +64,7 @@ export const shipmentService = {
         throw error
       }
 
-      // Ensure status is set to quote_accepted
-      const { error: updateError } = await supabase
-        .from('shipments')
-        .update({ 
-          status: 'shipment_created',
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', data.id)
-
-      if (updateError) {
-        console.error('Failed to update shipment status:', updateError)
-        throw updateError
-      }
-
-      // Get the updated shipment
-      const { data: updatedShipment, error: fetchError } = await supabase
-        .from('shipments')
-        .select('*')
-        .eq('id', data.id)
-        .single()
-
-      if (fetchError) {
-        console.error('Failed to fetch updated shipment:', fetchError)
-        throw fetchError
-      }
-
-      return updatedShipment
+      return data
     } catch (error) {
       console.error('Error in createFromQuote:', error)
       throw error
@@ -106,14 +86,17 @@ export const shipmentService = {
         throw new Error('Unauthorized')
       }
 
-      const { error } = await supabase
+      const { data: updated, error } = await supabase
         .from('shipments')
         .update({ 
           status,
           updated_at: new Date().toISOString()
         })
         .eq('id', shipmentId)
+        .select('id')
+        .maybeSingle()
 
+      if (!updated && !error) throw new Error('Shipment not found or staff access required')
       if (error) {
         console.error('Failed to update shipment status:', error)
         throw error
@@ -227,7 +210,7 @@ export const shipmentService = {
         throw new Error('Unauthorized')
       }
 
-      const { error } = await supabase
+      const { data: updated, error } = await supabase
         .from('shipments')
         .update({
           status: 'pickup_scheduled',
@@ -237,7 +220,10 @@ export const shipmentService = {
           updated_at: new Date().toISOString()
         })
         .eq('id', shipmentId)
+        .select('id')
+        .maybeSingle()
 
+      if (!updated && !error) throw new Error('Shipment not found or staff access required')
       if (error) {
         console.error('Failed to schedule pickup:', error)
         throw error
@@ -360,7 +346,7 @@ export const shipmentService = {
     estimated_delivery?: string
     customer_id: string
     created_by?: string
-    status?: string
+    status?: ShipmentStatus
   }): Promise<Shipment> {
     try {
       const { data: { user }, error: userError } = await supabase.auth.getUser()
@@ -379,12 +365,13 @@ export const shipmentService = {
           quote_id: data.quote_id,
           customer_id: data.customer_id,
           type: data.type,
-          status: data.status || 'shipment_created',
+          status: data.status || 'quote_accepted',
           origin: data.origin,
           destination: data.destination,
           scheduled_pickup,
           estimated_delivery,
           tracking_number: generateTrackingNumber(),
+          created_by: user.id,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })

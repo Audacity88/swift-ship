@@ -3,9 +3,9 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { COLORS } from '@/lib/constants'
 import { authService } from '@/lib/services'
 import { cn } from '@/lib/utils'
+import { PROFILE_MISSING_MESSAGE } from '@/lib/auth/profile'
 
 export default function SignIn() {
   const [email, setEmail] = useState('')
@@ -18,14 +18,13 @@ export default function SignIn() {
   }>({})
   const router = useRouter()
   const searchParams = useSearchParams()
-  const message = searchParams.get('message')
-  const next = searchParams.get('next')
+  const next = searchParams?.get('next')
+  const authError = searchParams?.get('error')
 
   useEffect(() => {
-    if (message) {
-      setError(null)
-    }
-  }, [message])
+    if (authError === 'profile_missing') setError(PROFILE_MISSING_MESSAGE)
+    else if (authError) setError('Your session could not be verified. Please sign in again.')
+  }, [authError])
 
   const validateForm = () => {
     const errors: { email?: string; password?: string } = {}
@@ -51,13 +50,13 @@ export default function SignIn() {
     setLoading(true)
 
     try {
-      const result = await authService.signIn({}, {
+      const result = await authService.signIn(undefined, {
         email,
         password
       })
 
       if (!result.success) {
-        setError(result.error)
+        setError(result.error || 'Unable to sign in')
         return
       }
 
@@ -65,14 +64,13 @@ export default function SignIn() {
       await new Promise(resolve => setTimeout(resolve, 100))
 
       // Verify session before redirect
-      const { user } = await authService.getUser({})
+      const { user } = await authService.getUser(undefined)
       if (!user) {
         setError('Failed to verify authentication')
         return
       }
 
-      const nextUrl = next || '/'
-      console.log('[SignIn] Redirecting to:', nextUrl)
+      const nextUrl = next?.startsWith('/') && !next.startsWith('//') ? next : '/'
       router.push(nextUrl)
     } catch (err) {
       console.error('[SignIn] Error:', err)
@@ -109,7 +107,7 @@ export default function SignIn() {
         )}>
           <form onSubmit={handleSignIn} className="space-y-6">
             {error && (
-              <div className={cn(
+              <div role="alert" className={cn(
                 "rounded-lg p-4 text-sm",
                 "bg-destructive/10 text-destructive"
               )}>

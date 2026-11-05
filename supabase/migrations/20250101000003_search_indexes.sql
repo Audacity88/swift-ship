@@ -24,25 +24,7 @@ ADD COLUMN search_vector tsvector GENERATED ALWAYS AS (
 -- Create GIN index for fast full-text search
 CREATE INDEX articles_search_idx ON articles USING GIN (search_vector);
 
--- Create function to update search_vector on article update
-CREATE OR REPLACE FUNCTION update_article_search_vector()
-RETURNS trigger AS $$
-BEGIN
-  NEW.search_vector := articles_search_vector(
-    NEW.title,
-    NEW.content,
-    NEW.excerpt,
-    NEW.tags
-  );
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
--- Create trigger to update search_vector
-CREATE TRIGGER articles_search_vector_update
-  BEFORE INSERT OR UPDATE ON articles
-  FOR EACH ROW
-  EXECUTE FUNCTION update_article_search_vector();
+-- search_vector is generated automatically; no write trigger is necessary.
 
 -- Create function to validate searcher references
 CREATE OR REPLACE FUNCTION validate_searcher()

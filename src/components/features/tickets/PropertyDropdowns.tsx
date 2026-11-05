@@ -2,11 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import Image from 'next/image'
-import { 
-  AlertCircle, HelpCircle, Wrench, Check, Search,
-  Tag as TagIcon, X, Users, ChevronDown,
-  type LucideIcon, Loader2
-} from 'lucide-react'
+import { AlertCircle, HelpCircle, Wrench, Check, Search, Tag as TagIcon, X, type LucideIcon, Loader2 } from 'lucide-react';
 import type { TicketType } from '@/types/ticket'
 import { tagService, userService } from '@/lib/services'
 
@@ -228,8 +224,8 @@ export function TagsDropdown({ show, onClose, selectedTags, onAdd, onRemove }: T
 
       setIsLoading(true)
       try {
-        const tags = await tagService.searchTags(searchQuery)
-        setSuggestedTags(tags.filter(tag => !selectedTags.includes(tag)))
+        const tags = await tagService.searchTags(undefined, searchQuery)
+        setSuggestedTags(tags.map(tag => tag.name).filter(tag => !selectedTags.includes(tag)))
       } catch (error) {
         console.error('Failed to fetch tags:', error)
         setSuggestedTags([])
@@ -327,7 +323,7 @@ export function FollowersDropdown({ show, onClose, followers, onAdd, onRemove }:
     const fetchAgents = async () => {
       try {
         setLoading(true)
-        const users = await userService.searchUsers({}, searchTerm, 'agent', followers)
+        const users = await userService.searchUsers(undefined, searchTerm, 'agent', followers)
         setAgents(users.map(user => ({ id: user.id, name: user.name })))
       } catch (error) {
         console.error('Error fetching agents:', error)

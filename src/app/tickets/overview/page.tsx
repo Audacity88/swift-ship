@@ -1,46 +1,44 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { useQuery } from '@tanstack/react-query'
-import { format, subDays } from 'date-fns'
-import { 
-  BarChart3, 
-  Clock, 
-  MessageSquare, 
-  Users,
-  Download,
-  Filter,
-  RefreshCw,
-  Plus
-} from 'lucide-react'
+import { CreateTicketForm } from '@/components/features/tickets/CreateTicketForm'
+import TicketList from '@/components/features/tickets/TicketList'
+import { Button } from '@/components/ui/button'
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger
+Dialog,
+DialogContent,
+DialogDescription,
+DialogHeader,
+DialogTitle,
+DialogTrigger
 } from "@/components/ui/dialog"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
+Popover,
+PopoverContent,
+PopoverTrigger,
 } from '@/components/ui/popover'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import TicketList from '@/components/features/tickets/TicketList'
-import { CreateTicketForm } from '@/components/features/tickets/CreateTicketForm'
-import { fetchTickets, createTicket, type TicketListItem } from '@/lib/services'
-import type { CreateTicketData } from '@/lib/services/ticket-service'
-import { cn } from '@/lib/utils'
+import {
+Select,
+SelectContent,
+SelectItem,
+SelectTrigger,
+SelectValue,
+} from '@/components/ui/select'
 import { useToast } from '@/components/ui/use-toast'
+import { createTicket,fetchTickets } from '@/lib/services'
+import { useQuery } from '@tanstack/react-query'
+import { subDays } from 'date-fns'
+import {
+BarChart3,
+Clock,
+Download,
+MessageSquare,
+Plus,
+RefreshCw,
+Users
+} from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { useState } from 'react'
+type CreateTicketData = Parameters<typeof createTicket>[1]
 
 interface DateRange {
   from: Date
@@ -81,12 +79,11 @@ export default function TicketsOverviewPage() {
     to: new Date()
   })
   const [isExporting, setIsExporting] = useState(false)
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
 
   // Fetch tickets with date range
-  const { data: ticketsData, isLoading: isLoadingTickets } = useQuery({
+  const { data: ticketsData, isLoading: isLoadingTickets, error: ticketsError } = useQuery({
     queryKey: ['tickets', dateRange],
-    queryFn: () => fetchTickets({
+    queryFn: () => fetchTickets(undefined, {
       filters: {
         dateFrom: dateRange.from.toISOString(),
         dateTo: dateRange.to.toISOString()
@@ -103,7 +100,7 @@ export default function TicketsOverviewPage() {
   })
 
   // Fetch stats with date range
-  const { data: stats, isLoading: isLoadingStats } = useQuery<TicketStats>({
+  const { data: stats, error: statsError } = useQuery<TicketStats>({
     queryKey: ['ticketStats', { from: dateRange.from.toISOString(), to: dateRange.to.toISOString() }],
     queryFn: async () => {
       const response = await fetch(`/api/tickets/stats?from=${dateRange.from.toISOString()}&to=${dateRange.to.toISOString()}`)
@@ -182,13 +179,12 @@ export default function TicketsOverviewPage() {
       // Log the cleaned data
       console.log('Submitting cleaned ticket data:', cleanData)
 
-      await createTicket(cleanData)
+      await createTicket(undefined, cleanData)
       
       toast({
         title: 'Success',
         description: 'Ticket created successfully',
       })
-      setIsCreateDialogOpen(false)
       router.refresh()
     } catch (error) {
       console.error('Failed to create ticket:', error)
@@ -204,28 +200,24 @@ export default function TicketsOverviewPage() {
     {
       label: 'Open Tickets',
       value: (stats?.openTickets ?? 0).toString(),
-      change: '+12%',
       icon: BarChart3,
       color: '#0052CC',
     },
     {
       label: 'Avg Response Time',
       value: stats?.avgResponseTime ?? '0h',
-      change: '-30m',
       icon: Clock,
       color: '#00B8D9',
     },
     {
       label: 'Customer Satisfaction',
       value: `${stats?.customerSatisfaction ?? 0}%`,
-      change: '+2%',
       icon: Users,
       color: '#36B37E',
     },
     {
       label: 'Total Conversations',
       value: (stats?.totalConversations ?? 0).toLocaleString(),
-      change: '+15%',
       icon: MessageSquare,
       color: '#6554C0',
     },
@@ -234,9 +226,9 @@ export default function TicketsOverviewPage() {
   return (
     <div className="space-y-6">
       {/* Page Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap gap-3 items-center justify-between">
         <h1 className="text-2xl font-semibold text-gray-900">Tickets Overview</h1>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4">
           <Dialog>
             <DialogTrigger asChild>
               <Button>
@@ -247,6 +239,7 @@ export default function TicketsOverviewPage() {
             <DialogContent className="max-w-3xl">
               <DialogHeader>
                 <DialogTitle>Create New Ticket</DialogTitle>
+              <DialogDescription>Enter the customer and issue details to create a support ticket.</DialogDescription>
               </DialogHeader>
               <CreateTicketForm 
                 onSubmit={handleCreateTicket}
@@ -326,6 +319,7 @@ export default function TicketsOverviewPage() {
         </div>
       </div>
 
+      {(ticketsError || statsError) && <p role="alert" className="text-destructive">Some ticket data could not be loaded. Refresh to try again.</p>}
       {/* Statistics Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {statsConfig.map((stat) => {
@@ -335,13 +329,11 @@ export default function TicketsOverviewPage() {
               key={stat.label} 
               className="bg-white p-6 rounded-xl border border-gray-200 transition-all hover:shadow-md"
             >
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap gap-3 items-center justify-between">
                 <div className="p-2 rounded-lg" style={{ backgroundColor: `${stat.color}20` }}>
                   <Icon className="w-5 h-5" style={{ color: stat.color }} />
                 </div>
-                <Badge variant={stat.change.startsWith('+') ? 'default' : 'secondary'}>
-                  {stat.change}
-                </Badge>
+
               </div>
               <h3 className="mt-4 text-2xl font-semibold text-gray-900">{stat.value}</h3>
               <p className="mt-1 text-sm text-gray-600">{stat.label}</p>

@@ -1,24 +1,10 @@
 'use client'
 
-import React, { useEffect, useState, useCallback } from 'react'
-import { fetchTickets, type TicketListItem } from '@/lib/services'
-import { format } from 'date-fns'
-import {
-  Clock,
-  Tag,
-  User,
-  AlertCircle,
-  ChevronDown,
-  ChevronUp,
-  Filter,
-  RefreshCcw,
-  Archive,
-  MoreHorizontal,
-  Download,
-  Trash,
-  CheckSquare
-} from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { formatTicketStatus } from '@/lib/ticket-labels'
+import React, { useState } from 'react';
+import { type TicketListItem } from '@/lib/services';
+import { format, isValid } from 'date-fns'
+
 import { Badge } from '@/components/ui/badge'
 import {
   Table,
@@ -28,33 +14,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+
 import { Checkbox } from '@/components/ui/checkbox'
-import { SLAIndicator } from '@/components/features/tickets/SLAIndicator'
-import { TagList } from '@/components/features/tags/TagList'
-import type { TicketListItem as TicketListItemType } from '@/types/ticket'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { Input } from '@/components/ui/input'
-import {
-  Pagination,
-  PaginationContent,
-  PaginationEllipsis,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from '@/components/ui/pagination'
 
 interface TicketListProps {
   tickets: TicketListItem[]
@@ -64,7 +25,6 @@ interface TicketListProps {
 
 export const TicketList: React.FC<TicketListProps> = ({ 
   tickets,
-  viewMode = 'list',
   onTicketClick
 }) => {
   const [selectedTickets, setSelectedTickets] = useState<string[]>([])
@@ -86,11 +46,8 @@ export const TicketList: React.FC<TicketListProps> = ({
   }
 
   const formatDate = (dateString: string) => {
-    try {
-      return format(new Date(dateString), 'MMM d, yyyy')
-    } catch (error) {
-      return 'Invalid date'
-    }
+    const date = new Date(dateString)
+    return isValid(date) ? format(date, 'MMM d, yyyy') : 'Date unavailable'
   }
 
   if (!tickets) return <div>No tickets found</div>
@@ -135,9 +92,9 @@ export const TicketList: React.FC<TicketListProps> = ({
                 <Badge variant="outline">{ticket.priority}</Badge>
               </TableCell>
               <TableCell>
-                <Badge>{ticket.status}</Badge>
+                <Badge>{formatTicketStatus(ticket.status)}</Badge>
               </TableCell>
-              <TableCell>{formatDate(ticket.created_at)}</TableCell>
+              <TableCell>{formatDate(ticket.createdAt)}</TableCell>
             </TableRow>
           ))}
         </TableBody>

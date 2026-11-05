@@ -1,24 +1,23 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useAuth } from '@/lib/hooks/useAuth'
+import { shipmentService } from '@/lib/services'
+import type { ShipmentWithEvents } from '@/types/shipment'
 import { format } from 'date-fns'
 import {
-  Package,
-  Truck,
-  MapPin,
-  Calendar,
-  Clock,
-  AlertCircle,
-  CheckCircle2,
-  CircleDot,
-  ArrowRight,
-  Loader2
+AlertCircle,
+ArrowRight,
+Calendar,
+CheckCircle2,
+CircleDot,
+Clock,
+Loader2,
+MapPin,
+Package,
+Truck
 } from 'lucide-react'
-import { COLORS } from '@/lib/constants'
-import { shipmentService } from '@/lib/services'
-import { useAuth } from '@/lib/hooks/useAuth'
-import type { ShipmentWithEvents } from '@/types/shipment'
+import { useRouter } from 'next/navigation'
+import { useEffect,useState } from 'react'
 
 const statusColors = {
   quote_requested: { bg: 'bg-blue-50', text: 'text-blue-700', icon: CircleDot },

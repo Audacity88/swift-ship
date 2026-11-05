@@ -4,11 +4,13 @@ import { useEffect, useState, useRef } from 'react'
 import { format, isValid, parseISO } from 'date-fns'
 import { Loader2, Send, Paperclip } from 'lucide-react'
 import Image from 'next/image'
-import { COLORS } from '@/lib/constants'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { conversationService, type Message } from '@/lib/services'
 import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
+import { ATTACHMENT_ACCEPT, UPLOAD_FAILURE_MESSAGE, validateAttachments, type Attachment } from '@/lib/services/conversation-service';
+import { formatTicketStatus } from '@/lib/ticket-labels'
 
 interface ConversationViewProps {
   ticketId: string | null
@@ -68,48 +70,39 @@ export function ConversationView({
   }, [messages])
 
   useEffect(() => {
-    if (!ticketId) return
-    
-    const loadConversation = async () => {
-      setIsLoading(true)
-      setError(null)
-      try {
-        const messages = await conversationService.getMessages({}, ticketId)
-        setMessages(messages)
-      } catch (err: any) {
-        console.error('Error loading conversation:', err)
-        setError(err.message)
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    void loadConversation()
-
-    // Set up real-time subscription
+    if (!ticketId || !currentUserId) return
+    let disposed = false
     let unsubscribe: (() => void) | undefined
+    setMessages([])
+    setIsLoading(true)
+    setError(null)
 
-    const setupSubscription = async () => {
+    const load = async () => {
       try {
-        unsubscribe = await conversationService.subscribeToMessages({}, ticketId, (newMessage) => {
-          setMessages(prev => [...prev, newMessage])
-          // Scroll to bottom after adding new message
-          setTimeout(scrollToBottom, 100)
+        // Join first, then fetch so no message can fall between fetch and subscribe.
+        const stop = await conversationService.subscribeToMessages(undefined, ticketId, message => {
+          if (!disposed) setMessages(prev => prev.some(row => row.id === message.id) ? prev : [...prev, message])
         })
-      } catch (err: any) {
-        console.error('Error setting up subscription:', err)
-        setError(err.message)
+        if (disposed) { stop(); return }
+        unsubscribe = stop
+      } catch (error) {
+        if (!disposed) setError(error instanceof Error ? error.message : 'Live updates are unavailable.')
+      }
+      try {
+        const rows = await conversationService.getMessages(undefined, ticketId)
+        if (!disposed) setMessages(prev => {
+          const ids = new Set(rows.map(row => row.id))
+          return [...rows, ...prev.filter(row => !ids.has(row.id))]
+        })
+      } catch (error) {
+        if (!disposed) setError(error instanceof Error ? error.message : 'Unable to load conversation.')
+      } finally {
+        if (!disposed) setIsLoading(false)
       }
     }
-
-    void setupSubscription()
-
-    return () => {
-      if (unsubscribe) {
-        unsubscribe()
-      }
-    }
-  }, [ticketId])
+    void load()
+    return () => { disposed = true; unsubscribe?.() }
+  }, [ticketId, currentUserId])
 
   const handleSendMessage = async () => {
     if (!ticketId || !newMessage.trim() || isSending) return
@@ -129,23 +122,38 @@ export function ConversationView({
 
     setIsSending(true)
     setError(null)
+    const content = newMessage.trim()
+    const optimisticId = `pending:${crypto.randomUUID()}`
+    const optimistic: Message = {
+      id: optimisticId, ticket_id: ticketId, content,
+      author_id: currentUserId, author_type: isAgent ? 'agent' : 'customer',
+      created_at: new Date().toISOString()
+    }
+    setMessages(prev => [...prev, optimistic])
+    let uploaded: Attachment[] = []
     try {
+      uploaded = await conversationService.uploadAttachments(undefined, ticketId, attachments, isAgent && isInternalNote)
       // Use the isAgent prop to determine author_type
       const authorType = isAgent ? 'agent' : 'customer'
 
-      await conversationService.addMessage({}, ticketId, newMessage.trim(), authorType)
+      const saved = await conversationService.addMessage(undefined, ticketId, content, authorType, uploaded, isAgent && isInternalNote)
+      setMessages(prev => [...prev.filter(message => message.id !== optimisticId && message.id !== saved.id), saved])
 
       setNewMessage('')
       setAttachments([])
       
       // Scroll to bottom after sending
       setTimeout(scrollToBottom, 100)
-    } catch (err: any) {
+    } catch (err) {
+      try { await conversationService.removeAttachments(undefined, uploaded) }
+      catch (cleanupError) { console.error('Attachment cleanup failed:', cleanupError) }
+      const message = attachments.length > 0 ? UPLOAD_FAILURE_MESSAGE : 'Message could not be sent. Please try again.'
+      toast.error(message)
+      setMessages(prev => prev.filter(message => message.id !== optimisticId))
       console.error('Error sending message:', err)
-      setError(err.message || 'Failed to send message. Please try again.')
+      setError(message)
       
-      // Show the error briefly then clear it
-      setTimeout(() => setError(null), 3000)
+      // Keep the draft and error available for retry.
     } finally {
       setIsSending(false)
     }
@@ -164,7 +172,14 @@ export function ConversationView({
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
-    setAttachments(prev => [...prev, ...files])
+    try {
+      validateAttachments([...attachments, ...files])
+      setAttachments(prev => [...prev, ...files])
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to attach files.'
+      setError(message)
+      toast.error(message)
+    }
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
@@ -190,13 +205,6 @@ export function ConversationView({
     )
   }
 
-  if (error) {
-    return (
-      <div className="flex items-center justify-center h-full text-destructive">
-        {error}
-      </div>
-    )
-  }
 
   return (
     <div className="flex flex-col h-full">
@@ -211,7 +219,7 @@ export function ConversationView({
             <div>
               <h2 className="text-lg font-semibold">{title}</h2>
               <p className="text-sm text-muted-foreground">
-                #{ticketId?.slice(0, 8)} • {status}
+                #{ticketId?.slice(0, 8)} • {formatTicketStatus(status)}
               </p>
             </div>
           </div>
@@ -235,8 +243,9 @@ export function ConversationView({
               <div className="relative w-8 h-8 flex-shrink-0">
                 <Image
                   src={message.author?.avatar_url || "/images/default-avatar.png"}
-                  alt={message.author?.name || "User"}
+                  alt={message.author?.name || (message.author_type === 'agent' ? 'Support agent' : 'Customer')}
                   fill
+                  sizes="32px"
                   className="rounded-full object-cover"
                 />
               </div>
@@ -250,7 +259,7 @@ export function ConversationView({
                       ? 'System'
                       : isOwnMessage
                       ? 'You'
-                      : message.author?.name || 'User'}
+                      : message.author?.name || (message.author_type === 'agent' ? 'Support agent' : 'Customer')}
                   </span>
                   <span className="text-xs text-muted-foreground">
                     {formatMessageDate(message.created_at)}
@@ -263,6 +272,28 @@ export function ConversationView({
                     : "bg-muted text-muted-foreground"
                 )}>
                   <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                  {message.attachments?.map(attachment => (
+                    <button
+                      key={attachment.path}
+                      type="button"
+                      className="mt-2 block text-left text-sm underline break-all"
+                      onClick={async () => {
+                        try {
+                          const url = await conversationService.getAttachmentUrl(undefined, attachment)
+                          const link = document.createElement('a')
+                          link.href = url
+                          link.download = attachment.name
+                          link.target = '_blank'
+                          link.rel = 'noopener noreferrer'
+                          link.click()
+                        } catch (error) {
+                          toast.error(error instanceof Error ? error.message : 'Unable to download attachment.')
+                        }
+                      }}
+                    >
+                      {attachment.name} ({Math.max(1, Math.ceil(attachment.size / 1024))} KB)
+                    </button>
+                  ))}
                 </div>
               </div>
             </div>
@@ -312,6 +343,7 @@ export function ConversationView({
               >
                 <span className="text-sm">{file.name}</span>
                 <button
+                  disabled={isSending}
                   onClick={() => removeAttachment(index)}
                   className="text-muted-foreground hover:text-foreground transition-colors"
                 >
@@ -340,6 +372,7 @@ export function ConversationView({
           <div className="absolute right-3 bottom-3 flex items-center gap-2">
             <input
               type="file"
+              accept={ATTACHMENT_ACCEPT}
               ref={fileInputRef}
               onChange={handleFileChange}
               className="hidden"

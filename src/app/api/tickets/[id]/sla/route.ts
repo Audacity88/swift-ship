@@ -1,307 +1,66 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { sql } from '@/lib/db'
-import { getServerSupabase } from '@/lib/supabase-client'
+import { createClient } from '@/lib/supabase/server'
 
-// SLA configuration (could be moved to database or config file)
-const SLA_CONFIG = {
-  response_time: {
-    low: 24, // hours
-    medium: 12,
-    high: 4,
-    urgent: 1
-  },
-  resolution_time: {
-    low: 120, // hours
-    medium: 72,
-    high: 24,
-    urgent: 8
-  }
+type Context = { params: Promise<{ id: string }> }
+const targets: Record<string, { response: number; resolution: number }> = {
+  urgent: { response: 60, resolution: 480 }, high: { response: 240, resolution: 1440 },
+  medium: { response: 720, resolution: 4320 }, low: { response: 1440, resolution: 7200 },
+}
+const pauseSchema = z.object({ reason: z.string().trim().min(1), resumeAt: z.string().datetime().optional() })
+
+export async function GET(_request: Request, { params }: Context) {
+  const { id } = await params
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const { data: ticket, error } = await supabase.from('tickets').select('priority,status,created_at,resolved_at').eq('id', id).maybeSingle()
+  if (error) return NextResponse.json({ error: 'Unable to load ticket' }, { status: 500 })
+  if (!ticket) return NextResponse.json({ error: 'Ticket not found' }, { status: 404 })
+  const { data: state, error: stateError } = await supabase.from('sla_states').select('*').eq('ticket_id', id).maybeSingle()
+  if (stateError) return NextResponse.json({ error: 'Unable to load SLA state' }, { status: 500 })
+  const startedAt = state?.started_at || ticket.created_at
+  const end = ticket.resolved_at || state?.paused_at || new Date().toISOString()
+  const elapsed = Math.max(0, (Date.parse(end) - Date.parse(startedAt)) / 60000 - (state?.total_paused_time || 0))
+  const target = targets[ticket.priority] || targets.medium
+  const metric = (minutes: number, breached: boolean) => ({ target: minutes, progress: Math.min(100, elapsed / minutes * 100), remaining: Math.max(0, minutes - elapsed), breached })
+  return NextResponse.json({ data: {
+    name: `${ticket.priority.toUpperCase()} Priority SLA`,
+    isBreached: !!(state?.response_breached || state?.resolution_breached),
+    isPaused: !!state?.paused_at, isCompleted: !!ticket.resolved_at,
+    response: metric(target.response, state?.response_breached || false),
+    resolution: metric(target.resolution, state?.resolution_breached || false),
+    metrics: { elapsedTime: elapsed, totalPausedTime: state?.total_paused_time || 0, startedAt,
+      pausedAt: state?.paused_at, breachedAt: state?.breached_at,
+      lastEscalation: { at: state?.last_escalation_at, threshold: state?.last_escalation_threshold } },
+  } })
 }
 
-// Validation schema for pausing SLA
-const pauseSLASchema = z.object({
-  reason: z.string().min(1),
-  resumeAt: z.string().datetime().optional()
-})
-
-// GET /api/tickets/[id]/sla - Get SLA status
-export async function GET(request: Request, props: { params: Promise<{ id: string }> }) {
-  const params = await props.params;
-  try {
-    const supabase = getServerSupabase()
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    
-    if (userError || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
-    }
-
-    // Get ticket and SLA state
-    const [result] = await sql.execute(sql`
-      SELECT 
-        t.priority,
-        t.status,
-        t.created_at,
-        t.resolved_at,
-        s.started_at,
-        s.paused_at,
-        s.breached_at,
-        s.response_breached,
-        s.resolution_breached,
-        s.total_paused_time,
-        s.last_escalation_at,
-        s.last_escalation_threshold
-      FROM tickets t
-      LEFT JOIN sla_states s ON t.id = s.ticket_id
-      WHERE t.id = ${params.id}
-    `)
-
-    if (!result) {
-      return NextResponse.json(
-        { error: 'Ticket not found' },
-        { status: 404 }
-      )
-    }
-
-    // Calculate SLA metrics
-    const now = new Date()
-    const createdAt = new Date(result.created_at)
-    const startedAt = result.started_at ? new Date(result.started_at) : createdAt
-    const pausedAt = result.paused_at ? new Date(result.paused_at) : null
-    const resolvedAt = result.resolved_at ? new Date(result.resolved_at) : null
-    const totalPausedTime = result.total_paused_time || 0 // in minutes
-
-    // Calculate elapsed time excluding paused time
-    const elapsedMinutes = (() => {
-      const end = resolvedAt || (pausedAt || now)
-      const elapsed = (end.getTime() - startedAt.getTime()) / (1000 * 60)
-      return Math.max(0, elapsed - totalPausedTime)
-    })()
-
-    // Get SLA targets for the ticket's priority
-    const responseTarget = SLA_CONFIG.response_time[result.priority] * 60 // convert to minutes
-    const resolutionTarget = SLA_CONFIG.resolution_time[result.priority] * 60
-
-    // Calculate progress percentages
-    const responseProgress = Math.min(100, (elapsedMinutes / responseTarget) * 100)
-    const resolutionProgress = Math.min(100, (elapsedMinutes / resolutionTarget) * 100)
-
-    // Calculate time remaining
-    const getTimeRemaining = (target: number) => {
-      const remaining = target - elapsedMinutes
-      return remaining > 0 ? remaining : 0
-    }
-
-    const slaStatus = {
-      name: `${result.priority.toUpperCase()} Priority SLA`,
-      isBreached: result.response_breached || result.resolution_breached,
-      isPaused: !!pausedAt,
-      isCompleted: !!resolvedAt,
-      response: {
-        target: responseTarget,
-        progress: responseProgress,
-        remaining: getTimeRemaining(responseTarget),
-        breached: result.response_breached
-      },
-      resolution: {
-        target: resolutionTarget,
-        progress: resolutionProgress,
-        remaining: getTimeRemaining(resolutionTarget),
-        breached: result.resolution_breached
-      },
-      metrics: {
-        elapsedTime: elapsedMinutes,
-        totalPausedTime,
-        startedAt: startedAt.toISOString(),
-        pausedAt: pausedAt?.toISOString(),
-        breachedAt: result.breached_at,
-        lastEscalation: {
-          at: result.last_escalation_at,
-          threshold: result.last_escalation_threshold
-        }
-      }
-    }
-
-    return NextResponse.json({ data: slaStatus })
-  } catch (error) {
-    console.error('Failed to get SLA status:', error)
-    return NextResponse.json(
-      { error: 'Failed to get SLA status' },
-      { status: 500 }
-    )
+async function changePause(request: Request, { params }: Context, pause: boolean) {
+  const { id } = await params
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const { data: agent } = await supabase.from('agents').select('role').eq('id', user.id).maybeSingle()
+  if (!agent || !['admin', 'agent'].includes(agent.role)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (pause) {
+    const parsed = pauseSchema.safeParse(await request.json().catch(() => null))
+    if (!parsed.success) return NextResponse.json({ error: 'A pause reason is required.' }, { status: 400 })
   }
+  const { data: state, error } = await supabase.from('sla_states').select('*').eq('ticket_id', id).maybeSingle()
+  if (error) return NextResponse.json({ error: 'Unable to load SLA state' }, { status: 500 })
+  if (!state) return NextResponse.json({ error: 'No SLA state found for ticket' }, { status: 404 })
+  if (pause === Boolean(state.paused_at)) return NextResponse.json({ error: pause ? 'SLA is already paused' : 'SLA is not paused' }, { status: 409 })
+  let query = supabase.from('sla_states').update({
+    paused_at: pause ? new Date().toISOString() : null,
+    total_paused_time: pause ? state.total_paused_time : state.total_paused_time + Math.max(0, Math.floor((Date.now() - Date.parse(state.paused_at)) / 60000)),
+  }).eq('ticket_id', id)
+  // Compare-and-set prevents concurrent resumes from counting pause time twice.
+  query = pause ? query.is('paused_at', null) : query.eq('paused_at', state.paused_at)
+  const { data: updated, error: updateError } = await query.select().maybeSingle()
+  if (updateError) return NextResponse.json({ error: 'Unable to update SLA state' }, { status: 500 })
+  if (!updated) return NextResponse.json({ error: 'SLA changed. Refresh and try again.' }, { status: 409 })
+  return NextResponse.json({ data: updated })
 }
-
-// POST /api/tickets/[id]/sla/pause - Pause SLA timer
-export async function POST(request: Request, props: { params: Promise<{ id: string }> }) {
-  const params = await props.params;
-  try {
-    const supabase = getServerSupabase()
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    
-    if (userError || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
-    }
-
-    const json = await request.json()
-    const body = pauseSLASchema.parse(json)
-
-    // Start a transaction
-    const result = await sql.transaction(async (tx) => {
-      // Get current SLA state
-      const [slaState] = await tx.execute(sql`
-        SELECT 
-          started_at,
-          paused_at,
-          total_paused_time
-        FROM sla_states
-        WHERE ticket_id = ${params.id}
-      `)
-
-      if (!slaState) {
-        throw new Error('No SLA state found for ticket')
-      }
-
-      if (slaState.paused_at) {
-        throw new Error('SLA is already paused')
-      }
-
-      // Pause the SLA
-      const [updatedState] = await tx.execute(sql`
-        UPDATE sla_states
-        SET 
-          paused_at = NOW(),
-          updated_at = NOW()
-        WHERE ticket_id = ${params.id}
-        RETURNING *
-      `)
-
-      // Create audit log
-      await tx.execute(sql`
-        INSERT INTO audit_logs (
-          entity_type,
-          entity_id,
-          action,
-          actor_id,
-          actor_type,
-          changes
-        ) VALUES (
-          'ticket',
-          ${params.id},
-          'sla_pause',
-          ${user.id},
-          'agent',
-          ${JSON.stringify({
-            reason: body.reason,
-            resumeAt: body.resumeAt
-          })}::jsonb
-        )
-      `)
-
-      return updatedState
-    })
-
-    return NextResponse.json({ data: result })
-  } catch (error) {
-    console.error('Failed to pause SLA:', error)
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Invalid request data', details: error.errors },
-        { status: 400 }
-      )
-    }
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to pause SLA' },
-      { status: 500 }
-    )
-  }
-}
-
-// POST /api/tickets/[id]/sla/resume - Resume SLA timer
-export async function PUT(request: Request, props: { params: Promise<{ id: string }> }) {
-  const params = await props.params;
-  try {
-    const supabase = getServerSupabase()
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    
-    if (userError || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
-    }
-
-    // Start a transaction
-    const result = await sql.transaction(async (tx) => {
-      // Get current SLA state
-      const [slaState] = await tx.execute(sql`
-        SELECT 
-          started_at,
-          paused_at,
-          total_paused_time
-        FROM sla_states
-        WHERE ticket_id = ${params.id}
-      `)
-
-      if (!slaState) {
-        throw new Error('No SLA state found for ticket')
-      }
-
-      if (!slaState.paused_at) {
-        throw new Error('SLA is not paused')
-      }
-
-      // Calculate additional paused time
-      const pausedAt = new Date(slaState.paused_at)
-      const additionalPausedTime = (Date.now() - pausedAt.getTime()) / (1000 * 60)
-
-      // Resume the SLA
-      const [updatedState] = await tx.execute(sql`
-        UPDATE sla_states
-        SET 
-          paused_at = NULL,
-          total_paused_time = total_paused_time + ${Math.floor(additionalPausedTime)},
-          updated_at = NOW()
-        WHERE ticket_id = ${params.id}
-        RETURNING *
-      `)
-
-      // Create audit log
-      await tx.execute(sql`
-        INSERT INTO audit_logs (
-          entity_type,
-          entity_id,
-          action,
-          actor_id,
-          actor_type,
-          changes
-        ) VALUES (
-          'ticket',
-          ${params.id},
-          'sla_resume',
-          ${user.id},
-          'agent',
-          ${JSON.stringify({
-            pausedTime: Math.floor(additionalPausedTime)
-          })}::jsonb
-        )
-      `)
-
-      return updatedState
-    })
-
-    return NextResponse.json({ data: result })
-  } catch (error) {
-    console.error('Failed to resume SLA:', error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to resume SLA' },
-      { status: 500 }
-    )
-  }
-}
+export async function POST(request: Request, context: Context) { return changePause(request, context, true) }
+export async function PUT(request: Request, context: Context) { return changePause(request, context, false) }

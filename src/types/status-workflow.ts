@@ -1,15 +1,15 @@
-import type { TicketStatus } from './ticket'
-import type { Agent } from './ticket'
+import { TicketStatus } from './ticket'
 
 export interface TransitionCondition {
   type: 'required_fields' | 'time_elapsed' | 'priority_check' | 'custom'
-  params: Record<string, any>
+  params: Record<string, unknown>
   message?: string
 }
 
 export interface StatusTransition {
   fromStatus: TicketStatus
   toStatus: TicketStatus
+  allowedRoles?: string[]
   conditions?: TransitionCondition[]
   hooks?: TransitionHook[]
 }
@@ -17,16 +17,11 @@ export interface StatusTransition {
 export interface TransitionHook {
   type: 'notify_assigned_agent' | 'update_custom_field' | 'create_audit_log'
   params: {
-    // Notification params
     notifyRoles?: ('customer' | 'assignee' | 'followers')[]
-    
-    // Field update params
     fieldId?: string
-    value?: any
-    
-    // Audit log params
+    value?: unknown
     action?: string
-    details?: Record<string, any>
+    details?: Record<string, unknown>
   }
 }
 
@@ -41,60 +36,20 @@ export interface StatusHistory {
   created_at: string
 }
 
-// Default workflow configuration
-export const DEFAULT_STATUS_WORKFLOW: StatusTransition[] = [
-  {
-    fromStatus: 'open',
-    toStatus: 'in_progress',
-    conditions: []
-  },
-  {
-    fromStatus: 'in_progress',
-    toStatus: 'awaiting_response',
-    conditions: []
-  },
-  {
-    fromStatus: 'awaiting_response',
-    toStatus: 'in_progress',
-    conditions: []
-  },
-  {
-    fromStatus: 'in_progress',
-    toStatus: 'resolved',
-    conditions: [
-      {
-        type: 'required_fields',
-        params: {
-          fields: ['resolution_notes']
-        },
-        message: 'Resolution notes are required'
-      }
-    ]
-  },
-  {
-    fromStatus: 'resolved',
-    toStatus: 'closed',
-    conditions: [
-      {
-        type: 'time_elapsed',
-        params: {
-          hours: 24
-        },
-        message: 'Ticket must be resolved for 24 hours before closing'
-      }
-    ]
-  },
-  {
-    fromStatus: 'closed',
-    toStatus: 'open',
-    conditions: [
-      {
-        type: 'priority_check',
-        params: {
-          minPriority: 'high'
-        },
-        message: 'Only high priority tickets can be reopened'
-      }
-    ]
-  }
-] 
+// Keep these pairs in sync with execute_status_transition in the database.
+// All changes require a staff identity. A reason is optional for every pair.
+const targets: Record<TicketStatus, TicketStatus[]> = {
+  [TicketStatus.OPEN]: [TicketStatus.IN_PROGRESS, TicketStatus.WAITING, TicketStatus.RESOLVED, TicketStatus.CLOSED],
+  [TicketStatus.IN_PROGRESS]: [TicketStatus.OPEN, TicketStatus.WAITING, TicketStatus.RESOLVED, TicketStatus.CLOSED],
+  [TicketStatus.WAITING]: [TicketStatus.OPEN, TicketStatus.IN_PROGRESS, TicketStatus.RESOLVED, TicketStatus.CLOSED],
+  [TicketStatus.RESOLVED]: [TicketStatus.OPEN, TicketStatus.IN_PROGRESS, TicketStatus.CLOSED],
+  [TicketStatus.CLOSED]: [TicketStatus.OPEN]
+}
+
+export const DEFAULT_STATUS_WORKFLOW: StatusTransition[] = Object.entries(targets).flatMap(([fromStatus, statuses]) =>
+  statuses.map(toStatus => ({ fromStatus: fromStatus as TicketStatus, toStatus, allowedRoles: ['agent', 'admin', 'supervisor'], conditions: [] }))
+)
+
+export function normalizeTicketStatus(status: string): TicketStatus {
+  return (status === 'awaiting_response' ? TicketStatus.WAITING : status) as TicketStatus
+}

@@ -1,20 +1,15 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, X, ChevronDown, Search as SearchIcon } from 'lucide-react'
+import { Plus, X, Search as SearchIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Command, CommandInput, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
-import type { 
-  SearchField, 
-  SearchCondition, 
-  SearchGroup, 
-  SearchOperator 
-} from '@/types/search'
-import { searchService } from '@/lib/services'
+
+import type { SearchCondition, SearchGroup, SearchOperator } from '@/types/search';
+import { DEFAULT_SEARCH_FIELDS } from '@/types/search'
 
 interface SearchBuilderProps {
   onSearch: (query: SearchGroup) => void
@@ -24,7 +19,7 @@ interface SearchBuilderProps {
 export function SearchBuilder({ onSearch, className = '' }: SearchBuilderProps) {
   const [conditions, setConditions] = useState<SearchCondition[]>([])
   const [groupType, setGroupType] = useState<'and' | 'or'>('and')
-  const searchFields = searchService.getSearchFields()
+  const searchFields = DEFAULT_SEARCH_FIELDS
 
   const addCondition = () => {
     setConditions([

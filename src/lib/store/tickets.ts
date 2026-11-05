@@ -10,7 +10,7 @@ interface TicketState {
   deleteTicket: (id: string) => Promise<boolean>
 }
 
-export const useTicketStore = create<TicketState>((set, get) => ({
+export const useTicketStore = create<TicketState>((set) => ({
   tickets: [],
   isLoading: false,
   error: null,

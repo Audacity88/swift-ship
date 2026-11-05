@@ -1,13 +1,13 @@
-import { createServerClient, type SupabaseClient } from '@supabase/ssr'
+import { createServerClient } from '@supabase/ssr'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { createBrowserClient } from '@supabase/ssr'
 import type { GetServerSidePropsContext, NextApiRequest, NextApiResponse } from 'next'
-import type { Database } from '@/types/supabase'
 
 export type ServerContext = 
   | GetServerSidePropsContext 
   | { req: NextApiRequest; res: NextApiResponse }
 
-let supabaseClient: SupabaseClient<Database> | null = null
+let supabaseClient: SupabaseClient | null = null
 
 export function getServerSupabase(context?: ServerContext) {
   // If we already have a client instance, return it
@@ -25,10 +25,10 @@ export function getServerSupabase(context?: ServerContext) {
           get: (name) => {
             return context.req.cookies[name]
           },
-          set: (name, value, options) => {
+          set: (name, value) => {
             context.res.setHeader('Set-Cookie', `${name}=${value}; Path=/; HttpOnly; SameSite=Lax`)
           },
-          remove: (name, options) => {
+          remove: (name) => {
             context.res.setHeader('Set-Cookie', `${name}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`)
           }
         }

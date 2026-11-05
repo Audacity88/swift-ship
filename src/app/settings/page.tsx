@@ -1,19 +1,21 @@
 'use client'
 
-import { useState } from 'react'
-import { 
-  User, Bell, Shield, CreditCard, Globe, Mail, 
-  Smartphone, Moon, Sun, ChevronRight
-} from 'lucide-react'
-import Image from 'next/image'
-import { cn } from '@/lib/utils'
-import { useTheme } from '@/lib/hooks/useTheme'
-import { useAuth } from '@/lib/hooks/useAuth'
-import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
+import { useAuth } from '@/lib/hooks/useAuth'
+import { useTheme } from '@/lib/hooks/useTheme'
+import { cn } from '@/lib/utils'
 import { USER_ROLE_LABELS } from '@/types/role'
+import {
+Bell,
+CreditCard,Globe,
+Shield,
+User
+} from 'lucide-react'
+import Image from 'next/image'
+import { useState } from 'react'
 
 type SettingsSection = 'profile' | 'notifications' | 'security' | 'billing' | 'preferences'
 
@@ -94,19 +96,19 @@ export default function SettingsPage() {
 
   return (
     <div className={cn(
-      "flex h-[calc(100vh-5rem)] -mt-6 -mx-6",
+      "flex min-w-0 flex-col lg:flex-row lg:h-[calc(100vh-5rem)]",
       "bg-background"
     )}>
       {/* Navigation Sidebar */}
       <div className={cn(
-        "w-64",
+        "w-full shrink-0 lg:w-64",
         "border-r border-border",
         "bg-card"
       )}>
         <div className="p-6">
           <h1 className="text-xl font-semibold">Settings</h1>
         </div>
-        <nav className="px-3">
+        <nav className="flex flex-wrap lg:block px-3">
           {navigationItems.map((item) => {
             const Icon = item.icon
             return (
@@ -131,7 +133,7 @@ export default function SettingsPage() {
 
       {/* Content Area */}
       <div className={cn(
-        "flex-1 overflow-auto",
+        "min-w-0 flex-1 overflow-auto",
         "bg-background"
       )}>
         <div className="max-w-3xl mx-auto p-6">
@@ -149,6 +151,7 @@ export default function SettingsPage() {
                     src={user.avatar || "/images/default-avatar.png"}
                     alt={user.name || "Profile"}
                     fill
+                    sizes="96px"
                     className="rounded-full object-cover"
                     priority
                     unoptimized
@@ -209,7 +212,7 @@ export default function SettingsPage() {
                     id="phone"
                     type="tel"
                     placeholder="+1 (555) 000-0000"
-                    defaultValue={user.phone}
+                    defaultValue={user.phone || ''}
                   />
                 </div>
 
@@ -219,7 +222,7 @@ export default function SettingsPage() {
                     id="company"
                     type="text"
                     placeholder="Company Name"
-                    defaultValue={user.company}
+                    defaultValue={user.company || ''}
                   />
                 </div>
 

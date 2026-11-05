@@ -1,4 +1,4 @@
-import { AgentContext, AgentMessage } from './base-agent';
+import { BaseAgent, AgentContext, AgentMessage } from './base-agent';
 import { RouterAgent } from './router-agent';
 import { QuoteAgent } from './quote-agent';
 import { SupportAgent } from './support-agent';
@@ -10,12 +10,12 @@ interface AgentResponse {
 }
 
 export class AgentCoordinator {
-  private agents: Map<string, any>;
+  private agents: Map<string, BaseAgent>;
   private routerAgent: RouterAgent;
 
   constructor() {
     this.routerAgent = new RouterAgent();
-    this.agents = new Map([
+    this.agents = new Map<string, BaseAgent>([
       ['QUOTE_AGENT', new QuoteAgent()],
       ['SUPPORT_AGENT', new SupportAgent()],
       ['SHIPMENTS_AGENT', new ShipmentsAgent()]
@@ -44,7 +44,7 @@ export class AgentCoordinator {
     
     try {
       routingDecision = JSON.parse(routingResponse.content);
-    } catch (e) {
+    } catch {
       routingDecision = { agent: 'QUOTE_AGENT', reason: 'Default routing' };
     }
 

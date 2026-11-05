@@ -30,7 +30,7 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
-import { ChevronDown, ChevronRight, Grip, Plus, X } from 'lucide-react';
+import { Grip, Plus } from 'lucide-react';
 import { DragDropContext, Draggable, Droppable, DropResult } from '@hello-pangea/dnd';
 
 interface CategoryManagerProps {

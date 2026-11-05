@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { useRef, useState } from 'react'
+import { useForm, type FieldErrors } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Button } from '@/components/ui/button'
@@ -34,10 +34,13 @@ interface CreateTicketFormProps {
 export function CreateTicketForm({ onSubmit: externalSubmit, onSuccess }: CreateTicketFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const { toast } = useToast()
+  const [errorSummary, setErrorSummary] = useState<string[]>([])
+  const summaryRef = useRef<HTMLDivElement>(null)
 
   const form = useForm<TicketFormData>({
     resolver: zodResolver(ticketFormSchema),
     mode: 'onChange',
+    shouldFocusError: false,
     defaultValues: {
       title: '',
       description: '',
@@ -49,6 +52,7 @@ export function CreateTicketForm({ onSubmit: externalSubmit, onSuccess }: Create
   })
 
   const onSubmit = async (data: TicketFormData) => {
+    setErrorSummary([])
     try {
       setIsSubmitting(true)
       
@@ -86,7 +90,7 @@ export function CreateTicketForm({ onSubmit: externalSubmit, onSuccess }: Create
       if (externalSubmit) {
         await externalSubmit(cleanData)
       } else {
-        await createTicket(cleanData)
+        await createTicket(undefined, cleanData)
       }
 
       toast({
@@ -108,9 +112,16 @@ export function CreateTicketForm({ onSubmit: externalSubmit, onSuccess }: Create
     }
   }
 
+  const onInvalid = (errors: FieldErrors<TicketFormData>) => {
+    const labels: Record<string, string> = { title: 'Enter a title.', description: 'Describe your issue.', customerId: 'Select a customer.', priority: 'Select a priority.' }
+    setErrorSummary(Object.keys(errors).map(key => labels[key] || `Check ${key}.`))
+    requestAnimationFrame(() => summaryRef.current?.focus())
+  }
+
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+      <form onSubmit={form.handleSubmit(onSubmit, onInvalid)} noValidate className="space-y-6">
+        {errorSummary.length > 0 && <div ref={summaryRef} tabIndex={-1} role="alert" className="rounded border border-destructive p-4 text-destructive"><p className="font-medium">Please correct these fields before submitting:</p><ul className="mt-2 list-disc pl-5">{errorSummary.map(message => <li key={message}>{message}</li>)}</ul></div>}
         <FormField
           control={form.control}
           name="title"

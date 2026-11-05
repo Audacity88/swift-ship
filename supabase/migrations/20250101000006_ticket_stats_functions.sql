@@ -1,3 +1,10 @@
+-- Return types changed from the original stats functions, so replace them explicitly.
+DROP FUNCTION IF EXISTS get_ticket_counts(timestamp, timestamp);
+DROP FUNCTION IF EXISTS get_resolution_times(timestamp, timestamp);
+DROP FUNCTION IF EXISTS get_sla_stats(timestamp, timestamp);
+DROP FUNCTION IF EXISTS get_ticket_volume_trends(timestamp, timestamp);
+DROP FUNCTION IF EXISTS get_agent_metrics(timestamp, timestamp);
+
 -- Get ticket counts
 CREATE OR REPLACE FUNCTION get_ticket_counts(start_date timestamp, end_date timestamp)
 RETURNS TABLE (

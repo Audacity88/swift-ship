@@ -1,3 +1,5 @@
+import type { QuoteRequest } from './quote'
+
 export type ShipmentStatus = 
   | 'quote_requested'    // Initial quote request created
   | 'quote_provided'     // Quote has been provided by the team
@@ -38,13 +40,14 @@ export interface Shipment {
   actual_delivery?: string
   tracking_number: string
   metadata: {
+    quote_metadata?: Partial<QuoteRequest['metadata']>
     weight?: string
     volume?: string
     container_size?: string
     pallet_count?: string
     hazardous: boolean
     special_requirements?: string
-    [key: string]: any
+    [key: string]: unknown
   }
   created_at: string
   updated_at: string

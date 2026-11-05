@@ -1,17 +1,15 @@
 'use client'
 
-import { useState, useEffect, useTransition } from 'react'
-import { useRouter, useParams } from 'next/navigation'
-import Image from 'next/image'
-import { Search, UserPlus, History, Check, RefreshCw } from 'lucide-react'
-import type { Agent } from '@/types/ticket'
 import { useAuth } from '@/lib/hooks/useAuth'
+import type { Agent } from '@/types/ticket'
+import { Check,History,RefreshCw,Search,UserPlus } from 'lucide-react'
+import Image from 'next/image'
+import { useParams } from 'next/navigation'
+import { useEffect,useState } from 'react'
 
 export default function TicketAssigneePage() {
   const { user } = useAuth()
-  const router = useRouter()
   const params = useParams()
-  const [isPending, startTransition] = useTransition()
   
   const [searchQuery, setSearchQuery] = useState('')
   const [agents, setAgents] = useState<Agent[]>([])
@@ -54,7 +52,7 @@ export default function TicketAssigneePage() {
         throw new Error(error.error || 'Failed to assign ticket')
       }
 
-      const updatedTicket = await response.json()
+      await response.json()
       
       // Update current assignee
       const selectedAgentData = agents.find(agent => agent.id === selectedAgent)

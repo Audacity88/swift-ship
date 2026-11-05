@@ -1,10 +1,11 @@
 'use client'
 
+import { formatTicketStatus } from '@/lib/ticket-labels'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -43,7 +44,7 @@ const formatDate = (dateString: string | null | undefined): string => {
       return 'Invalid date'
     }
     return format(date, 'MMM d, yyyy')
-  } catch (error) {
+  } catch {
     return 'Invalid date'
   }
 }
@@ -97,7 +98,7 @@ export function QuoteDetailView({
   }
 
   return (
-    <Card className="p-6 relative">
+    <Card className="min-w-0 break-words p-4 sm:p-6 relative">
       {/* Action Buttons - Show for admins or when edit/delete handlers are provided */}
       {(isAdmin || onEditQuote || onDeleteQuote) && (quote.status === 'open' || quote.status === 'in_progress') && (
         <div className="absolute top-4 right-4 flex items-center gap-2">
@@ -129,13 +130,13 @@ export function QuoteDetailView({
         </div>
       )}
 
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Quote Details */}
-        <div className="space-y-4">
-          <div className="flex items-start justify-between">
+        <div className="min-w-0 space-y-4">
+          <div className="flex flex-wrap items-start justify-between gap-2">
             <h3 className="font-medium">Quote Request #{quote.id.slice(0, 8)}</h3>
             <Badge className={getStatusBadgeColor(quote.status)}>
-              {quote.status}
+              {formatTicketStatus(quote.status)}
             </Badge>
           </div>
           
@@ -176,7 +177,7 @@ export function QuoteDetailView({
             <Button
               onClick={() => onCreateShipment(quote.id)}
               className="w-full mt-4 bg-green-600 hover:bg-green-700 text-white"
-              variant="success"
+              variant="default"
             >
               <Truck className="w-4 h-4 mr-2" />
               Create Shipment
@@ -188,8 +189,8 @@ export function QuoteDetailView({
         <div>
           <h4 className="font-medium mb-2">Customer</h4>
           <div className="space-y-1 text-sm">
-            <p>{quote.customer.name}</p>
-            <p className="text-muted-foreground">{quote.customer.email}</p>
+            <p>{quote.customer?.name || 'Customer'}</p>
+            <p className="break-all text-muted-foreground">{quote.customer?.email || ''}</p>
             <p className="text-muted-foreground">
               Requested on {format(new Date(quote.created_at), 'MMM d, yyyy')}
             </p>
@@ -200,7 +201,7 @@ export function QuoteDetailView({
           /* Quote Form */
           <div>
             <h4 className="font-medium mb-2">Submit Quote</h4>
-            <div className="space-y-4">
+            <div className="min-w-0 space-y-4">
               <div>
                 <Label htmlFor={`price-${quote.id}`}>Price (USD)</Label>
                 <div className="relative">

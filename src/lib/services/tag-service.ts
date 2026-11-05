@@ -1,11 +1,6 @@
 import { getServerSupabase, type ServerContext } from '@/lib/supabase-client'
 import type { Tag, TagSuggestion } from '@/types/tag'
 
-interface TicketTag {
-  ticket_id: string
-  tag_id: string
-}
-
 export const tagService = {
   async getSuggestions(context: ServerContext, ticketId: string): Promise<TagSuggestion[]> {
     try {
@@ -46,7 +41,7 @@ export const tagService = {
         throw tagsError
       }
 
-      return (tags || []).map((tag: any) => ({
+      return (tags || []).map((tag) => ({
         tag: {
           id: tag.id,
           name: tag.name,
@@ -55,7 +50,7 @@ export const tagService = {
           created_at: tag.created_at,
         },
         score: 0,
-        reason: 'frequently_used',
+        reason: 'frequent',
       }))
     } catch (error) {
       console.error('Error in getSuggestions:', error)
@@ -91,7 +86,7 @@ export const tagService = {
         throw error
       }
 
-      return (data || []).map((t: any) => ({
+      return (data || []).map((t) => ({
         id: t.id,
         name: t.name,
         color: t.color || '#666666',
@@ -235,8 +230,9 @@ export const tagService = {
     ticketIds: string[]
   ): Promise<void> {
     try {
-      const { supabase, user } = context
-      if (!supabase || !user) {
+      const supabase = getServerSupabase(context)
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (userError || !user) {
         throw new Error('Unauthorized')
       }
 
@@ -299,8 +295,9 @@ export const tagService = {
   async addTagToTicket(context: ServerContext, tagId: string, ticketId: string): Promise<void> {
     try {
       console.log('[Tag Service] Adding tag to ticket:', { tagId, ticketId })
-      const { supabase, user } = context
-      if (!supabase || !user) {
+      const supabase = getServerSupabase(context)
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (userError || !user) {
         console.error('[Tag Service] Unauthorized access')
         throw new Error('Unauthorized')
       }
@@ -318,7 +315,7 @@ export const tagService = {
       }
 
       // First get the tag details
-      const { data: tag, error: tagError } = await supabase
+      const { error: tagError } = await supabase
         .from('tags')
         .select('*')
         .eq('id', tagId)
@@ -356,8 +353,9 @@ export const tagService = {
   async removeTagFromTicket(context: ServerContext, tagId: string, ticketId: string): Promise<void> {
     try {
       console.log('[Tag Service] Removing tag from ticket:', { tagId, ticketId })
-      const { supabase, user } = context
-      if (!supabase || !user) {
+      const supabase = getServerSupabase(context)
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (userError || !user) {
         console.error('[Tag Service] Unauthorized access')
         throw new Error('Unauthorized')
       }

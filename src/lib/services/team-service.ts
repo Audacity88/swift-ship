@@ -1,13 +1,35 @@
-import type { Team, TeamCreationData, TeamUpdateData, TeamMember } from '@/types/team'
-import { UserRole } from '@/types/role'
+import type { Team, TeamCreationData, TeamUpdateData, TeamMember, TeamMemberUpdate, TeamSchedule, TeamAgent, WeeklySchedule } from '@/types/team'
+import type { UserRole } from '@/types/role'
 import { getServerSupabase, type ServerContext } from '@/lib/supabase-client'
 
+const emptySchedule = (): WeeklySchedule => {
+  const day = () => ({ enabled: false, startTime: '09:00', endTime: '17:00', assignedMembers: [] as string[] })
+  return { monday: day(), tuesday: day(), wednesday: day(), thursday: day(), friday: day(), saturday: day(), sunday: day() }
+}
+
+interface TeamMemberRow {
+  team_id: string; user_id: string; role: UserRole; joined_at: string;
+  skills?: string[]; schedule?: TeamMember['schedule'];
+  agent?: { name: string; email: string } | null;
+}
+interface TeamRow {
+  id: string; name: string; description?: string; is_active: boolean;
+  created_at: string; updated_at: string; members?: TeamMemberRow[];
+  schedule?: Team['schedule']; skills?: Team['skills']; metrics?: Team['metrics'];
+}
+
 export const teamService = {
+  async getAvailableAgents(context: ServerContext): Promise<TeamAgent[]> {
+    const supabase = getServerSupabase(context)
+    const { data, error } = await supabase.from('agents').select('id, name, email').order('name')
+    if (error) throw new Error('Unable to load agents. Please try again.')
+    return data || []
+  },
   async getAllTeams(context: ServerContext): Promise<Team[]> {
     try {
       const supabase = getServerSupabase(context)
       const { data: { user }, error: userError } = await supabase.auth.getUser()
-      
+
       if (userError || !user) {
         throw new Error('Unauthorized')
       }
@@ -29,34 +51,41 @@ export const teamService = {
             user_id,
             role,
             joined_at,
+            agent:agents!team_members_user_id_fkey(name, email),
             skills,
             schedule
           )
         `)
+        .returns<TeamRow[]>()
 
       if (error) {
         console.error('Failed to get all teams:', error)
         throw error
       }
 
-      return (data || []).map((t: any) => ({
+      return (data || []).map((t: TeamRow) => ({
         id: t.id,
         name: t.name,
         description: t.description,
-        members: (t.members || []).map((m: any) => ({
+        members: (t.members || []).map((m: TeamMemberRow) => ({
           teamId: m.team_id,
           userId: m.user_id,
+          name: m.agent?.name,
+          email: m.agent?.email,
           role: m.role as UserRole,
-          schedule: m.schedule || {},
+          schedule: m.schedule || emptySchedule(),
           skills: m.skills || [],
           joinedAt: new Date(m.joined_at),
         })),
-        schedule: t.schedule || {},
+        schedule: t.schedule || emptySchedule(),
         skills: t.skills || [],
         metrics: t.metrics || {
-          responseTime: 0,
-          resolutionRate: 0,
-          customerSatisfaction: 0
+          averageResponseTime: 0,
+          averageResolutionTime: 0,
+          openTickets: 0,
+          resolvedTickets: 0,
+          customerSatisfactionScore: 0,
+          updatedAt: new Date()
         },
         isActive: t.is_active,
         createdAt: new Date(t.created_at),
@@ -72,7 +101,7 @@ export const teamService = {
     try {
       const supabase = getServerSupabase(context)
       const { data: { user }, error: userError } = await supabase.auth.getUser()
-      
+
       if (userError || !user) {
         throw new Error('Unauthorized')
       }
@@ -94,12 +123,14 @@ export const teamService = {
             user_id,
             role,
             joined_at,
+            agent:agents!team_members_user_id_fkey(name, email),
             skills,
             schedule
           )
         `)
         .eq('id', id)
-        .single()
+        .returns<TeamRow[]>()
+        .maybeSingle()
 
       if (error) {
         console.error('Failed to get team:', error)
@@ -112,20 +143,25 @@ export const teamService = {
         id: data.id,
         name: data.name,
         description: data.description,
-        members: (data.members || []).map((m: any) => ({
+        members: (data.members || []).map((m: TeamMemberRow) => ({
           teamId: m.team_id,
           userId: m.user_id,
+          name: m.agent?.name,
+          email: m.agent?.email,
           role: m.role as UserRole,
-          schedule: m.schedule || {},
+          schedule: m.schedule || emptySchedule(),
           skills: m.skills || [],
           joinedAt: new Date(m.joined_at),
         })),
-        schedule: data.schedule || {},
+        schedule: data.schedule || emptySchedule(),
         skills: data.skills || [],
         metrics: data.metrics || {
-          responseTime: 0,
-          resolutionRate: 0,
-          customerSatisfaction: 0
+          averageResponseTime: 0,
+          averageResolutionTime: 0,
+          openTickets: 0,
+          resolvedTickets: 0,
+          customerSatisfactionScore: 0,
+          updatedAt: new Date()
         },
         isActive: data.is_active,
         createdAt: new Date(data.created_at),
@@ -137,11 +173,11 @@ export const teamService = {
     }
   },
 
-  async createTeam(context: ServerContext, payload: TeamCreationData): Promise<Team | null> {
+  async createTeam(context: ServerContext, payload: TeamCreationData & { members?: Omit<TeamMember, 'teamId' | 'joinedAt'>[] }): Promise<Team | null> {
     try {
       const supabase = getServerSupabase(context)
       const { data: { user }, error: userError } = await supabase.auth.getUser()
-      
+
       if (userError || !user) {
         throw new Error('Unauthorized')
       }
@@ -154,9 +190,12 @@ export const teamService = {
           schedule: payload.schedule || {},
           skills: payload.skills || [],
           metrics: {
-            responseTime: 0,
-            resolutionRate: 0,
-            customerSatisfaction: 0
+            averageResponseTime: 0,
+            averageResolutionTime: 0,
+            openTickets: 0,
+            resolvedTickets: 0,
+            customerSatisfactionScore: 0,
+            updatedAt: new Date()
           },
           is_active: true,
           created_by: user.id,
@@ -203,7 +242,7 @@ export const teamService = {
     try {
       const supabase = getServerSupabase(context)
       const { data: { user }, error: userError } = await supabase.auth.getUser()
-      
+
       if (userError || !user) {
         throw new Error('Unauthorized')
       }
@@ -237,7 +276,7 @@ export const teamService = {
     try {
       const supabase = getServerSupabase(context)
       const { data: { user }, error: userError } = await supabase.auth.getUser()
-      
+
       if (userError || !user) {
         throw new Error('Unauthorized')
       }
@@ -275,7 +314,7 @@ export const teamService = {
     try {
       const supabase = getServerSupabase(context)
       const { data: { user }, error: userError } = await supabase.auth.getUser()
-      
+
       if (userError || !user) {
         throw new Error('Unauthorized')
       }
@@ -287,10 +326,12 @@ export const teamService = {
           user_id,
           role,
           joined_at,
+          agent:agents!team_members_user_id_fkey(name, email),
           skills,
           schedule
         `)
         .eq('team_id', teamId)
+        .returns<TeamMemberRow[]>()
 
       if (error) {
         console.error('Failed to get team members:', error)
@@ -300,8 +341,10 @@ export const teamService = {
       return (data || []).map(m => ({
         teamId: m.team_id,
         userId: m.user_id,
+        name: m.agent?.name,
+        email: m.agent?.email,
         role: m.role as UserRole,
-        schedule: m.schedule || {},
+        schedule: m.schedule || emptySchedule(),
         skills: m.skills || [],
         joinedAt: new Date(m.joined_at)
       }))
@@ -315,7 +358,7 @@ export const teamService = {
     try {
       const supabase = getServerSupabase(context)
       const { data: { user }, error: userError } = await supabase.auth.getUser()
-      
+
       if (userError || !user) {
         throw new Error('Unauthorized')
       }
@@ -347,7 +390,7 @@ export const teamService = {
     try {
       const supabase = getServerSupabase(context)
       const { data: { user }, error: userError } = await supabase.auth.getUser()
-      
+
       if (userError || !user) {
         throw new Error('Unauthorized')
       }
@@ -370,11 +413,11 @@ export const teamService = {
     }
   },
 
-  async updateTeamMember(update: { teamId: string; userId: string; role?: UserRole; schedule?: any; skills?: string[] }): Promise<boolean> {
+  async updateTeamMember(update: TeamMemberUpdate): Promise<boolean> {
     try {
-      const supabase = getServerSupabase(context)
+      const supabase = getServerSupabase(undefined)
       const { data: { user }, error: userError } = await supabase.auth.getUser()
-      
+
       if (userError || !user) {
         throw new Error('Unauthorized')
       }
@@ -401,7 +444,8 @@ export const teamService = {
     }
   },
 
-  async getTeamSchedule(teamId: string): Promise<any> {
+  async getTeamSchedule(teamId: string): Promise<Partial<TeamSchedule>> {
+    const supabase = getServerSupabase(undefined)
     // In this example, we store schedule on the teams table or in a separate table. We'll assume it's on `teams`.
     const { data, error } = await supabase
       .from('teams')
@@ -419,7 +463,8 @@ export const teamService = {
     }
   },
 
-  async updateTeamSchedule(teamId: string, schedule: any): Promise<boolean> {
+  async updateTeamSchedule(teamId: string, schedule: TeamSchedule): Promise<boolean> {
+    const supabase = getServerSupabase(undefined)
     // Update schedule field in teams table
     const { error } = await supabase
       .from('teams')

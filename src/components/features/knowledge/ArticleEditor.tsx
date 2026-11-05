@@ -8,18 +8,7 @@ import Image from '@tiptap/extension-image';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
 import { common, createLowlight } from 'lowlight';
 import { Button } from '@/components/ui/button';
-import {
-  Bold,
-  Italic,
-  List,
-  ListOrdered,
-  Quote,
-  Code,
-  Link as LinkIcon,
-  Image as ImageIcon,
-  Undo,
-  Redo,
-} from 'lucide-react';
+
 import { cn } from '@/lib/utils';
 import { knowledgeService } from '@/lib/services'
 import { Input } from '@/components/ui/input'
@@ -29,11 +18,6 @@ import { Alert } from '@/components/ui/alert'
 import { Article, Category, ArticleStatus } from '@/types/knowledge'
 
 const lowlight = createLowlight(common);
-
-interface Author {
-  id: string
-  name: string
-}
 
 interface ArticleEditorProps {
   article: Article
@@ -86,8 +70,12 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({
     setError(null)
 
     try {
-      await knowledgeService.saveArticle(article)
-    } catch (err) {
+      const saved = article.id
+        ? await knowledgeService.updateArticle(undefined, article.id, article)
+        : await knowledgeService.createArticle(undefined, article)
+      if (!saved) throw new Error('Article save returned no result')
+      if (typeof saved !== 'boolean') setArticle(prev => ({ ...prev, id: saved.id }))
+    } catch {
       setError('Failed to save article')
     } finally {
       setIsSaving(false)
@@ -101,9 +89,14 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({
     setError(null)
 
     try {
-      await knowledgeService.publishArticle(article)
+      const published = { ...article, status: ArticleStatus.PUBLISHED }
+      const saved = article.id
+        ? await knowledgeService.updateArticle(undefined, article.id, published)
+        : await knowledgeService.createArticle(undefined, published)
+      if (!saved) throw new Error('Article publish returned no result')
+      if (typeof saved !== 'boolean') setArticle(prev => ({ ...prev, id: saved.id }))
       setArticle(prev => ({ ...prev, status: ArticleStatus.PUBLISHED }))
-    } catch (err) {
+    } catch {
       setError('Failed to publish article')
     } finally {
       setIsSaving(false)
@@ -153,29 +146,8 @@ const ArticleEditor: React.FC<ArticleEditorProps> = ({
     return null;
   }
 
-  const addImage = () => {
-    const url = window.prompt('Enter image URL');
-    if (url) {
-      editor.chain().focus().setImage({ src: url }).run();
-    }
-  };
-
-  const setLink = () => {
-    const url = window.prompt('Enter URL');
-    if (url === null) {
-      return;
-    }
-
-    if (url === '') {
-      editor.chain().focus().unsetLink().run();
-      return;
-    }
-
-    editor.chain().focus().setLink({ href: url }).run();
-  };
-
   return (
-    <div className="space-y-4">
+    <div className={cn("space-y-4", className)}>
       {error && (
         <Alert variant="destructive">
           <p>{error}</p>

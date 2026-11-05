@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getServerSupabase } from '@/lib/supabase-client';
 import { TicketStatus } from '@/types/ticket';
 
@@ -108,7 +108,7 @@ export async function POST(request: Request) {
         description,
         priority,
         type,
-        status: TicketStatus.NEW,
+        status: TicketStatus.OPEN,
         customer_id: user.id,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),

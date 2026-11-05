@@ -46,7 +46,7 @@ export default function TicketLayout({
         .from('customers')
         .select('id')
         .eq('id', user.id)
-        .single()
+        .maybeSingle()
 
       setIsCustomer(!!customer)
     }

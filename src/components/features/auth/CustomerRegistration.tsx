@@ -17,20 +17,6 @@ interface RegistrationData {
   company?: string;
 }
 
-interface CustomerProfile {
-  user_id: string;
-  name: string;
-  company: string | null;
-  created_at: string;
-}
-
-interface UserRoleData {
-  user_id: string;
-  role: RoleType;
-  assigned_by: string;
-  assigned_at: string;
-}
-
 export function CustomerRegistration() {
   const [formData, setFormData] = useState<RegistrationData>({
     email: '',
@@ -48,7 +34,7 @@ export function CustomerRegistration() {
     setLoading(true);
 
     try {
-      await authService.registerCustomer({}, {
+      const result = await authService.registerCustomer(undefined, {
         email: formData.email,
         password: formData.password,
         name: formData.name,
@@ -56,7 +42,7 @@ export function CustomerRegistration() {
       });
 
       // Redirect to confirmation page
-      router.push('/auth/confirm-email');
+      router.push(result.session ? '/portal/welcome' : '/auth/confirm-email');
     } catch (err) {
       console.error('Registration error:', err);
       setError(err instanceof Error ? err.message : 'Failed to register');
@@ -67,8 +53,8 @@ export function CustomerRegistration() {
 
   const handleSocialLogin = async (provider: 'google' | 'github') => {
     try {
-      await authService.signInWithProvider({}, provider, {
-        redirectTo: `${window.location.origin}/portal/auth/callback`,
+      await authService.signInWithProvider(undefined, provider, {
+        redirectTo: `${window.location.origin}/auth/callback?next=/portal/welcome`,
       });
     } catch (err) {
       const error = err as AuthError;

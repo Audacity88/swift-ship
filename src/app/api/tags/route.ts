@@ -1,39 +1,11 @@
+import { errorMessage, errorStatus } from '@/app/api/_errors'
 import { NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
-import { tagService } from '@/lib/services'
-import type { Tag } from '@/types/tag'
+import { createClient } from '@/lib/supabase/server'
 
 // GET /api/tags - Get all tags
 export async function GET() {
   try {
-    const cookieStore = await cookies()
-    
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get(name: string) {
-            return cookieStore.get(name)?.value
-          },
-          set(name: string, value: string, options: any) {
-            try {
-              cookieStore.set({ name, value, ...options })
-            } catch (error) {
-              // Handle cookie setting error silently
-            }
-          },
-          remove(name: string, options: any) {
-            try {
-              cookieStore.delete(name)
-            } catch (error) {
-              // Handle cookie removal error silently
-            }
-          },
-        },
-      }
-    )
+    const supabase = await createClient()
 
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
@@ -85,32 +57,7 @@ export async function GET() {
 // POST /api/tags - Create a new tag
 export async function POST(request: Request) {
   try {
-    const cookieStore = await cookies()
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get(name: string) {
-            return cookieStore.get(name)?.value
-          },
-          set(name: string, value: string, options: any) {
-            try {
-              cookieStore.set({ name, value, ...options })
-            } catch (error) {
-              // Handle cookie setting error silently
-            }
-          },
-          remove(name: string, options: any) {
-            try {
-              cookieStore.delete(name)
-            } catch (error) {
-              // Handle cookie removal error silently
-            }
-          },
-        },
-      }
-    )
+    const supabase = await createClient()
 
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
@@ -154,18 +101,22 @@ export async function POST(request: Request) {
       ticketIds.flatMap(ticketId =>
         tagIds.map(tagId =>
           operation === 'add'
-            ? tagService.addTagToTicket({ supabase, user }, tagId, ticketId)
-            : tagService.removeTagFromTicket({ supabase, user }, tagId, ticketId)
+            ? supabase.from('ticket_tags').insert({ ticket_id: ticketId, tag_id: tagId }).then(({ error }) => {
+                if (error && error.code !== '23505') throw error
+              })
+            : supabase.from('ticket_tags').delete().eq('ticket_id', ticketId).eq('tag_id', tagId).then(({ error }) => {
+                if (error) throw error
+              })
         )
       )
     )
 
     return NextResponse.json({ success: true })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Failed to perform tag operation:', error)
     return NextResponse.json(
-      { error: error.message || 'Internal server error' },
-      { status: error.status || 500 }
+      { error: errorMessage(error, 'Internal server error') },
+      { status: errorStatus(error) }
     )
   }
 }
@@ -173,31 +124,7 @@ export async function POST(request: Request) {
 // PUT /api/tags/:id - Update a tag
 export async function PUT(request: Request) {
   try {
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get(name: string) {
-            return cookies().get(name)?.value
-          },
-          set(name: string, value: string, options: any) {
-            try {
-              cookies().set({ name, value, ...options })
-            } catch (error) {
-              // Handle cookie setting error silently
-            }
-          },
-          remove(name: string, options: any) {
-            try {
-              cookies().delete(name)
-            } catch (error) {
-              // Handle cookie removal error silently
-            }
-          },
-        },
-      }
-    )
+    const supabase = await createClient()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
     if (userError || !user) {
@@ -248,31 +175,7 @@ export async function PUT(request: Request) {
 // DELETE /api/tags/:id - Delete a tag
 export async function DELETE(request: Request) {
   try {
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get(name: string) {
-            return cookies().get(name)?.value
-          },
-          set(name: string, value: string, options: any) {
-            try {
-              cookies().set({ name, value, ...options })
-            } catch (error) {
-              // Handle cookie setting error silently
-            }
-          },
-          remove(name: string, options: any) {
-            try {
-              cookies().delete(name)
-            } catch (error) {
-              // Handle cookie removal error silently
-            }
-          },
-        },
-      }
-    )
+    const supabase = await createClient()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
     if (userError || !user) {
@@ -319,32 +222,7 @@ export async function DELETE(request: Request) {
 export async function PATCH(request: Request) {
   try {
     // Check authentication
-    const cookieStore = await cookies()
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get(name: string) {
-            return cookieStore.get(name)?.value
-          },
-          set(name: string, value: string, options: any) {
-            try {
-              cookieStore.set({ name, value, ...options })
-            } catch (error) {
-              // Handle cookie setting error silently
-            }
-          },
-          remove(name: string, options: any) {
-            try {
-              cookieStore.delete(name)
-            } catch (error) {
-              // Handle cookie removal error silently
-            }
-          },
-        },
-      }
-    )
+    const supabase = await createClient()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     if (userError || !user) {
       return NextResponse.json(
@@ -366,13 +244,16 @@ export async function PATCH(request: Request) {
       )
     }
 
-    await tagService.bulkUpdateTicketTags(undefined, operation, tagIds, ticketIds)
+    const result = operation === 'add'
+      ? await supabase.from('ticket_tags').insert(ticketIds.flatMap(ticketId => tagIds.map(tagId => ({ ticket_id: ticketId, tag_id: tagId }))))
+      : await supabase.from('ticket_tags').delete().in('ticket_id', ticketIds).in('tag_id', tagIds)
+    if (result.error && !(operation === 'add' && result.error.code === '23505')) throw result.error
     return NextResponse.json({ success: true })
-  } catch (error: any) {
+  } catch (error) {
     console.error('Failed to perform bulk tag operation:', error)
     return NextResponse.json(
-      { error: error.message || 'Internal server error' },
-      { status: error.status || 500 }
+      { error: errorMessage(error, 'Internal server error') },
+      { status: errorStatus(error) }
     )
   }
 } 

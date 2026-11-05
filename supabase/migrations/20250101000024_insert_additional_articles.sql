@@ -123,7 +123,7 @@ Consider these factors:
   -- Shipping - Packaging Guidelines
   ('a2222224-2222-2222-2222-222222222224',
    'Packaging Guidelines',
-   'packaging-guidelines',
+   'packaging-guidelines-basics',
    'Best practices for packaging your shipments',
    '# Packaging Guidelines
 

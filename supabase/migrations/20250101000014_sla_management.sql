@@ -1,0 +1,2 @@
+-- SLA tables, policies and defaults are created by the preceding add_sla_config_id migration.
+-- This previously duplicated that migration verbatim.

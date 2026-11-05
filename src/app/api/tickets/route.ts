@@ -1,22 +1,9 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { TicketPriority, TicketStatus } from '@/types/ticket'
-import { createServerClient } from '@supabase/ssr'
+import { createServerClient, type CookieOptions, type CookieMethodsServerDeprecated } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import type { NextRequest } from 'next/server'
-
-// Types
-interface CreateTicketResult {
-  id: string
-  title: string
-  description: string
-  status: TicketStatus
-  priority: TicketPriority
-  customer_id: string
-  assignee_id: string | null
-  created_at: string
-  updated_at: string
-}
 
 // Validation schema for creating a ticket
 const createTicketSchema = z.object({
@@ -37,7 +24,7 @@ const createTicketSchema = z.object({
 const ticketFiltersSchema = z.object({
   status: z.string().array().optional(),
   priority: z.string().array().optional(),
-  type: z.string().optional(),
+  type: z.string().nullish(),
   search: z.string().nullish(),
   dateFrom: z.string().nullish(),
   dateTo: z.string().nullish(),
@@ -45,35 +32,25 @@ const ticketFiltersSchema = z.object({
   assignedToMe: z.boolean().optional()
 })
 
-const paginationSchema = z.object({
-  page: z.coerce.number().min(1).default(1),
-  pageSize: z.coerce.number().min(1).max(100).default(10)
-})
-
-const sortingSchema = z.object({
-  sortField: z.string().default('created_at'),
-  sortDirection: z.enum(['asc', 'desc']).default('desc')
-})
-
 const initSupabase = async (request?: NextRequest) => {
   const cookieStore = await cookies()
   
-  const options: any = {
+  const options: { cookies: CookieMethodsServerDeprecated; global?: { headers: { Authorization: string } } } = {
     cookies: {
       get(name: string) {
         return cookieStore.get(name)?.value
       },
-      set(name: string, value: string, options: any) {
+      set(name: string, value: string, options: CookieOptions) {
         try {
           cookieStore.set({ name, value, ...options })
-        } catch (error) {
+        } catch {
           // Handle cookie setting error
         }
       },
-      remove(name: string, options: any) {
+      remove(name: string, options: CookieOptions) {
         try {
           cookieStore.set({ name, value: '', ...options })
-        } catch (error) {
+        } catch {
           // Handle cookie removal error
         }
       },
@@ -93,10 +70,10 @@ const initSupabase = async (request?: NextRequest) => {
     }
   }
   
-  // Use service role key for server-side operations
+  // Use the public key with the authenticated session so RLS always applies.
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     options
   )
 }
@@ -104,7 +81,7 @@ const initSupabase = async (request?: NextRequest) => {
 // GET /api/tickets - Get tickets with optional filters
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await initSupabase()
+    const supabase = await initSupabase(request)
     const { data: { user }, error: userError } = await supabase.auth.getUser()
 
     if (userError) {
@@ -217,6 +194,12 @@ export async function POST(request: NextRequest) {
 
     const json = await request.json()
     const body = createTicketSchema.parse(json)
+
+    const { data: actor } = await supabase.from('agents').select('role').eq('id', user.id).maybeSingle()
+    const staff = ['admin', 'agent', 'supervisor'].includes(actor?.role)
+    if (!staff && (body.customerId !== user.id || body.assigneeId)) {
+      return NextResponse.json({ error: 'Customers may only create unassigned tickets for themselves' }, { status: 403 })
+    }
 
     // Create the ticket
     const { data: ticket, error: ticketError } = await supabase

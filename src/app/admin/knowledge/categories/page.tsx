@@ -1,12 +1,11 @@
 'use client';
 
-import { useState } from 'react';
-import { Category } from '@/types/knowledge';
 import { CategoryManager } from '@/components/features/knowledge/CategoryManager';
-import { KnowledgeService } from '@/lib/services/knowledge-service';
+import { Category } from '@/types/knowledge';
+import { useState } from 'react';
 
 export default function CategoriesPage() {
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [categories] = useState<Category[]>([]);
 
   const handleCreateCategory = async (category: Omit<Category, 'id' | 'createdAt' | 'updatedAt'>) => {
     // In a real app, this would call the KnowledgeService to create the category

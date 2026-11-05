@@ -1,8 +1,7 @@
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/router'
 import { createBrowserClient } from '@supabase/ssr'
-import { Lock, AlertCircle, CheckCircle2 } from 'lucide-react'
-import { COLORS } from '@/lib/constants'
+import { CheckCircle2 } from 'lucide-react'
+import { useRouter } from 'next/router'
+import { useEffect,useState } from 'react'
 
 export default function UpdatePassword() {
   const [password, setPassword] = useState('')
@@ -57,7 +56,7 @@ export default function UpdatePassword() {
     }
 
     handleToken()
-  }, [])
+  }, [supabase.auth])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -96,7 +95,7 @@ export default function UpdatePassword() {
       setTimeout(() => {
         router.push('/auth/signin?message=Password updated successfully')
       }, 2000)
-    } catch (err) {
+    } catch {
       setError('An error occurred while updating your password')
     }
   }

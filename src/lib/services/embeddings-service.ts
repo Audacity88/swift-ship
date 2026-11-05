@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type PostgrestError } from '@supabase/supabase-js';
 import OpenAI from 'openai';
 
 const supabase = createClient(
@@ -47,7 +47,7 @@ export class EmbeddingsService {
       query_embedding: queryEmbedding,
       match_threshold: threshold,
       match_count: limit
-    }) as { data: SearchResult[] | null, error: any };
+    }) as { data: SearchResult[] | null, error: PostgrestError | null };
     
     if (error) throw error;
     return results || [];

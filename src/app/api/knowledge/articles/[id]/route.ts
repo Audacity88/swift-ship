@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSupabase } from '@/lib/supabase-client';
+import { createClient } from '@/lib/supabase/server';
 import { ArticleStatus } from '@/types/knowledge';
-import { Permission } from '@/types/role';
-import { checkUserPermissions } from '@/lib/auth/check-permissions';
 import { z } from 'zod';
 
 const updateArticleSchema = z.object({
@@ -10,7 +8,9 @@ const updateArticleSchema = z.object({
   content: z.string().min(1).optional(),
   categoryId: z.string().uuid().optional(),
   status: z.nativeEnum(ArticleStatus).optional(),
-  tags: z.array(z.string().uuid()).optional()
+  tags: z.array(z.string()).optional(),
+  excerpt: z.string().optional(),
+  changeDescription: z.string().optional()
 });
 
 type RouteContext = {
@@ -21,7 +21,7 @@ type RouteContext = {
 export async function GET(req: NextRequest, props: RouteContext) {
   const params = await props.params;
   try {
-    const supabase = getServerSupabase();
+    const supabase = await createClient();
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     
     if (userError || !user) {
@@ -41,7 +41,7 @@ export async function GET(req: NextRequest, props: RouteContext) {
         feedback:article_feedback(*)
       `)
       .eq('id', params.id)
-      .single();
+      .maybeSingle();
 
     if (error) {
       console.error('Error fetching article:', error);
@@ -65,7 +65,7 @@ export async function GET(req: NextRequest, props: RouteContext) {
 export async function PUT(req: NextRequest, props: RouteContext) {
   const params = await props.params;
   try {
-    const supabase = getServerSupabase();
+    const supabase = await createClient();
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     
     if (userError || !user) {
@@ -80,7 +80,7 @@ export async function PUT(req: NextRequest, props: RouteContext) {
       .from('agents')
       .select('role')
       .eq('id', user.id)
-      .single();
+      .maybeSingle();
 
     const isAdmin = agent?.role === 'admin';
 
@@ -92,7 +92,9 @@ export async function PUT(req: NextRequest, props: RouteContext) {
     }
 
     // Get request body
-    const body = await req.json();
+    const parsed = updateArticleSchema.safeParse(await req.json());
+    if (!parsed.success) return NextResponse.json({ error: 'Invalid article update' }, { status: 400 });
+    const body = parsed.data;
     const {
       title,
       content,
@@ -106,9 +108,9 @@ export async function PUT(req: NextRequest, props: RouteContext) {
     // Validate article exists
     const { data: existingArticle, error: articleError } = await supabase
       .from('articles')
-      .select('currentVersion')
+      .select('current_version,title,content,metadata')
       .eq('id', params.id)
-      .single();
+      .maybeSingle();
 
     if (articleError || !existingArticle) {
       return NextResponse.json(
@@ -117,19 +119,19 @@ export async function PUT(req: NextRequest, props: RouteContext) {
       );
     }
 
-    const newVersion = existingArticle.currentVersion + 1;
+    const newVersion = existingArticle.current_version + 1;
 
     // Create new version first
     const { error: versionError } = await supabase
       .from('article_versions')
       .insert({
-        articleId: params.id,
+        article_id: params.id,
         version: newVersion,
-        title,
-        content,
-        createdBy: user.id,
-        createdAt: new Date().toISOString(),
-        changeDescription
+        title: title ?? existingArticle.title,
+        content: content ?? existingArticle.content,
+        author_id: user.id,
+        created_at: new Date().toISOString(),
+        changes: { description: changeDescription || 'Article updated' }
       });
 
     if (versionError) {
@@ -147,15 +149,15 @@ export async function PUT(req: NextRequest, props: RouteContext) {
         title,
         content,
         excerpt,
-        categoryId,
+        category_id: categoryId,
         tags,
         status,
-        currentVersion: newVersion,
-        updatedAt: new Date().toISOString()
+        current_version: newVersion,
+        updated_at: new Date().toISOString()
       })
       .eq('id', params.id)
       .select()
-      .single();
+      .maybeSingle();
 
     if (updateError) {
       console.error('Error updating article:', updateError);
@@ -169,10 +171,10 @@ export async function PUT(req: NextRequest, props: RouteContext) {
     const { error: metadataError } = await supabase
       .from('article_metadata')
       .update({
-        lastUpdated: new Date().toISOString(),
-        ...(status === ArticleStatus.PUBLISHED ? { publishedAt: new Date().toISOString() } : {})
+        last_updated: new Date().toISOString(),
+        ...(status === ArticleStatus.PUBLISHED ? { published_at: new Date().toISOString() } : {})
       })
-      .eq('articleId', params.id);
+      .eq('article_id', params.id);
 
     if (metadataError) {
       console.error('Error updating article metadata:', metadataError);
@@ -196,7 +198,7 @@ export async function PUT(req: NextRequest, props: RouteContext) {
 export async function DELETE(req: NextRequest, props: RouteContext) {
   const params = await props.params;
   try {
-    const supabase = getServerSupabase();
+    const supabase = await createClient();
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     
     if (userError || !user) {
@@ -211,7 +213,7 @@ export async function DELETE(req: NextRequest, props: RouteContext) {
       .from('agents')
       .select('role')
       .eq('id', user.id)
-      .single();
+      .maybeSingle();
 
     const isAdmin = agent?.role === 'admin';
 
@@ -264,7 +266,7 @@ export async function DELETE(req: NextRequest, props: RouteContext) {
 export async function PATCH(req: NextRequest, props: RouteContext) {
   const params = await props.params;
   try {
-    const supabase = getServerSupabase();
+    const supabase = await createClient();
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     
     if (userError || !user) {
@@ -282,7 +284,7 @@ export async function PATCH(req: NextRequest, props: RouteContext) {
       .from('agents')
       .select('role')
       .eq('id', user.id)
-      .single();
+      .maybeSingle();
 
     const isAdmin = agent?.role === 'admin';
 
@@ -303,7 +305,7 @@ export async function PATCH(req: NextRequest, props: RouteContext) {
       })
       .eq('id', id)
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) {
       console.error('Error updating article:', error);

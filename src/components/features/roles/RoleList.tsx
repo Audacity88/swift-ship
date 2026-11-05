@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { roleService, type RoleType, type Permission } from '@/lib/services';
+import { RoleType, DEFAULT_ROLE_PERMISSIONS } from '@/types/role';
 import {
   Table,
   TableBody,
@@ -34,7 +34,7 @@ export const RoleList = ({ onAssignRole, onViewPermissions }: RoleListProps) => 
   // Load roles on component mount
   useEffect(() => {
     const loadRoles = async () => {
-      const allRoles = await roleService.getAllRoles();
+      const allRoles = Object.values(RoleType);
       setRoles(allRoles);
     };
     loadRoles();
@@ -58,7 +58,8 @@ export const RoleList = ({ onAssignRole, onViewPermissions }: RoleListProps) => 
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <p className="text-sm text-muted-foreground">Built-in roles and their default permissions. Database policies enforce access.</p>
+      <div className="flex flex-wrap gap-3 items-center justify-between">
         <div className="relative w-64">
           <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
@@ -91,10 +92,10 @@ export const RoleList = ({ onAssignRole, onViewPermissions }: RoleListProps) => 
             <TableRow key={role}>
               <TableCell className="font-medium">{role}</TableCell>
               <TableCell>
-                {roleService.getDefaultPermissions(role as RoleType).length}
+                {DEFAULT_ROLE_PERMISSIONS[role].length}
               </TableCell>
               <TableCell>
-                <Badge variant={role === 'ADMIN' ? 'default' : 'secondary'}>
+                <Badge variant={role === RoleType.ADMIN ? 'default' : 'secondary'}>
                   Active
                 </Badge>
               </TableCell>

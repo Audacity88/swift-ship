@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import type { Team } from '@/types/team';
+import { RoleType } from '@/types/role';
 import { teamService } from '@/lib/services';
 import {
   Table,
@@ -59,7 +60,7 @@ export const TeamList = ({
   useEffect(() => {
     const loadTeams = async () => {
       try {
-        const allTeams = await teamService.getAllTeams();
+        const allTeams = await teamService.getAllTeams(undefined);
         setTeams(allTeams);
         setError(null);
       } catch (err) {
@@ -115,7 +116,7 @@ export const TeamList = ({
 
   const getMetricsSummary = (team: Team) => {
     if (!team.metrics) return 'No metrics';
-    return `${team.metrics.resolvedTickets} resolved / ${team.metrics.openTickets} open`;
+    return `${team.metrics.resolvedTickets || 0} resolved / ${team.metrics.openTickets || 0} open`;
   };
 
   if (loading) {
@@ -130,7 +131,7 @@ export const TeamList = ({
         </Alert>
       )}
 
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="relative w-64">
           <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
@@ -143,6 +144,7 @@ export const TeamList = ({
         <Button onClick={onCreateTeam}>Create Team</Button>
       </div>
 
+      {!error && sortedTeams.length === 0 && <p role="status" className="py-6 text-muted-foreground">No teams found. Create a team to get started.</p>}
       <Table>
         <TableHeader>
           <TableRow>
@@ -153,6 +155,7 @@ export const TeamList = ({
               Name {sortField === 'name' && (sortOrder === 'asc' ? '↑' : '↓')}
             </TableHead>
             <TableHead>Status</TableHead>
+            <TableHead>Team lead</TableHead>
             <TableHead>Metrics</TableHead>
             <TableHead className="w-[100px]">Actions</TableHead>
           </TableRow>
@@ -171,6 +174,15 @@ export const TeamList = ({
                 </div>
               </TableCell>
               <TableCell>{getTeamStatusBadge(team)}</TableCell>
+              <TableCell>
+                {team.members.filter(member => member.role === RoleType.SUPERVISOR).map(member => (
+                  <div key={member.userId}>
+                    <div className="font-medium">{member.name || 'Support agent'}</div>
+                    <div className="text-sm text-muted-foreground">{member.email || 'Email unavailable'}</div>
+                  </div>
+                ))}
+                {!team.members.some(member => member.role === RoleType.SUPERVISOR) && 'No team lead'}
+              </TableCell>
               <TableCell>{getMetricsSummary(team)}</TableCell>
               <TableCell>
                 <DropdownMenu>
@@ -225,4 +237,4 @@ export const TeamList = ({
       </Table>
     </div>
   );
-}; 
+};
